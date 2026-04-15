@@ -1,0 +1,44 @@
+{
+    "Main": {
+        "CheckUpdateOnStartup": true,
+        "DebugNoDeleteCache": true,
+        "DebugOcrLoss": false,
+        "DeleteEmptyTimeStamp": true,
+        "DropScore": 75,
+        "ExtractFrequency": 5,
+        "GenerateTxt": false,
+        "HardwareAcceleration": true,
+        "Language": "ch",
+        "MaxBatchSize": 10,
+        "Mode": "fast",
+        "RecBatchNumber": 6,
+        "SaveDirectory": "",
+        "SubtitleArea": 2,
+        "SubtitleAreaDeviationPixel": 50,
+        "SubtitleAreaDeviationRate": 0,
+        "SubtitleSelectionAreas": "0.78,0.99,0.05,0.95",
+        "ThresholdTextSimilarity": 80,
+        "TolerantPixelX": 100,
+        "TolerantPixelY": 50,
+        "VideoSubFinderCpuCores": 0,
+        "VideoSubFinderDecoder": "OpenCV",
+        "WaterarkAreaNum": 5,
+        "WordSegmentation": true
+    },
+    "QFluentWidgets": {
+        "FontFamilies": [
+            "Segoe UI",
+            "Microsoft YaHei",
+            "PingFang SC"
+        ],
+        "ThemeColor": "#ff009faa",
+        "ThemeMode": "Light"
+    },
+    "Window": {
+        "Interface": "ch",
+        "Height": 1200,
+        "Width": 1200,
+        "X": null,
+        "Y": null
+    }
+}

@@ -1,0 +1,63 @@
+{
+  "project_name": "server_auto_clip",
+  "project_root": "E:\\服务器自动剪辑",
+  "runtime_root": "E:\\服务器自动剪辑\\runtime",
+  "workspace_root": "E:\\服务器自动剪辑\\runtime\\workspaces",
+  "modules": {
+    "control_center": {
+      "type": "python_http",
+      "path": "E:\\服务器自动剪辑",
+      "entry": "E:\\服务器自动剪辑\\control_center.py"
+    },
+    "baidu_linkswift": {
+      "type": "browser_helper",
+      "path": "E:\\服务器自动剪辑\\modules\\baidu_linkswift",
+      "entry": "E:\\服务器自动剪辑\\open_baidu_linkswift.ps1"
+    },
+    "baidu_share_downloader": {
+      "type": "python_cli",
+      "path": "E:\\服务器自动剪辑\\modules\\baidu_share_downloader",
+      "entry": "E:\\服务器自动剪辑\\modules\\baidu_share_downloader\\baidu_share_downloader.py",
+      "default_output_dir": "E:\\服务器自动剪辑\\runtime\\baidu_downloads"
+    },
+    "douyin_api": {
+      "type": "python_api_service",
+      "path": "E:\\服务器自动剪辑\\modules\\douyin_api",
+      "entry": "E:\\服务器自动剪辑\\start_douyin_api.ps1",
+      "default_output_dir": "E:\\服务器自动剪辑\\runtime\\douyin_downloads",
+      "default_url": "http://127.0.0.1:19080"
+    },
+    "douyin_batch_downloader": {
+      "type": "python_cli",
+      "path": "E:\\服务器自动剪辑\\modules",
+      "entry": "E:\\服务器自动剪辑\\modules\\douyin_batch_downloader.py"
+    },
+    "auto_clip_engine": {
+      "type": "python_cli",
+      "path": "E:\\服务器自动剪辑\\modules\\auto_clip_engine",
+      "entry": "E:\\服务器自动剪辑\\modules\\auto_clip_engine\\drama_clone_cli.py",
+      "default_output_dir": "E:\\服务器自动剪辑\\runtime\\clips"
+    },
+    "subtitle_extractor_source": {
+      "type": "python_source",
+      "path": "E:\\服务器自动剪辑\\modules\\subtitle_extractor_source\\video-subtitle-extractor-main",
+      "entry": "E:\\服务器自动剪辑\\modules\\subtitle_extractor_source\\video-subtitle-extractor-main\\gui.py"
+    },
+    "subtitle_region_detector": {
+      "type": "shared_python_module",
+      "path": "E:\\服务器自动剪辑\\modules",
+      "entry": "E:\\服务器自动剪辑\\modules\\subtitle_region_detector.py"
+    },
+    "subtitle_batch_runner": {
+      "type": "python_cli",
+      "path": "E:\\服务器自动剪辑\\modules",
+      "entry": "E:\\服务器自动剪辑\\modules\\subtitle_batch_runner.py",
+      "default_output_dir": "E:\\服务器自动剪辑\\runtime\\subtitle_output"
+    },
+    "batch_runner": {
+      "type": "python_cli",
+      "path": "E:\\服务器自动剪辑",
+      "entry": "E:\\服务器自动剪辑\\batch_runner.py"
+    }
+  }
+}

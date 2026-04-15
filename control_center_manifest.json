@@ -1,0 +1,61 @@
+{
+  "current_modules": [
+    {
+      "id": "control_center",
+      "name": "本地控制台",
+      "status": "ready",
+      "type": "python_http",
+      "description": "双击启动后自动打开浏览器，统一管理工作间、任务配置和运行日志。"
+    },
+    {
+      "id": "baidu_share_downloader",
+      "name": "百度网盘下载",
+      "status": "ready",
+      "type": "python_cli",
+      "description": "基于当前浏览器登录态下载百度网盘分享链接里的视频文件。"
+    },
+    {
+      "id": "douyin_batch_downloader",
+      "name": "抖音批量下载",
+      "status": "ready",
+      "type": "python_cli",
+      "description": "接收多个抖音分享链接，按工作间批量下载到本地目录。"
+    },
+    {
+      "id": "subtitle_region_detector",
+      "name": "共享字幕区识别",
+      "status": "ready",
+      "type": "shared_python_module",
+      "description": "和剪辑模块同源的图像级字幕区检测逻辑，优先图像检测，OCR 探测兜底。"
+    },
+    {
+      "id": "subtitle_batch_runner",
+      "name": "字幕提取",
+      "status": "ready",
+      "type": "python_cli",
+      "description": "默认精准模式，默认每秒 5 帧，支持自动字幕区检测并批量输出 srt。"
+    },
+    {
+      "id": "auto_clip_engine",
+      "name": "自动剪辑成片",
+      "status": "ready",
+      "type": "python_cli",
+      "description": "调用已就绪的仿剪引擎，按参考视频、参考字幕和原素材目录批量生成成片。包含 AI 改写、配音和最终合成。"
+    },
+    {
+      "id": "batch_runner",
+      "name": "批量调度",
+      "status": "ready",
+      "type": "python_cli",
+      "description": "支持多工作间和多视频并发调度，把下载、字幕和自动剪辑任务统一跑起来。"
+    }
+  ],
+  "planned_modules": [
+    {
+      "id": "delivery_packager",
+      "name": "成片发布包",
+      "status": "planned",
+      "description": "整理视频、封面、字幕和发布元数据，方便后续上传发布。"
+    }
+  ]
+}

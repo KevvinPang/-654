@@ -1,0 +1,60 @@
+{
+  "workspace_name": "demo_workspace",
+  "concurrency": {
+    "baidu_share": 1,
+    "douyin_download": 3,
+    "subtitle_extract": 1,
+    "auto_clip": 1
+  },
+  "settings": {
+    "ai_api_key": "",
+    "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "ai_model": "deepseek-v3-2-251201",
+    "tts_voice": "zh-CN-YunxiNeural",
+    "tts_rate": "+8%",
+    "enable_backup_tts": false,
+    "azure_tts_key": "",
+    "azure_tts_region": "",
+    "azure_tts_voice": ""
+  },
+  "baidu_share": [
+    {
+      "share_url": "https://pan.baidu.com/s/xxxx?pwd=xxxx",
+      "target_filename": "7.mp4",
+      "output_subdir": "downloads/baidu",
+      "skip_existing": true
+    }
+  ],
+  "douyin_download": [
+    {
+      "url": "https://v.douyin.com/xxxxxxx/",
+      "output_subdir": "downloads/douyin",
+      "with_watermark": false
+    }
+  ],
+  "subtitle_extract": [
+    {
+      "input_glob": "downloads/**/*.mp4",
+      "output_subdir": "subtitles",
+      "temp_subdir": "temp/subtitle",
+      "auto_detect_subtitle_area": true,
+      "language": "ch",
+      "mode": "accurate",
+      "extract_frequency": 5,
+      "probe_extract_frequency": 5,
+      "generate_txt": true,
+      "skip_existing": true
+    }
+  ],
+  "auto_clip": [
+    {
+      "reference_video_glob": "downloads/douyin/*.mp4",
+      "reference_subtitle_glob": "subtitles/*.srt",
+      "source_dir": "downloads/baidu",
+      "output_subdir": "clips",
+      "temp_subdir": "temp/auto_clip",
+      "title": "demo_workspace_final",
+      "skip_existing": true
+    }
+  ]
+}
