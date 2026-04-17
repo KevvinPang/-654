@@ -86,6 +86,38 @@ def _cosine_similarity(left, right) -> float:
     return float(torch.dot(left, right) / (left_norm * right_norm))
 
 
+def _best_group_similarity(vector, centroid, seed_vectors: Sequence[object]) -> float:
+    best = _cosine_similarity(vector, centroid)
+    for seed_vector in seed_vectors:
+        best = max(best, _cosine_similarity(vector, seed_vector))
+    return best
+
+
+def _mean_vectors(vectors: Sequence[object]):
+    import torch
+
+    if not vectors:
+        return None
+    return torch.mean(torch.stack(list(vectors), dim=0), dim=0)
+
+
+def _group_similarity_for_entry(
+    entry_index: int,
+    vector,
+    centroid,
+    seed_items: Sequence[Tuple[int, object]],
+) -> float:
+    if not seed_items:
+        return _cosine_similarity(vector, centroid)
+
+    filtered_seed_vectors = [seed_vector for seed_index, seed_vector in seed_items if int(seed_index) != int(entry_index)]
+    if len(filtered_seed_vectors) != len(seed_items):
+        effective_centroid = _mean_vectors(filtered_seed_vectors)
+    else:
+        effective_centroid = centroid
+    return _best_group_similarity(vector, effective_centroid, filtered_seed_vectors)
+
+
 def _load_request(path: Path) -> Dict[str, object]:
     with path.open("r", encoding="utf-8-sig") as handle:
         return json.load(handle)
@@ -134,12 +166,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     entries = payload.get("entries") or []
 
     centroids: Dict[str, object] = {}
+    seed_vectors_by_label: Dict[str, List[Tuple[int, object]]] = {}
     seed_stats: Dict[str, int] = {}
     for label in ("narration", "dialogue"):
         items = seed_groups.get(label) or []
-        vectors: List[object] = []
+        vectors: List[Tuple[int, object]] = []
         for item in items:
             try:
+                index = int(item.get("index", 0) or 0)
                 vector = _encode_segment(
                     recognizer,
                     signal,
@@ -149,12 +183,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             except Exception:
                 continue
-            vectors.append(vector)
+            vectors.append((index, vector))
+        seed_vectors_by_label[label] = vectors
         seed_stats[label] = len(vectors)
         if vectors:
-            import torch
-
-            centroids[label] = torch.mean(torch.stack(vectors, dim=0), dim=0)
+            centroids[label] = _mean_vectors([vector for _index, vector in vectors])
 
     output_entries: List[Dict[str, object]] = []
     for item in entries:
@@ -171,8 +204,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         output_entries.append(
             {
                 "index": index,
-                "narration_similarity": round(_cosine_similarity(vector, centroids.get("narration")), 6),
-                "dialogue_similarity": round(_cosine_similarity(vector, centroids.get("dialogue")), 6),
+                "narration_similarity": round(
+                    _group_similarity_for_entry(
+                        index,
+                        vector,
+                        centroids.get("narration"),
+                        seed_vectors_by_label.get("narration", []),
+                    ),
+                    6,
+                ),
+                "dialogue_similarity": round(
+                    _group_similarity_for_entry(
+                        index,
+                        vector,
+                        centroids.get("dialogue"),
+                        seed_vectors_by_label.get("dialogue", []),
+                    ),
+                    6,
+                ),
             }
         )
 

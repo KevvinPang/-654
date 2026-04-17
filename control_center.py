@@ -241,7 +241,7 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
         "settings": {
             "ai_api_key": "",
             "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-            "ai_model": "deepseek-v3-2-251201",
+                    "ai_model": "doubao-seed-character-251128",
             "ai_fallback_models": [],
             "enable_random_episode_flip": True,
             "random_episode_flip_ratio": 0.4,
@@ -2059,7 +2059,7 @@ HTML_PAGE = """<!doctype html>
     const DEFAULT_SETTINGS = {
       ai_api_key: "",
       ai_api_url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-      ai_model: "deepseek-v3-2-251201",
+                ai_model: "doubao-seed-character-251128",
       tts_voice: "zh-CN-YunxiNeural",
       tts_rate: "+8%",
       enable_backup_tts: false,

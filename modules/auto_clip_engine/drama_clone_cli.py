@@ -87,6 +87,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--azure-tts-key")
     parser.add_argument("--azure-tts-region")
     parser.add_argument("--azure-tts-voice")
+    parser.add_argument("--prefer-funasr-audio-subtitles", dest="prefer_funasr_audio_subtitles", action="store_true", default=None)
+    parser.add_argument("--disable-funasr-audio-subtitles", dest="prefer_funasr_audio_subtitles", action="store_false")
+    parser.add_argument("--disable-ai-subtitle-review", dest="disable_ai_subtitle_review", action="store_true", default=None)
+    parser.add_argument("--enable-ai-subtitle-review", dest="disable_ai_subtitle_review", action="store_false")
+    parser.add_argument("--disable-ai-narration-rewrite", dest="disable_ai_narration_rewrite", action="store_true", default=None)
+    parser.add_argument("--enable-ai-narration-rewrite", dest="disable_ai_narration_rewrite", action="store_false")
+    parser.add_argument("--prefer-funasr-sentence-pauses", dest="prefer_funasr_sentence_pauses", action="store_true", default=None)
+    parser.add_argument("--disable-funasr-sentence-pauses", dest="prefer_funasr_sentence_pauses", action="store_false")
     parser.add_argument("--random-flip-episodes", dest="enable_random_episode_flip", action="store_true", default=None)
     parser.add_argument("--disable-random-flip-episodes", dest="enable_random_episode_flip", action="store_false")
     parser.add_argument("--random-flip-ratio", type=float)
@@ -117,6 +125,14 @@ def parse_args() -> argparse.Namespace:
     args.azure_tts_key = args.azure_tts_key or job.get("azure_tts_key", "")
     args.azure_tts_region = args.azure_tts_region or job.get("azure_tts_region", "")
     args.azure_tts_voice = args.azure_tts_voice or job.get("azure_tts_voice", "")
+    if args.prefer_funasr_audio_subtitles is None:
+        args.prefer_funasr_audio_subtitles = bool(job.get("prefer_funasr_audio_subtitles", False))
+    if args.disable_ai_subtitle_review is None:
+        args.disable_ai_subtitle_review = bool(job.get("disable_ai_subtitle_review", False))
+    if args.disable_ai_narration_rewrite is None:
+        args.disable_ai_narration_rewrite = bool(job.get("disable_ai_narration_rewrite", False))
+    if args.prefer_funasr_sentence_pauses is None:
+        args.prefer_funasr_sentence_pauses = bool(job.get("prefer_funasr_sentence_pauses", False))
     if args.enable_random_episode_flip is None:
         args.enable_random_episode_flip = bool(
             job.get("enable_random_episode_flip", DEFAULT_ENABLE_RANDOM_EPISODE_FLIP)
@@ -133,10 +149,11 @@ def parse_args() -> argparse.Namespace:
 
     required = {
         "reference_video": "--reference-video",
-        "reference_subtitle": "--reference-subtitle",
         "source_dir": "--source-dir",
         "output_dir": "--output-dir",
     }
+    if not bool(args.prefer_funasr_audio_subtitles):
+        required["reference_subtitle"] = "--reference-subtitle"
     missing = [flag for attr, flag in required.items() if getattr(args, attr) is None]
     if missing:
         parser.error("missing required inputs: " + ", ".join(missing))
@@ -157,10 +174,12 @@ def main() -> None:
         with log_file.open("a", encoding="utf-8-sig") as handle:
             faulthandler.enable(handle)
 
-    subtitle_content = load_text_file(args.reference_subtitle)
-    subtitle_entries = parse_subtitle_content(subtitle_content, args.reference_subtitle.suffix)
-    if not subtitle_entries:
-        raise SystemExit("No subtitle entries were parsed from the reference subtitle file.")
+    subtitle_entries = []
+    if args.reference_subtitle is not None:
+        subtitle_content = load_text_file(args.reference_subtitle)
+        subtitle_entries = parse_subtitle_content(subtitle_content, args.reference_subtitle.suffix)
+        if not subtitle_entries and not bool(args.prefer_funasr_audio_subtitles):
+            raise SystemExit("No subtitle entries were parsed from the reference subtitle file.")
 
     settings = CloneSettings(
         reference_video=args.reference_video,
@@ -178,6 +197,10 @@ def main() -> None:
         azure_tts_key=args.azure_tts_key or "",
         azure_tts_region=args.azure_tts_region or "",
         azure_tts_voice=args.azure_tts_voice or "",
+        prefer_funasr_audio_subtitles=bool(args.prefer_funasr_audio_subtitles),
+        disable_ai_subtitle_review=bool(args.disable_ai_subtitle_review),
+        disable_ai_narration_rewrite=bool(args.disable_ai_narration_rewrite),
+        prefer_funasr_sentence_pauses=bool(args.prefer_funasr_sentence_pauses),
         enable_random_episode_flip=bool(args.enable_random_episode_flip),
         random_episode_flip_ratio=args.random_flip_ratio,
         enable_random_visual_filter=bool(args.enable_random_visual_filter),

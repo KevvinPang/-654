@@ -385,7 +385,7 @@
             <div class="card stack">
               <h3>AI 设置</h3>
               <label class="field"><span>API Key</span><input id="aiApiKey" type="password"></label>
-              <label class="field"><span>主模型</span><input id="aiModel" type="text" value="deepseek-v3-2-251201"></label>
+                    <label class="field"><span>主模型</span><input id="aiModel" type="text" value="doubao-seed-character-251128"></label>
               <label class="field"><span>API 地址</span><input id="aiApiUrl" type="text" value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"></label>
               <label class="field"><span>备用模型</span><textarea id="aiFallbackModels" class="textarea-compact" placeholder="每行一个备用模型&#10;也可填写：模型名 | API地址 | API Key"></textarea></label>
             </div>
@@ -444,7 +444,7 @@
   <input id="subtitleFileUploadInput" type="file" accept=".srt,.txt,.ass,.vtt" multiple hidden onchange="uploadLocalFiles(this,'subtitle_file')">
 
   <script>
-    const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"deepseek-v3-2-251201",ai_fallback_models:[],enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
+const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-character-251128",ai_fallback_models:[],enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
     let latestStatus=null,currentWorkspace="",currentTask=null,selectedWorkspaces=new Set(),activeJobId="",baiduFiles=[],baiduSavedEntries=[],baiduListingUrl="",selectedBaiduKeys=new Set(),baiduExpandedFolders=new Set(),baiduLoginState=null,baiduListingPending=false,toastCounter=0,sidebarCollapsed=false,workspaceFocusTimer=null;
     const baiduOfficialDiagnosisCache=new Map();
     const $=id=>document.getElementById(id);

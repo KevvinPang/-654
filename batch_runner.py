@@ -39,6 +39,10 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "azure_tts_key",
     "azure_tts_region",
     "azure_tts_voice",
+    "prefer_funasr_audio_subtitles",
+    "disable_ai_subtitle_review",
+    "disable_ai_narration_rewrite",
+    "prefer_funasr_sentence_pauses",
     "enable_random_episode_flip",
     "random_episode_flip_ratio",
     "enable_random_visual_filter",
@@ -820,8 +824,18 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             if douyin_output_dir is not None:
                 task["reference_video_glob"] = str(douyin_output_dir / "*")
 
+        prefer_funasr_audio_subtitles = bool(
+            task.get(
+                "prefer_funasr_audio_subtitles",
+                shared_settings.get("prefer_funasr_audio_subtitles", False),
+            )
+        )
         reference_subtitle_glob = str(task.get("reference_subtitle_glob") or "").strip()
-        if not task.get("reference_subtitle") and reference_subtitle_glob in {"", "subtitles/*.srt"}:
+        if (
+            not prefer_funasr_audio_subtitles
+            and not task.get("reference_subtitle")
+            and reference_subtitle_glob in {"", "subtitles/*.srt"}
+        ):
             subtitle_output_dir = infer_first_subtitle_output_dir(workspace)
             if subtitle_output_dir is not None:
                 task["reference_subtitle_glob"] = str(subtitle_output_dir / "*.srt")
@@ -836,15 +850,17 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_video"))
             continue
 
-        reference_subtitles = resolve_workspace_inputs(
-            workspace.root,
-            task.get("reference_subtitle"),
-            task.get("reference_subtitle_glob"),
-        )
-        reference_subtitles = filter_paths_by_suffix(reference_subtitles, SUPPORTED_SUBTITLE_EXTENSIONS)
-        if not reference_subtitles:
-            specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_subtitle"))
-            continue
+        reference_subtitles: list[Path] = []
+        if not prefer_funasr_audio_subtitles:
+            reference_subtitles = resolve_workspace_inputs(
+                workspace.root,
+                task.get("reference_subtitle"),
+                task.get("reference_subtitle_glob"),
+            )
+            reference_subtitles = filter_paths_by_suffix(reference_subtitles, SUPPORTED_SUBTITLE_EXTENSIONS)
+            if not reference_subtitles:
+                specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_subtitle"))
+                continue
 
         raw_source_dir = str(task.get("source_dir") or "").strip()
         if raw_source_dir in {"", "downloads/baidu"}:
@@ -866,17 +882,20 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             pairs: list[tuple[Path, Path | None]] = []
             used_subtitles: set[Path] = set()
             for video_path in reference_videos:
-                subtitle_path = find_matching_subtitle(reference_subtitles, used_subtitles, video_path, workspace.root)
-                if subtitle_path is not None:
-                    used_subtitles.add(subtitle_path)
+                subtitle_path = None
+                if not prefer_funasr_audio_subtitles:
+                    subtitle_path = find_matching_subtitle(reference_subtitles, used_subtitles, video_path, workspace.root)
+                    if subtitle_path is not None:
+                        used_subtitles.add(subtitle_path)
                 pairs.append((video_path, subtitle_path))
         else:
-            pairs = [(reference_videos[0], reference_subtitles[0])]
+            first_subtitle = None if prefer_funasr_audio_subtitles else reference_subtitles[0]
+            pairs = [(reference_videos[0], first_subtitle)]
 
         total_pairs = len(pairs)
         skip_existing = bool(task.get("skip_existing", True))
         for pair_index, (reference_video, reference_subtitle) in enumerate(pairs, start=1):
-            if reference_subtitle is None:
+            if reference_subtitle is None and not prefer_funasr_audio_subtitles:
                 label = f"auto_clip#{index}:{reference_video.name}"
                 specs.append(TaskSpec("auto_clip", label, None, PROJECT_ROOT, "no matching subtitle for reference video"))
                 continue
@@ -890,11 +909,12 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
 
             job_payload: dict[str, Any] = {
                 "reference_video": str(reference_video),
-                "reference_subtitle": str(reference_subtitle),
                 "source_dir": str(source_dir),
                 "output_dir": str(output_dir),
                 "title": title,
             }
+            if reference_subtitle is not None:
+                job_payload["reference_subtitle"] = str(reference_subtitle)
             for key in AUTO_CLIP_SETTINGS_KEYS:
                 if key in task:
                     job_payload[key] = task[key]

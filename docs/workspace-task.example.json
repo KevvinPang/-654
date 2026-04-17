@@ -9,7 +9,7 @@
   "settings": {
     "ai_api_key": "",
     "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-    "ai_model": "deepseek-v3-2-251201",
+    "ai_model": "doubao-seed-character-251128",
     "tts_voice": "zh-CN-YunxiNeural",
     "tts_rate": "+8%",
     "enable_backup_tts": false,
