@@ -146,6 +146,11 @@ TTS_ACTIVITY_MIN_TRIM_LEAD_SECONDS = 0.05
 TTS_ACTIVITY_MIN_TRIM_TAIL_SECONDS = 0.07
 NARRATION_DUCK_MIN_SPAN_SECONDS = 0.10
 NARRATION_DUCK_MERGE_GAP_SECONDS = 0.12
+STRICT_NARRATION_DUCK_HEAD_PAD_SECONDS = 0.0
+STRICT_NARRATION_DUCK_TAIL_PAD_SECONDS = 0.0
+STRICT_NARRATION_DUCK_MIN_SPAN_SECONDS = 0.06
+STRICT_NARRATION_DUCK_MERGE_GAP_SECONDS = 0.03
+STRICT_NARRATION_DUCK_MATCH_PADDING_SECONDS = 0.12
 NARRATION_REWRITE_SOFT_OVERFLOW_UNITS = 3
 TTS_REQUEST_TIMEOUT_SECONDS = 45
 MAX_TTS_SEGMENT_SPLIT_DEPTH = 3
@@ -266,6 +271,16 @@ FUNASR_AUDIO_SPLIT_WAVEFORM_BOUNDARY_TOLERANCE = 0.18
 FUNASR_AUDIO_SPLIT_WAVEFORM_BOOST_MIN_SECONDS = 0.06
 AUDIO_DUCK_PADDING_SECONDS = 0.06
 AUDIO_DUCK_MERGE_GAP_SECONDS = 0.18
+LOCAL_VOICE_BOUNDARY_WINDOW_SECONDS = 0.26
+LOCAL_VOICE_BOUNDARY_HOP_SECONDS = 0.04
+LOCAL_VOICE_BOUNDARY_MIN_DELAY_SECONDS = 0.08
+LOCAL_VOICE_BOUNDARY_MAX_DELAY_SECONDS = 0.38
+LOCAL_VOICE_BOUNDARY_MIN_SIMILARITY = 0.72
+LOCAL_VOICE_BOUNDARY_DIFF_THRESHOLD = 0.035
+LOCAL_VOICE_BOUNDARY_CONFIRM_WINDOWS = 2
+LOCAL_VOICE_BOUNDARY_RUN_HISTORY = 3
+LOCAL_VOICE_BOUNDARY_RUN_LOOKAHEAD = 3
+LOCAL_VOICE_BOUNDARY_MIN_RUN_SHIFT_SECONDS = 0.06
 AUDIO_TIMELINE_PROFILE_MIN_CONFIDENCE = 0.34
 AUDIO_TIMELINE_PROFILE_MIN_SPEECH_RATIO = 0.14
 AUDIO_TIMELINE_SECTION_COUNT = 12
@@ -7964,10 +7979,20 @@ def normalize_wav_tts_activity_in_place(
 def detect_narration_audio_duck_intervals(
     audio_path: Path,
     video_processor: VideoProcessor,
+    *,
+    head_pad_seconds: float = TTS_ACTIVITY_HEAD_PAD_SECONDS,
+    tail_pad_seconds: float = TTS_ACTIVITY_TAIL_PAD_SECONDS,
+    min_span_seconds: float = NARRATION_DUCK_MIN_SPAN_SECONDS,
+    merge_gap_seconds: float = NARRATION_DUCK_MERGE_GAP_SECONDS,
 ) -> List[Tuple[float, float]]:
     total_duration = max(0.0, video_processor.probe_duration(audio_path))
     if audio_path.suffix.lower() != ".wav" or total_duration <= 0.05:
         return []
+
+    head_pad_seconds = max(0.0, float(head_pad_seconds))
+    tail_pad_seconds = max(0.0, float(tail_pad_seconds))
+    min_span_seconds = max(0.03, float(min_span_seconds))
+    merge_gap_seconds = max(0.0, float(merge_gap_seconds))
 
     samples, sample_rate = load_wav_mono_samples(audio_path)
     if not NUMPY_AVAILABLE or samples is None or sample_rate <= 0 or samples.size <= 0:
@@ -8020,22 +8045,22 @@ def detect_narration_audio_duck_intervals(
             continue
         if start_index is None:
             continue
-        span_start = max(0.0, frame_starts[start_index] / sample_rate - TTS_ACTIVITY_HEAD_PAD_SECONDS)
+        span_start = max(0.0, frame_starts[start_index] / sample_rate - head_pad_seconds)
         span_end = min(
             total_duration,
-            frame_starts[end_index] / sample_rate + window_size / sample_rate + TTS_ACTIVITY_TAIL_PAD_SECONDS,
+            frame_starts[end_index] / sample_rate + window_size / sample_rate + tail_pad_seconds,
         )
-        if span_end - span_start >= NARRATION_DUCK_MIN_SPAN_SECONDS:
+        if span_end - span_start >= min_span_seconds:
             spans.append((span_start, span_end))
         start_index = None
         end_index = -1
     if start_index is not None:
-        span_start = max(0.0, frame_starts[start_index] / sample_rate - TTS_ACTIVITY_HEAD_PAD_SECONDS)
+        span_start = max(0.0, frame_starts[start_index] / sample_rate - head_pad_seconds)
         span_end = min(
             total_duration,
-            frame_starts[end_index] / sample_rate + window_size / sample_rate + TTS_ACTIVITY_TAIL_PAD_SECONDS,
+            frame_starts[end_index] / sample_rate + window_size / sample_rate + tail_pad_seconds,
         )
-        if span_end - span_start >= NARRATION_DUCK_MIN_SPAN_SECONDS:
+        if span_end - span_start >= min_span_seconds:
             spans.append((span_start, span_end))
 
     merged: List[Tuple[float, float]] = []
@@ -8044,11 +8069,51 @@ def detect_narration_audio_duck_intervals(
             merged.append((start, end))
             continue
         prev_start, prev_end = merged[-1]
-        if start <= prev_end + NARRATION_DUCK_MERGE_GAP_SECONDS:
+        if start <= prev_end + merge_gap_seconds:
             merged[-1] = (prev_start, max(prev_end, end))
         else:
             merged.append((start, end))
     return merged
+
+
+def refine_duck_intervals_with_waveform(
+    base_intervals: Sequence[Tuple[float, float]],
+    detected_spans: Sequence[Tuple[float, float]],
+    *,
+    match_padding_seconds: float = STRICT_NARRATION_DUCK_MATCH_PADDING_SECONDS,
+) -> List[Tuple[float, float]]:
+    if not base_intervals or not detected_spans:
+        return [(max(0.0, float(start)), max(float(start) + 0.01, float(end))) for start, end in base_intervals]
+
+    match_padding_seconds = max(0.0, float(match_padding_seconds))
+    normalized_spans = [
+        (max(0.0, float(start)), max(float(start) + 0.01, float(end)))
+        for start, end in detected_spans
+    ]
+    refined: List[Tuple[float, float]] = []
+    span_index = 0
+    for start, end in base_intervals:
+        base_start = max(0.0, float(start))
+        base_end = max(base_start + 0.01, float(end))
+        search_start = max(0.0, base_start - match_padding_seconds)
+        search_end = base_end + match_padding_seconds
+        while span_index < len(normalized_spans) and normalized_spans[span_index][1] < search_start:
+            span_index += 1
+
+        matched_end: Optional[float] = None
+        probe_index = span_index
+        while probe_index < len(normalized_spans):
+            span_start, span_end = normalized_spans[probe_index]
+            if span_start > search_end:
+                break
+            if span_end > search_start and span_start < search_end:
+                matched_end = span_end if matched_end is None else max(matched_end, span_end)
+            probe_index += 1
+
+        if matched_end is not None:
+            base_end = clamp(matched_end, base_start + 0.03, base_end)
+        refined.append((base_start, base_end))
+    return refined
 
 
 def build_speechbrain_similarity_map(
@@ -8459,6 +8524,263 @@ def audio_feature_similarity(
     cosine = float(np.dot(lhs, rhs) / (lhs_norm * rhs_norm))
     distance = float(np.linalg.norm(lhs - rhs) / math.sqrt(lhs.size))
     return clamp(cosine * 0.60 + (1.0 - min(1.0, distance)) * 0.40, 0.0, 1.0)
+
+
+def _build_local_voice_reference_profile(
+    entries: Sequence[SubtitleEntry],
+    start_index: int,
+    end_index: int,
+    samples: "np.ndarray",
+    sample_rate: int,
+    profile_index: int,
+) -> Optional[AudioSegmentProfile]:
+    if not entries or start_index < 0 or end_index < start_index:
+        return None
+    segment_entries = list(entries[start_index : end_index + 1])
+    if not segment_entries:
+        return None
+    start_time = float(segment_entries[0].start)
+    end_time = float(segment_entries[-1].end)
+    if end_time <= start_time + 0.18:
+        return None
+    return build_audio_profile_for_range(
+        samples,
+        sample_rate,
+        start_time,
+        end_time,
+        profile_index,
+        edge_trim_seconds=0.08,
+        edge_trim_ratio=0.10,
+        min_duration=0.20,
+    )
+
+
+def _estimate_local_voice_boundary_time(
+    entries: Sequence[SubtitleEntry],
+    dialogue_index: int,
+    narration_index: int,
+    samples: "np.ndarray",
+    sample_rate: int,
+    total_duration: float,
+) -> Optional[float]:
+    if (
+        not entries
+        or dialogue_index < 0
+        or narration_index <= dialogue_index
+        or narration_index >= len(entries)
+        or sample_rate <= 0
+    ):
+        return None
+
+    dialogue_start_index = dialogue_index
+    history_count = 0
+    while dialogue_start_index > 0 and history_count < LOCAL_VOICE_BOUNDARY_RUN_HISTORY - 1:
+        candidate = entries[dialogue_start_index - 1]
+        if candidate.entry_type not in {"dialogue", "original_subtitle"}:
+            break
+        if subtitle_entry_gap(candidate, entries[dialogue_start_index]) > 0.35:
+            break
+        dialogue_start_index -= 1
+        history_count += 1
+
+    narration_end_index = narration_index
+    lookahead_count = 0
+    while narration_end_index + 1 < len(entries) and lookahead_count < LOCAL_VOICE_BOUNDARY_RUN_LOOKAHEAD - 1:
+        candidate = entries[narration_end_index + 1]
+        if candidate.entry_type != "narration":
+            break
+        if subtitle_entry_gap(entries[narration_end_index], candidate) > 0.35:
+            break
+        narration_end_index += 1
+        lookahead_count += 1
+
+    dialogue_profile = _build_local_voice_reference_profile(
+        entries,
+        dialogue_start_index,
+        dialogue_index,
+        samples,
+        sample_rate,
+        profile_index=100000 + int(entries[dialogue_index].index),
+    )
+    narration_profile = _build_local_voice_reference_profile(
+        entries,
+        narration_index,
+        narration_end_index,
+        samples,
+        sample_rate,
+        profile_index=200000 + int(entries[narration_index].index),
+    )
+    if dialogue_profile is None or narration_profile is None:
+        return None
+
+    dialogue_entry = entries[dialogue_index]
+    narration_entry = entries[narration_index]
+    window_seconds = LOCAL_VOICE_BOUNDARY_WINDOW_SECONDS
+    search_start = max(
+        0.0,
+        float(dialogue_entry.end) - window_seconds * 0.45,
+        float(dialogue_entry.start) + 0.14,
+    )
+    search_end = min(
+        total_duration - window_seconds,
+        float(narration_entry.start) + LOCAL_VOICE_BOUNDARY_MAX_DELAY_SECONDS,
+        float(narration_entry.end) + 0.24,
+    )
+    if search_end <= search_start + LOCAL_VOICE_BOUNDARY_HOP_SECONDS:
+        return None
+
+    candidate_rows: List[Tuple[float, float, float]] = []
+    cursor = search_start
+    while cursor <= search_end + 1e-6:
+        local_profile = build_audio_profile_for_range(
+            samples,
+            sample_rate,
+            cursor,
+            min(total_duration, cursor + window_seconds),
+            profile_index=int(round(cursor * 1000.0)),
+            edge_trim_seconds=0.02,
+            edge_trim_ratio=0.05,
+            min_duration=0.18,
+        )
+        if local_profile is not None:
+            dialogue_similarity = audio_feature_similarity(
+                local_profile.feature_vector,
+                dialogue_profile.feature_vector,
+            )
+            narration_similarity = audio_feature_similarity(
+                local_profile.feature_vector,
+                narration_profile.feature_vector,
+            )
+            candidate_rows.append((cursor, dialogue_similarity, narration_similarity))
+        cursor += LOCAL_VOICE_BOUNDARY_HOP_SECONDS
+    if len(candidate_rows) < LOCAL_VOICE_BOUNDARY_CONFIRM_WINDOWS:
+        return None
+
+    had_dialogue_like_window = False
+    consecutive_narration = 0
+    first_narration_start: Optional[float] = None
+    baseline_start = float(narration_entry.start)
+    for start_time, dialogue_similarity, narration_similarity in candidate_rows:
+        diff = narration_similarity - dialogue_similarity
+        is_dialogue_like = (
+            dialogue_similarity >= LOCAL_VOICE_BOUNDARY_MIN_SIMILARITY
+            and diff <= 0.01
+        )
+        is_narration_like = (
+            narration_similarity >= LOCAL_VOICE_BOUNDARY_MIN_SIMILARITY
+            and diff >= LOCAL_VOICE_BOUNDARY_DIFF_THRESHOLD
+        )
+        if start_time < baseline_start - LOCAL_VOICE_BOUNDARY_HOP_SECONDS:
+            had_dialogue_like_window = had_dialogue_like_window or is_dialogue_like
+            consecutive_narration = 0
+            first_narration_start = None
+            continue
+        if is_dialogue_like:
+            had_dialogue_like_window = True
+        if is_narration_like:
+            if consecutive_narration == 0:
+                first_narration_start = start_time
+            consecutive_narration += 1
+            if (
+                had_dialogue_like_window
+                and consecutive_narration >= LOCAL_VOICE_BOUNDARY_CONFIRM_WINDOWS
+                and first_narration_start is not None
+            ):
+                return first_narration_start
+        else:
+            consecutive_narration = 0
+            first_narration_start = None
+    return None
+
+
+def retime_dialogue_to_narration_runs_by_local_voice(
+    entries: Sequence[SubtitleEntry],
+    reference_video: Optional[Path],
+    video_processor: Optional[VideoProcessor] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> List[SubtitleEntry]:
+    if not entries or reference_video is None or not NUMPY_AVAILABLE or not reference_video.exists():
+        return list(entries)
+
+    processor = video_processor or VideoProcessor()
+    audio_path = extract_reference_audio_for_classification(reference_video, processor, log_func=log_func)
+    if audio_path is None:
+        return list(entries)
+
+    samples, sample_rate = load_wav_mono_samples(audio_path)
+    if samples is None or sample_rate <= 0 or samples.size <= 0:
+        return list(entries)
+
+    total_duration = float(samples.size) / float(sample_rate)
+    updated_entries = list(entries)
+    adjusted_boundaries = 0
+    total_shift = 0.0
+    index = 1
+    while index < len(updated_entries):
+        previous_entry = updated_entries[index - 1]
+        current_entry = updated_entries[index]
+        if previous_entry.entry_type not in {"dialogue", "original_subtitle"} or current_entry.entry_type != "narration":
+            index += 1
+            continue
+
+        boundary_time = _estimate_local_voice_boundary_time(
+            updated_entries,
+            index - 1,
+            index,
+            samples,
+            sample_rate,
+            total_duration,
+        )
+        if boundary_time is None:
+            index += 1
+            continue
+
+        current_start = float(current_entry.start)
+        requested_shift = boundary_time - current_start
+        if requested_shift < LOCAL_VOICE_BOUNDARY_MIN_DELAY_SECONDS:
+            index += 1
+            continue
+        requested_shift = min(requested_shift, LOCAL_VOICE_BOUNDARY_MAX_DELAY_SECONDS)
+
+        run_end = index
+        while run_end + 1 < len(updated_entries) and updated_entries[run_end + 1].entry_type == "narration":
+            run_end += 1
+        next_block_start = float(updated_entries[run_end + 1].start) if run_end + 1 < len(updated_entries) else total_duration
+        allowed_shift = max(
+            0.0,
+            next_block_start - float(updated_entries[run_end].end) - 0.02,
+        )
+        shift_seconds = min(requested_shift, allowed_shift)
+        if shift_seconds < LOCAL_VOICE_BOUNDARY_MIN_RUN_SHIFT_SECONDS:
+            index = run_end + 1
+            continue
+
+        for run_index in range(index, run_end + 1):
+            run_entry = updated_entries[run_index]
+            updated_entries[run_index] = clone_subtitle_entry(
+                run_entry,
+                start=float(run_entry.start) + shift_seconds,
+                end=float(run_entry.end) + shift_seconds,
+            )
+
+        shifted_first_entry = updated_entries[index]
+        extended_previous_end = min(
+            float(shifted_first_entry.start) - 0.02,
+            max(float(previous_entry.end), float(previous_entry.end) + shift_seconds),
+        )
+        if extended_previous_end > float(previous_entry.end) + 0.01:
+            updated_entries[index - 1] = clone_subtitle_entry(previous_entry, end=extended_previous_end)
+
+        adjusted_boundaries += 1
+        total_shift += shift_seconds
+        index = run_end + 1
+
+    if log_func and adjusted_boundaries > 0:
+        log_func(
+            "  "
+            + f"Local voice boundary retime: shifted {adjusted_boundaries} dialogue->narration run(s), total +{total_shift:.2f}s"
+        )
+    return updated_entries
 
 
 def collect_timeline_audio_profiles(
@@ -11303,6 +11625,12 @@ def build_processed_subtitles(
             log_func=log_func,
         )
         cleaned_entries = recover_narration_fragment_runs(cleaned_entries)
+    cleaned_entries = retime_dialogue_to_narration_runs_by_local_voice(
+        cleaned_entries,
+        reference_video,
+        video_processor=video_processor,
+        log_func=log_func,
+    )
     counts = {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": watermark_count}
     narration_seed: List[SubtitleEntry] = []
     for entry in cleaned_entries:
@@ -15366,6 +15694,7 @@ def build_tts_track(
         and settings.prefer_funasr_audio_subtitles
         and settings.prefer_funasr_sentence_pauses
     )
+    duck_release = 0.0 if strict_audio_timing_mode else 0.04
     tts_join_map = (
         {entry.index: False for entry in speech_entries[:-1]}
         if strict_audio_timing_mode
@@ -15729,6 +16058,27 @@ def build_tts_track(
 
     output_path = output_dir / "output.wav"
     concat_audio_files(parts, output_path, video_processor)
+    if strict_audio_timing_mode:
+        strict_duck_spans = detect_narration_audio_duck_intervals(
+            output_path,
+            video_processor,
+            head_pad_seconds=STRICT_NARRATION_DUCK_HEAD_PAD_SECONDS,
+            tail_pad_seconds=STRICT_NARRATION_DUCK_TAIL_PAD_SECONDS,
+            min_span_seconds=STRICT_NARRATION_DUCK_MIN_SPAN_SECONDS,
+            merge_gap_seconds=STRICT_NARRATION_DUCK_MERGE_GAP_SECONDS,
+        )
+        if strict_duck_spans:
+            refined_duck_intervals = refine_duck_intervals_with_waveform(duck_intervals, strict_duck_spans)
+            shortened_count = sum(
+                1
+                for (_, original_end), (_, refined_end) in zip(duck_intervals, refined_duck_intervals)
+                if refined_end + 0.01 < original_end
+            )
+            duck_intervals = refined_duck_intervals
+            if log_func:
+                log_func(
+                    f"  TTS strict duck alignment: tightened {shortened_count}/{len(refined_duck_intervals)} interval(s) against final narration waveform"
+                )
     return output_path, duck_intervals, rendered_entries
 
 
