@@ -612,6 +612,8 @@ class CloneSettings:
     disable_ai_subtitle_review: bool = False
     disable_ai_narration_rewrite: bool = False
     prefer_funasr_sentence_pauses: bool = False
+    force_no_narration_mode: bool = False
+    narration_background_percent: float = 15.0
     enable_random_episode_flip: bool = DEFAULT_ENABLE_RANDOM_EPISODE_FLIP
     random_episode_flip_ratio: float = DEFAULT_RANDOM_EPISODE_FLIP_RATIO
     enable_random_visual_filter: bool = DEFAULT_ENABLE_RANDOM_VISUAL_FILTER
@@ -1697,6 +1699,32 @@ def normalize_episode_flip_ratio(
     if ratio > 1.0:
         ratio /= 100.0
     return clamp(ratio, 0.0, 1.0)
+
+
+def normalize_percent_value(
+    value: object,
+    default: float,
+    *,
+    min_value: float = 0.0,
+    max_value: float = 100.0,
+) -> float:
+    raw_value = value
+    if isinstance(raw_value, str):
+        raw_value = raw_value.strip()
+        if raw_value.endswith("%"):
+            raw_value = raw_value[:-1].strip()
+    try:
+        percent = float(raw_value)
+    except (TypeError, ValueError):
+        percent = float(default)
+    if percent <= 1.0 and percent >= 0.0:
+        percent *= 100.0
+    return clamp(percent, min_value, max_value)
+
+
+def narration_background_duck_volume(percent: float) -> float:
+    ratio = clamp(float(percent) / 100.0, 0.0, 1.0)
+    return clamp(ratio * 1.10 / 0.88, 0.0, 1.50)
 
 
 def tts_rate_factor(raw: str) -> float:
@@ -11430,6 +11458,15 @@ def build_processed_subtitles(
     prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
     disable_ai_subtitle_review = bool(settings.disable_ai_subtitle_review) if settings else False
     disable_ai_narration_rewrite = bool(settings.disable_ai_narration_rewrite) if settings else False
+    force_no_narration_mode = bool(settings.force_no_narration_mode) if settings else False
+    if force_no_narration_mode:
+        if log_func:
+            log_func("  Reference no-narration mode enabled: skipping subtitle classification and TTS")
+        return ProcessedSubtitleBundle(
+            [],
+            [],
+            {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": 0},
+        )
     if reference_video is not None and video_processor is not None:
         funasr_entries = run_funasr_reference_transcription(
             reference_video,
@@ -16652,12 +16689,17 @@ def run_clone_pipeline(
             strict_audio_timing_mode = bool(
                 settings.prefer_funasr_audio_subtitles and settings.prefer_funasr_sentence_pauses
             )
+            narration_background_percent = normalize_percent_value(
+                settings.narration_background_percent,
+                15.0,
+            )
             mix_final_video(
                 delivery_video_path,
                 audio_path,
                 duck_intervals,
                 staged_video_path,
                 video_processor,
+                duck_volume=narration_background_duck_volume(narration_background_percent),
                 duck_padding_seconds=0.0 if strict_audio_timing_mode else AUDIO_DUCK_PADDING_SECONDS,
                 duck_merge_gap_seconds=0.03 if strict_audio_timing_mode else AUDIO_DUCK_MERGE_GAP_SECONDS,
             )

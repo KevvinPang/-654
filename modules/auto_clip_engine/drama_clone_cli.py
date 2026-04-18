@@ -23,6 +23,7 @@ from drama_clone_core import (
     DEFAULT_TTS_VOICE,
     load_text_file,
     normalize_episode_flip_ratio,
+    normalize_percent_value,
     parse_subtitle_content,
     run_clone_pipeline,
     sanitize_stem,
@@ -95,6 +96,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-ai-narration-rewrite", dest="disable_ai_narration_rewrite", action="store_false")
     parser.add_argument("--prefer-funasr-sentence-pauses", dest="prefer_funasr_sentence_pauses", action="store_true", default=None)
     parser.add_argument("--disable-funasr-sentence-pauses", dest="prefer_funasr_sentence_pauses", action="store_false")
+    parser.add_argument("--force-no-narration-mode", dest="force_no_narration_mode", action="store_true", default=None)
+    parser.add_argument("--disable-force-no-narration-mode", dest="force_no_narration_mode", action="store_false")
+    parser.add_argument("--narration-background-percent", type=float)
     parser.add_argument("--random-flip-episodes", dest="enable_random_episode_flip", action="store_true", default=None)
     parser.add_argument("--disable-random-flip-episodes", dest="enable_random_episode_flip", action="store_false")
     parser.add_argument("--random-flip-ratio", type=float)
@@ -133,6 +137,14 @@ def parse_args() -> argparse.Namespace:
         args.disable_ai_narration_rewrite = bool(job.get("disable_ai_narration_rewrite", False))
     if args.prefer_funasr_sentence_pauses is None:
         args.prefer_funasr_sentence_pauses = bool(job.get("prefer_funasr_sentence_pauses", False))
+    if args.force_no_narration_mode is None:
+        args.force_no_narration_mode = bool(job.get("force_no_narration_mode", False))
+    args.narration_background_percent = normalize_percent_value(
+        args.narration_background_percent
+        if args.narration_background_percent is not None
+        else job.get("narration_background_percent", 15.0),
+        15.0,
+    )
     if args.enable_random_episode_flip is None:
         args.enable_random_episode_flip = bool(
             job.get("enable_random_episode_flip", DEFAULT_ENABLE_RANDOM_EPISODE_FLIP)
@@ -152,7 +164,7 @@ def parse_args() -> argparse.Namespace:
         "source_dir": "--source-dir",
         "output_dir": "--output-dir",
     }
-    if not bool(args.prefer_funasr_audio_subtitles):
+    if not bool(args.prefer_funasr_audio_subtitles) and not bool(args.force_no_narration_mode):
         required["reference_subtitle"] = "--reference-subtitle"
     missing = [flag for attr, flag in required.items() if getattr(args, attr) is None]
     if missing:
@@ -201,6 +213,8 @@ def main() -> None:
         disable_ai_subtitle_review=bool(args.disable_ai_subtitle_review),
         disable_ai_narration_rewrite=bool(args.disable_ai_narration_rewrite),
         prefer_funasr_sentence_pauses=bool(args.prefer_funasr_sentence_pauses),
+        force_no_narration_mode=bool(args.force_no_narration_mode),
+        narration_background_percent=args.narration_background_percent,
         enable_random_episode_flip=bool(args.enable_random_episode_flip),
         random_episode_flip_ratio=args.random_flip_ratio,
         enable_random_visual_filter=bool(args.enable_random_visual_filter),

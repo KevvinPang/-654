@@ -243,6 +243,12 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
             "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
                     "ai_model": "doubao-seed-character-251128",
             "ai_fallback_models": [],
+            "prefer_funasr_audio_subtitles": True,
+            "disable_ai_subtitle_review": True,
+            "disable_ai_narration_rewrite": True,
+            "prefer_funasr_sentence_pauses": True,
+            "force_no_narration_mode": False,
+            "narration_background_percent": 15,
             "enable_random_episode_flip": True,
             "random_episode_flip_ratio": 0.4,
             "enable_random_visual_filter": True,
@@ -378,6 +384,12 @@ def get_workspace_task(workspace_name: str) -> dict[str, Any]:
     task.setdefault("concurrency", dict(DEFAULT_CONCURRENCY))
     task.setdefault("settings", {})
     task["settings"].setdefault("ai_fallback_models", [])
+    task["settings"].setdefault("prefer_funasr_audio_subtitles", True)
+    task["settings"].setdefault("disable_ai_subtitle_review", True)
+    task["settings"].setdefault("disable_ai_narration_rewrite", True)
+    task["settings"].setdefault("prefer_funasr_sentence_pauses", True)
+    task["settings"].setdefault("force_no_narration_mode", False)
+    task["settings"].setdefault("narration_background_percent", 15)
     task["settings"].setdefault("enable_random_episode_flip", True)
     task["settings"].setdefault("random_episode_flip_ratio", 0.4)
     task["settings"].setdefault("enable_random_visual_filter", True)
@@ -398,6 +410,12 @@ def save_workspace_task(workspace_name: str, payload: dict[str, Any]) -> Path:
     payload.setdefault("concurrency", dict(DEFAULT_CONCURRENCY))
     payload.setdefault("settings", {})
     payload["settings"].setdefault("ai_fallback_models", [])
+    payload["settings"].setdefault("prefer_funasr_audio_subtitles", True)
+    payload["settings"].setdefault("disable_ai_subtitle_review", True)
+    payload["settings"].setdefault("disable_ai_narration_rewrite", True)
+    payload["settings"].setdefault("prefer_funasr_sentence_pauses", True)
+    payload["settings"].setdefault("force_no_narration_mode", False)
+    payload["settings"].setdefault("narration_background_percent", 15)
     payload["settings"].setdefault("enable_random_episode_flip", True)
     payload["settings"].setdefault("random_episode_flip_ratio", 0.4)
     payload["settings"].setdefault("enable_random_visual_filter", True)

@@ -23,31 +23,24 @@
     },
     {
       "id": "subtitle_region_detector",
-      "name": "共享字幕区识别",
+      "name": "字幕区域识别",
       "status": "ready",
       "type": "shared_python_module",
-      "description": "和剪辑模块同源的图像级字幕区检测逻辑，优先图像检测，OCR 探测兜底。"
-    },
-    {
-      "id": "subtitle_batch_runner",
-      "name": "字幕提取",
-      "status": "ready",
-      "type": "python_cli",
-      "description": "默认精准模式，默认每秒 5 帧，支持自动字幕区检测并批量输出 srt。"
+      "description": "为字幕遮挡与字幕烧录提供共享的字幕区域检测能力。"
     },
     {
       "id": "auto_clip_engine",
       "name": "自动剪辑成片",
       "status": "ready",
       "type": "python_cli",
-      "description": "调用已就绪的仿剪引擎，按参考视频、参考字幕和原素材目录批量生成成片。包含 AI 改写、配音和最终合成。"
+      "description": "按参考视频和原素材批量生成成片，包含识别、配音、匹配和最终合成。"
     },
     {
       "id": "batch_runner",
       "name": "批量调度",
       "status": "ready",
       "type": "python_cli",
-      "description": "支持多工作间和多视频并发调度，把下载、字幕和自动剪辑任务统一跑起来。"
+      "description": "支持多工作间和多视频并发调度，把下载与自动剪辑任务统一跑起来。"
     }
   ],
   "planned_modules": [

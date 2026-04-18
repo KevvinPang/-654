@@ -43,6 +43,8 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "disable_ai_subtitle_review",
     "disable_ai_narration_rewrite",
     "prefer_funasr_sentence_pauses",
+    "force_no_narration_mode",
+    "narration_background_percent",
     "enable_random_episode_flip",
     "random_episode_flip_ratio",
     "enable_random_visual_filter",
@@ -830,9 +832,16 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                 shared_settings.get("prefer_funasr_audio_subtitles", False),
             )
         )
+        force_no_narration_mode = bool(
+            task.get(
+                "force_no_narration_mode",
+                shared_settings.get("force_no_narration_mode", False),
+            )
+        )
         reference_subtitle_glob = str(task.get("reference_subtitle_glob") or "").strip()
         if (
             not prefer_funasr_audio_subtitles
+            and not force_no_narration_mode
             and not task.get("reference_subtitle")
             and reference_subtitle_glob in {"", "subtitles/*.srt"}
         ):
@@ -851,7 +860,7 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             continue
 
         reference_subtitles: list[Path] = []
-        if not prefer_funasr_audio_subtitles:
+        if not prefer_funasr_audio_subtitles and not force_no_narration_mode:
             reference_subtitles = resolve_workspace_inputs(
                 workspace.root,
                 task.get("reference_subtitle"),
@@ -883,19 +892,19 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             used_subtitles: set[Path] = set()
             for video_path in reference_videos:
                 subtitle_path = None
-                if not prefer_funasr_audio_subtitles:
+                if not prefer_funasr_audio_subtitles and not force_no_narration_mode:
                     subtitle_path = find_matching_subtitle(reference_subtitles, used_subtitles, video_path, workspace.root)
                     if subtitle_path is not None:
                         used_subtitles.add(subtitle_path)
                 pairs.append((video_path, subtitle_path))
         else:
-            first_subtitle = None if prefer_funasr_audio_subtitles else reference_subtitles[0]
+            first_subtitle = None if prefer_funasr_audio_subtitles or force_no_narration_mode else reference_subtitles[0]
             pairs = [(reference_videos[0], first_subtitle)]
 
         total_pairs = len(pairs)
         skip_existing = bool(task.get("skip_existing", True))
         for pair_index, (reference_video, reference_subtitle) in enumerate(pairs, start=1):
-            if reference_subtitle is None and not prefer_funasr_audio_subtitles:
+            if reference_subtitle is None and not prefer_funasr_audio_subtitles and not force_no_narration_mode:
                 label = f"auto_clip#{index}:{reference_video.name}"
                 specs.append(TaskSpec("auto_clip", label, None, PROJECT_ROOT, "no matching subtitle for reference video"))
                 continue
