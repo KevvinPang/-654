@@ -199,6 +199,13 @@ E:\服务器自动剪辑\runtime\workspaces\<工作间名>\
 - 画面重建
 - 最终成片合成
 
+## 2026-04-21 封装修复备注
+
+- `modules/auto_clip_engine/drama_clone_core.py` 里的 `align_delivery_video_to_reference_format()` 已锁定一条最终 MP4 封装修复逻辑。
+- 当前保留的关键策略是：音频按视频流时长 `atrim`，并在最终参考格式对齐时保持 `-use_editlist 1`。
+- 这条修复用于避免 `B 帧 + make_zero` 组合造成的视频流 `start_time` 非零、音频尾长偏移和最终成片音画错位。
+- 未经用户明确同意，不得修改这部分逻辑，也不要恢复旧的 `-avoid_negative_ts make_zero` 行为。
+
 ## 批量运行
 
 跑所有工作间：

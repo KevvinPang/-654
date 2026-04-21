@@ -15,9 +15,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, cast
@@ -69,9 +71,18 @@ DEFAULT_TTS_RATE = "+8%"
 DEFAULT_TTS_VOLUME = "+0%"
 DEFAULT_TTS_PITCH = "+0Hz"
 DEFAULT_DUCK_VOLUME = 0.0
-DEFAULT_ENABLE_RANDOM_EPISODE_FLIP = False
+DEFAULT_ENABLE_RANDOM_EPISODE_FLIP = True
 DEFAULT_RANDOM_EPISODE_FLIP_RATIO = 0.40
-DEFAULT_ENABLE_RANDOM_VISUAL_FILTER = False
+DEFAULT_ENABLE_RANDOM_VISUAL_FILTER = True
+REFERENCE_SPEED_FACTOR_MIN = 0.90
+REFERENCE_SPEED_FACTOR_MAX = 1.12
+REFERENCE_SPEED_ESTIMATION_MIN_DELTA = 0.012
+REFERENCE_SPEED_ESTIMATION_MIN_RUN_LENGTH = 4
+REFERENCE_SPEED_ESTIMATION_MIN_SPAN_SECONDS = 2.0
+OUTPUT_WATERMARK_MIN_FONT_SIZE = 24
+OUTPUT_WATERMARK_MAX_FONT_SIZE = 44
+OUTPUT_WATERMARK_ALPHA = 0.18
+OUTPUT_WATERMARK_BORDER_ALPHA = 0.26
 VISUAL_FILTER_PRESETS: Tuple[Tuple[str, str, str], ...] = (
     (
         "电影暖调",
@@ -129,11 +140,12 @@ TARGET_SUBTITLE_CPS = 4.8
 TARGET_TTS_CPS = 4.6
 ESTIMATED_TTS_CPS = 4.2
 MIN_TTS_SPEED_FACTOR = 0.94
-MAX_TTS_SPEED_FACTOR = 1.28
+MAX_TTS_SPEED_FACTOR = 1.35
 MAX_TTS_SYNTH_RATE_FACTOR = 1.75
 MIN_TTS_RATE_BOOST_MULTIPLIER = 1.04
 MAX_TTS_RESYNTH_PASSES = 3
-MAX_TTS_TIMELINE_OVERFLOW_SECONDS = 0.45
+MAX_TTS_TIMELINE_OVERFLOW_SECONDS = 0.10
+MAX_UNIFORM_TTS_RATE_FACTOR = 1.20
 MAX_TTS_GROUP_REFINEMENT_PASSES = 12
 LOCAL_TTS_MICRO_SPEED_FACTOR = 1.10
 MIN_AUDIO_STRETCH_SPEED = 0.88
@@ -141,9 +153,14 @@ TTS_ACTIVITY_RMS_WINDOW_SECONDS = 0.02
 TTS_ACTIVITY_RMS_HOP_SECONDS = 0.01
 TTS_ACTIVITY_MIN_RMS = 0.0012
 TTS_ACTIVITY_HEAD_PAD_SECONDS = 0.02
-TTS_ACTIVITY_TAIL_PAD_SECONDS = 0.08
+TTS_ACTIVITY_TAIL_PAD_SECONDS = 0.12
 TTS_ACTIVITY_MIN_TRIM_LEAD_SECONDS = 0.05
 TTS_ACTIVITY_MIN_TRIM_TAIL_SECONDS = 0.07
+TTS_ACTIVITY_HEAD_EXTENSION_RATIO = 0.62
+TTS_ACTIVITY_HEAD_MAX_EXTENSION_SECONDS = 0.06
+TTS_ACTIVITY_TAIL_EXTENSION_RATIO = 0.58
+TTS_ACTIVITY_TAIL_MAX_EXTENSION_SECONDS = 0.10
+TTS_BOUNDARY_PREPARE_HEAD_PAD_SECONDS = 0.01
 NARRATION_DUCK_MIN_SPAN_SECONDS = 0.10
 NARRATION_DUCK_MERGE_GAP_SECONDS = 0.12
 STRICT_NARRATION_DUCK_HEAD_PAD_SECONDS = 0.0
@@ -151,6 +168,8 @@ STRICT_NARRATION_DUCK_TAIL_PAD_SECONDS = 0.0
 STRICT_NARRATION_DUCK_MIN_SPAN_SECONDS = 0.06
 STRICT_NARRATION_DUCK_MERGE_GAP_SECONDS = 0.03
 STRICT_NARRATION_DUCK_MATCH_PADDING_SECONDS = 0.12
+STRICT_TTS_MIN_SENTENCE_GAP_SECONDS = 0.09
+STRICT_TTS_RENDER_TAIL_HOLD_SECONDS = 0.08
 NARRATION_REWRITE_SOFT_OVERFLOW_UNITS = 3
 TTS_REQUEST_TIMEOUT_SECONDS = 45
 MAX_TTS_SEGMENT_SPLIT_DEPTH = 3
@@ -206,6 +225,9 @@ REWRITE_REQUEST_TIMEOUT_SECONDS = 100
 REWRITE_REQUEST_MAX_ATTEMPTS = 1
 REWRITE_SPLIT_RETRY_MIN_CHUNK_SIZE = 1
 REWRITE_SPLIT_RETRY_MAX_CHUNK_SIZE = 2
+REWRITE_REQUEST_HEARTBEAT_SECONDS = 15.0
+REWRITE_REMOTE_BREAKER_CONSECUTIVE_LIMIT = 3
+REWRITE_REMOTE_BREAKER_MIN_ELAPSED_SECONDS = 25.0
 REWRITE_REQUEST_MAX_TOKENS = 768
 REWRITE_LARGE_BATCH_LOCAL_THRESHOLD = 64
 SUBTITLE_OCR_LOCAL_THRESHOLD = 96
@@ -218,7 +240,9 @@ AUDIO_CLASSIFICATION_CLUSTER_SIMILARITY = 0.87
 AUDIO_CLASSIFICATION_NARRATOR_SIMILARITY = 0.89
 AUDIO_CLASSIFICATION_DIALOGUE_MAX_NARRATOR_SIMILARITY = 0.79
 AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS = 0.58
+AUDIO_CLASSIFICATION_ANTI_NARRATOR_WEAK_ISLAND_SECONDS = 1.05
 AUDIO_CLASSIFICATION_DIALOGUE_RECOVERY_SECONDS = 1.65
+AUDIO_ANTI_NARRATOR_PROTECTION_MIN_CONFIDENCE = 0.90
 AUDIO_CLASSIFICATION_SHORT_WINDOW_NARRATION_SECONDS = 0.38
 AUDIO_TIMELINE_WINDOW_SECONDS = 0.78
 AUDIO_TIMELINE_HOP_SECONDS = 0.24
@@ -281,6 +305,16 @@ LOCAL_VOICE_BOUNDARY_CONFIRM_WINDOWS = 2
 LOCAL_VOICE_BOUNDARY_RUN_HISTORY = 3
 LOCAL_VOICE_BOUNDARY_RUN_LOOKAHEAD = 3
 LOCAL_VOICE_BOUNDARY_MIN_RUN_SHIFT_SECONDS = 0.06
+LOCAL_VOICE_BOUNDARY_MAX_PASSES = 3
+CLEAN_AUDIO_TAIL_WINDOW_SECONDS = 0.30
+CLEAN_AUDIO_TAIL_HOP_SECONDS = 0.04
+CLEAN_AUDIO_TAIL_MAX_DELAY_SECONDS = 1.20
+CLEAN_AUDIO_TAIL_MIN_DELAY_SECONDS = 0.08
+CLEAN_AUDIO_TAIL_PAD_SECONDS = 0.05
+CLEAN_AUDIO_TAIL_MIN_RUN_SHIFT_SECONDS = 0.06
+SEEK_SAFE_KEYFRAME_INTERVAL_SECONDS = 0.5
+DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS = 0.0
+INTERMEDIATE_SEGMENT_SUFFIX = ".mkv"
 AUDIO_TIMELINE_PROFILE_MIN_CONFIDENCE = 0.34
 AUDIO_TIMELINE_PROFILE_MIN_SPEECH_RATIO = 0.14
 AUDIO_TIMELINE_SECTION_COUNT = 12
@@ -326,6 +360,71 @@ def hidden_subprocess_kwargs() -> Dict[str, object]:
         startupinfo.wShowWindow = int(getattr(subprocess, "SW_HIDE", 0))
         kwargs["startupinfo"] = startupinfo
     return kwargs
+
+
+def build_seek_safe_x264_args(
+    fps: float,
+    crf: str = "20",
+    keyframe_interval_seconds: float = SEEK_SAFE_KEYFRAME_INTERVAL_SECONDS,
+) -> List[str]:
+    normalized_fps = max(1.0, float(fps or 0.0))
+    raw_interval = SEEK_SAFE_KEYFRAME_INTERVAL_SECONDS
+    try:
+        raw_interval = float(keyframe_interval_seconds)
+    except (TypeError, ValueError):
+        raw_interval = SEEK_SAFE_KEYFRAME_INTERVAL_SECONDS
+    if raw_interval <= 0.0:
+        normalized_interval = 1.0 / normalized_fps
+    else:
+        normalized_interval = max(1.0 / normalized_fps, raw_interval)
+    gop_frames = max(1, int(round(normalized_fps * normalized_interval)))
+    return [
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        str(crf),
+        "-pix_fmt",
+        "yuv420p",
+        "-bf",
+        "0",
+        "-g",
+        str(gop_frames),
+        "-keyint_min",
+        str(gop_frames),
+        "-sc_threshold",
+        "0",
+        "-force_key_frames",
+        f"expr:gte(t,n_forced*{normalized_interval:.3f})",
+    ]
+
+
+def delivery_visual_fps(fps: float) -> float:
+    normalized_fps = max(1.0, float(fps or 0.0))
+    return normalized_fps
+
+
+def intermediate_audio_encode_args(output_path: Path) -> List[str]:
+    if output_path.suffix.lower() == INTERMEDIATE_SEGMENT_SUFFIX:
+        return [
+            "-c:a",
+            "pcm_s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+        ]
+    return [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+    ]
 
 
 def run_subprocess_hidden(*popenargs, **kwargs):
@@ -613,10 +712,15 @@ class CloneSettings:
     disable_ai_narration_rewrite: bool = False
     prefer_funasr_sentence_pauses: bool = False
     force_no_narration_mode: bool = False
-    narration_background_percent: float = 15.0
+    narration_background_percent: float = 3.0
+    output_watermark_text: str = ""
     enable_random_episode_flip: bool = DEFAULT_ENABLE_RANDOM_EPISODE_FLIP
     random_episode_flip_ratio: float = DEFAULT_RANDOM_EPISODE_FLIP_RATIO
     enable_random_visual_filter: bool = DEFAULT_ENABLE_RANDOM_VISUAL_FILTER
+    reference_speed_factor: float = 1.0
+    cover_image_path: Optional[Path] = None
+    bgm_audio_path: Optional[Path] = None
+    bgm_volume_percent: float = 12.0
     match_threshold: float = 0.70
     frame_interval: float = FRAME_INTERVAL
     keep_temp: bool = False
@@ -637,11 +741,19 @@ class CloneResult:
 
 
 @dataclass(frozen=True)
+class TTSBoundary:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass(frozen=True)
 class TTSAttemptResult:
     success: bool
     used_voice: str = ""
     error_text: str = ""
     provider: str = ""
+    boundaries: Tuple[TTSBoundary, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -967,6 +1079,8 @@ def _repair_contextual_ocr_phrases_conservative(entries: Sequence[SubtitleEntry]
 
         candidate = text
         next_text = normalize_subtitle_text(entries[idx + 1].text) if idx + 1 < len(entries) else ""
+        if re.search(r"^一家(?=白月光)", candidate):
+            candidate = re.sub(r"^一家(?=白月光)", "一旁的", candidate, count=1)
         if next_text:
             next_norm = cleanup_rewrite_text(next_text)
             clause_parts = [
@@ -1265,6 +1379,81 @@ def normalize_subtitle_text(raw: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"([\u4e00-\u9fff])\s+([\u4e00-\u9fff])", r"\1\2", text)
     return text
+
+
+def normalize_tts_boundary_alignment_text(raw: str) -> str:
+    normalized = normalize_subtitle_text(raw)
+    if not normalized:
+        return ""
+    return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", normalized)
+
+
+def tts_boundary_alignment_units(raw: str) -> int:
+    return len(normalize_tts_boundary_alignment_text(raw))
+
+
+def serialize_tts_boundaries(boundaries: Sequence[TTSBoundary]) -> List[Dict[str, object]]:
+    return [
+        {
+            "start": round(float(boundary.start), 6),
+            "end": round(float(boundary.end), 6),
+            "text": normalize_subtitle_text(boundary.text),
+        }
+        for boundary in boundaries
+        if normalize_subtitle_text(boundary.text)
+    ]
+
+
+def deserialize_tts_boundaries(payload: object) -> Tuple[TTSBoundary, ...]:
+    if not isinstance(payload, list):
+        return ()
+
+    boundaries: List[TTSBoundary] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = max(0.0, float(item.get("start", 0.0) or 0.0))
+            end = max(start + 0.01, float(item.get("end", start + 0.01) or (start + 0.01)))
+        except (TypeError, ValueError):
+            continue
+        text = normalize_subtitle_text(str(item.get("text", "") or ""))
+        if not text:
+            continue
+        boundaries.append(TTSBoundary(start=start, end=end, text=text))
+    return tuple(boundaries)
+
+
+def parse_edge_tts_boundary_metadata(metadata_path: Path) -> Tuple[TTSBoundary, ...]:
+    if not metadata_path.exists():
+        return ()
+
+    boundaries: List[TTSBoundary] = []
+    try:
+        with metadata_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    item = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(item, dict) or item.get("type") != "WordBoundary":
+                    continue
+                try:
+                    start = max(0.0, float(item.get("offset", 0.0) or 0.0) / 10_000_000.0)
+                    duration = max(0.0, float(item.get("duration", 0.0) or 0.0) / 10_000_000.0)
+                except (TypeError, ValueError):
+                    continue
+                text = normalize_subtitle_text(str(item.get("text", "") or ""))
+                if not text:
+                    continue
+                end = max(start + 0.01, start + duration)
+                boundaries.append(TTSBoundary(start=start, end=end, text=text))
+    except OSError:
+        return ()
+    return tuple(boundaries)
 
 
 def extract_ai_text_scalar(value: object) -> str:
@@ -1722,6 +1911,32 @@ def normalize_percent_value(
     return clamp(percent, min_value, max_value)
 
 
+def normalize_reference_speed_factor(
+    value: object,
+    default: float = 1.0,
+) -> float:
+    raw_value = value
+    if isinstance(raw_value, str):
+        raw_value = raw_value.strip()
+        if raw_value.lower().endswith("x"):
+            raw_value = raw_value[:-1].strip()
+        if raw_value.endswith("%"):
+            raw_value = raw_value[:-1].strip()
+            try:
+                return clamp(float(raw_value) / 100.0, REFERENCE_SPEED_FACTOR_MIN, REFERENCE_SPEED_FACTOR_MAX)
+            except (TypeError, ValueError):
+                raw_value = default
+    try:
+        factor = float(raw_value)
+    except (TypeError, ValueError):
+        factor = float(default)
+    if factor >= 10.0:
+        factor /= 100.0
+    if factor <= 0:
+        factor = float(default)
+    return clamp(factor, REFERENCE_SPEED_FACTOR_MIN, REFERENCE_SPEED_FACTOR_MAX)
+
+
 def narration_background_duck_volume(percent: float) -> float:
     ratio = clamp(float(percent) / 100.0, 0.0, 1.0)
     return clamp(ratio * 1.10 / 0.88, 0.0, 1.50)
@@ -1791,7 +2006,7 @@ def derive_uniform_tts_rate(group_states: Sequence[Dict[str, object]], base_rate
             break
 
     min_uniform_factor = max(MIN_TTS_SPEED_FACTOR, base_factor - 0.06)
-    max_uniform_factor = min(MAX_TTS_SYNTH_RATE_FACTOR, max(base_factor, 1.12))
+    max_uniform_factor = min(MAX_TTS_SYNTH_RATE_FACTOR, max(base_factor, MAX_UNIFORM_TTS_RATE_FACTOR))
     multiplier = clamp(
         weighted_avg * 0.40 + weighted_p75 * 0.35 + weighted_p90 * 0.25,
         min_uniform_factor / max(base_factor, 0.01),
@@ -2046,6 +2261,8 @@ def request_ai_json_object(
     max_tokens: int = 8192,
     max_attempts: int = 1,
     retry_delay: float = 1.2,
+    heartbeat_seconds: float = 0.0,
+    heartbeat_label: str = "",
 ) -> Optional[object]:
     def record(detail: str) -> None:
         message = detail.strip()
@@ -2063,6 +2280,31 @@ def request_ai_json_object(
     attempts = max(1, int(max_attempts or 1))
     for attempt_index in range(attempts):
         attempt = attempt_index + 1
+        request_started_at = time.perf_counter()
+        heartbeat_stop: Optional[threading.Event] = None
+        heartbeat_thread: Optional[threading.Thread] = None
+        effective_heartbeat_label = (heartbeat_label or label).strip()
+        if log_func and heartbeat_seconds > 0:
+            log_func(
+                f"  {effective_heartbeat_label}: request start "
+                f"({attempt}/{attempts}, timeout {int(timeout)}s)"
+            )
+            heartbeat_stop = threading.Event()
+
+            def heartbeat_worker() -> None:
+                while heartbeat_stop is not None and not heartbeat_stop.wait(heartbeat_seconds):
+                    elapsed = time.perf_counter() - request_started_at
+                    log_func(
+                        f"  {effective_heartbeat_label}: waiting {elapsed:.0f}s "
+                        f"({attempt}/{attempts})"
+                    )
+
+            heartbeat_thread = threading.Thread(
+                target=heartbeat_worker,
+                name="ai_request_heartbeat",
+                daemon=True,
+            )
+            heartbeat_thread.start()
         try:
             response = requests.post(
                 api_url,
@@ -2077,11 +2319,15 @@ def request_ai_json_object(
                         {"role": "user", "content": user_prompt},
                     ],
                     "temperature": temperature,
-                    "max_tokens": max_tokens,
+                "max_tokens": max_tokens,
                 },
                 timeout=timeout,
             )
         except Exception as exc:
+            if heartbeat_stop is not None:
+                heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=0.2)
             if attempt < attempts and is_retryable_ai_request_exception(exc):
                 record(
                     f"{label} transient request issue ({attempt}/{attempts}): "
@@ -2091,6 +2337,17 @@ def request_ai_json_object(
                 continue
             record(f"{label} request failed: {type(exc).__name__}: {exc}")
             return None
+        else:
+            if heartbeat_stop is not None:
+                heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join(timeout=0.2)
+            if log_func and heartbeat_seconds > 0:
+                elapsed = time.perf_counter() - request_started_at
+                log_func(
+                    f"  {effective_heartbeat_label}: response received in {elapsed:.1f}s "
+                    f"({attempt}/{attempts})"
+                )
 
         try:
             response.raise_for_status()
@@ -2421,6 +2678,10 @@ def request_rewrite_batch(
         temperature = 0.15
 
     label = "AI rewrite retry batch" if force_variation else "AI rewrite batch"
+    heartbeat_label = (
+        f"{label} ({len(payload_entries)} lines)"
+        + (" retry" if force_variation else "")
+    )
     parsed = ai_generator.request_json_object(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
@@ -2432,6 +2693,8 @@ def request_rewrite_batch(
         max_tokens=REWRITE_REQUEST_MAX_TOKENS,
         max_attempts=REWRITE_REQUEST_MAX_ATTEMPTS,
         retry_delay=1.4,
+        heartbeat_seconds=REWRITE_REQUEST_HEARTBEAT_SECONDS,
+        heartbeat_label=heartbeat_label,
     )
     if parsed is None:
         return []
@@ -2452,6 +2715,7 @@ def request_rewrite_batch_with_split_retry(
     next_context: Sequence[Dict[str, object]],
     *,
     force_variation: bool = False,
+    allow_split_retry: bool = True,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> List[Dict[str, object]]:
     items = request_rewrite_batch(
@@ -2467,9 +2731,13 @@ def request_rewrite_batch_with_split_retry(
 
     request_issue = str(ai_generator.last_rewrite_issue or ai_generator.last_ai_issue or "").strip()
     if (
+        not allow_split_retry
+        or
         not ai_issue_supports_smaller_chunk(request_issue)
         or len(payload_entries) <= REWRITE_SPLIT_RETRY_MIN_CHUNK_SIZE
     ):
+        if log_func and not allow_split_retry and len(payload_entries) > 1:
+            log_func("  AI 改写连续超时：本批跳过拆小重试，直接转本地兜底")
         return []
 
     smaller_chunk_size = max(
@@ -2739,14 +3007,42 @@ def merge_rendered_entries(
     return merged
 
 
+def snap_time_up_to_grid(value: float, step: float) -> float:
+    if step <= 0:
+        return max(0.0, float(value))
+    scaled = max(0.0, float(value)) / step
+    return round(math.ceil(scaled - 1e-9) * step, 6)
+
+
+def snap_time_down_to_grid(value: float, step: float) -> float:
+    if step <= 0:
+        return max(0.0, float(value))
+    scaled = max(0.0, float(value)) / step
+    return round(math.floor(scaled + 1e-9) * step, 6)
+
+
 def normalize_delivery_subtitle_timeline(entries: Sequence[SubtitleEntry]) -> List[SubtitleEntry]:
+    return normalize_delivery_subtitle_timeline_for_fps(entries)
+
+
+def normalize_delivery_subtitle_timeline_for_fps(
+    entries: Sequence[SubtitleEntry],
+    fps: float = 0.0,
+) -> List[SubtitleEntry]:
     if not entries:
         return []
 
+    frame_step = 1.0 / float(fps) if float(fps or 0.0) > 1.0 else 0.0
+    min_gap = max(DELIVERY_SUBTITLE_MIN_GAP_SECONDS, frame_step)
+    min_duration = max(0.05, frame_step)
     normalized_entries: List[SubtitleEntry] = []
     for entry in entries:
         start = max(0.0, float(entry.start))
-        end = max(start + 0.05, float(entry.end))
+        end = max(start + min_duration, float(entry.end))
+        if frame_step > 0.0:
+            start = snap_time_up_to_grid(start, frame_step)
+            end = snap_time_up_to_grid(end, frame_step)
+            end = max(start + min_duration, end)
         normalized_entries.append(clone_subtitle_entry(entry, start=start, end=end))
 
     for index, entry in enumerate(normalized_entries):
@@ -2755,20 +3051,27 @@ def normalize_delivery_subtitle_timeline(entries: Sequence[SubtitleEntry]) -> Li
         next_entry = normalized_entries[index + 1]
         next_start = max(0.0, float(next_entry.start))
         end = float(entry.end)
-        if end > next_start - DELIVERY_SUBTITLE_MIN_GAP_SECONDS:
-            clipped_end = max(float(entry.start) + 0.01, next_start - DELIVERY_SUBTITLE_MIN_GAP_SECONDS)
+        if end > next_start - min_gap:
+            clipped_end = max(float(entry.start) + min_duration, next_start - min_gap)
+            if frame_step > 0.0:
+                clipped_end = snap_time_down_to_grid(clipped_end, frame_step)
+                clipped_end = max(float(entry.start) + min_duration, clipped_end)
             normalized_entries[index] = clone_subtitle_entry(entry, end=min(end, clipped_end))
     return normalized_entries
 
 
-def build_delivery_subtitle_entries(entries: Sequence[SubtitleEntry]) -> List[SubtitleEntry]:
+def build_delivery_subtitle_entries(
+    entries: Sequence[SubtitleEntry],
+    fps: float = 0.0,
+) -> List[SubtitleEntry]:
     delivered: List[SubtitleEntry] = []
-    visible_entries = normalize_delivery_subtitle_timeline(
+    visible_entries = normalize_delivery_subtitle_timeline_for_fps(
         [
             entry
             for entry in entries
             if entry.entry_type != "watermark" and normalize_subtitle_text(entry.text)
-        ]
+        ],
+        fps=fps,
     )
     visible_entries = [
         entry
@@ -3739,7 +4042,13 @@ def looks_like_narration_fragment(entry: SubtitleEntry) -> bool:
     return False
 
 
-def join_narration_text(left: str, right: str, gap: float) -> str:
+def join_narration_text(
+    left: str,
+    right: str,
+    gap: float,
+    *,
+    allow_gap_pause: bool = True,
+) -> str:
     left_text = normalize_subtitle_text(left)
     right_text = normalize_subtitle_text(right)
     if not left_text:
@@ -3755,7 +4064,18 @@ def join_narration_text(left: str, right: str, gap: float) -> str:
     ):
         merged = left_text + "，" + right_text
     else:
-        separator = "，" if gap >= 0.25 and CJK_RE.search(left_text + right_text) else ""
+        separator = ""
+        if (
+            allow_gap_pause
+            and
+            gap >= 0.25
+            and CJK_RE.search(left_text + right_text)
+            and not probably_incomplete_text(left_text)
+            and not looks_like_dangling_tts_tail(left_text)
+            and not starts_with_soft_continuation(right_text)
+            and not starts_with_structural_continuation(right_text)
+        ):
+            separator = "，"
         merged = left_text + separator + right_text
     return normalize_subtitle_text(merged)
 
@@ -4155,7 +4475,12 @@ def join_narration_group_text(entries: Sequence[SubtitleEntry]) -> str:
         if previous is None:
             merged = normalize_subtitle_text(entry.text)
         else:
-            merged = join_narration_text(merged, entry.text, entry.start - previous.end)
+            merged = join_narration_text(
+                merged,
+                entry.text,
+                entry.start - previous.end,
+                allow_gap_pause=False,
+            )
         previous = entry
     return normalize_spoken_narration_text(merged)
 
@@ -4573,6 +4898,111 @@ def distribute_group_rendered_entries(
     return rendered
 
 
+def transform_tts_boundaries_for_final_timeline(
+    boundaries: Sequence[TTSBoundary],
+    *,
+    group_start: float,
+    clip_duration: float,
+    speed: Optional[float],
+    trim_start: float,
+) -> Tuple[TTSBoundary, ...]:
+    transformed: List[TTSBoundary] = []
+    speed_factor = speed if speed is not None and speed > 0.0 else 1.0
+    for boundary in boundaries:
+        start = float(boundary.start) / speed_factor - trim_start
+        end = float(boundary.end) / speed_factor - trim_start
+        if end <= 0.0 or start >= clip_duration:
+            continue
+        start = clamp(start, 0.0, clip_duration)
+        end = clamp(max(start + 0.01, end), start + 0.01, clip_duration)
+        transformed.append(
+            TTSBoundary(
+                start=group_start + start,
+                end=group_start + end,
+                text=boundary.text,
+            )
+        )
+    return tuple(transformed)
+
+
+def render_entries_from_tts_boundaries(
+    entries: Sequence[SubtitleEntry],
+    boundaries: Sequence[TTSBoundary],
+    *,
+    fallback_start: float,
+    fallback_end: float,
+) -> List[SubtitleEntry]:
+    group_entries = list(entries)
+    transformed_boundaries = list(boundaries)
+    if not group_entries or not transformed_boundaries:
+        return []
+
+    if len(group_entries) == 1:
+        start = transformed_boundaries[0].start
+        end = max(start + 0.01, fallback_end, transformed_boundaries[-1].end)
+        entry = group_entries[0]
+        return [
+            SubtitleEntry(
+                index=entry.index,
+                start=start,
+                end=end,
+                text=entry.text,
+                entry_type=entry.entry_type,
+            )
+        ]
+
+    if len(transformed_boundaries) < len(group_entries):
+        return []
+
+    entry_units = [
+        max(1, tts_boundary_alignment_units(normalize_spoken_narration_text(entry.text)) or tts_boundary_alignment_units(entry.text))
+        for entry in group_entries
+    ]
+    boundary_units = [max(1, tts_boundary_alignment_units(boundary.text)) for boundary in transformed_boundaries]
+    total_entry_units = sum(entry_units)
+    total_boundary_units = sum(boundary_units)
+    if total_entry_units <= 0 or total_boundary_units <= 0:
+        return []
+    if min(total_entry_units, total_boundary_units) / max(total_entry_units, total_boundary_units) < 0.55:
+        return []
+
+    start_indices = [0]
+    consumed_boundary_units = 0
+    boundary_index = 0
+    cumulative_entry_units = 0
+    for entry_index in range(1, len(group_entries)):
+        cumulative_entry_units += entry_units[entry_index - 1]
+        target_boundary_units = total_boundary_units * cumulative_entry_units / max(1, total_entry_units)
+        min_index = start_indices[-1] + 1
+        max_index = len(transformed_boundaries) - (len(group_entries) - entry_index)
+        while (
+            boundary_index + 1 <= max_index
+            and consumed_boundary_units + boundary_units[boundary_index] < target_boundary_units
+        ):
+            consumed_boundary_units += boundary_units[boundary_index]
+            boundary_index += 1
+        boundary_index = int(clamp(boundary_index, min_index, max_index))
+        start_indices.append(boundary_index)
+
+    rendered: List[SubtitleEntry] = []
+    for entry_index, entry in enumerate(group_entries):
+        start = transformed_boundaries[start_indices[entry_index]].start
+        if entry_index + 1 < len(group_entries):
+            end = max(start + 0.01, transformed_boundaries[start_indices[entry_index + 1]].start)
+        else:
+            end = max(start + 0.01, fallback_end, transformed_boundaries[-1].end)
+        rendered.append(
+            SubtitleEntry(
+                index=entry.index,
+                start=start,
+                end=end,
+                text=entry.text,
+                entry_type=entry.entry_type,
+            )
+        )
+    return rendered
+
+
 def choose_display_split_position(
     text: str,
     max_units: int,
@@ -4780,6 +5210,38 @@ def move_output_file(
                     candidates.append(fallback_path)
 
     raise RuntimeError(f"could not move {artifact_label} file to {preferred_path}") from last_error
+
+
+def sync_cover_output_file(
+    cover_image_path: Optional[Path],
+    output_dir: Path,
+    stem: str,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Optional[Path]:
+    prefix = f"{stem}_cover"
+    source = Path(cover_image_path).resolve() if cover_image_path else None
+    preferred_output: Optional[Path] = None
+    if source is not None and source.exists() and source.is_file():
+        preferred_output = output_dir / f"{prefix}{source.suffix.lower()}"
+
+    for candidate in output_dir.glob(f"{prefix}.*"):
+        if preferred_output is not None and candidate.resolve() == preferred_output.resolve():
+            continue
+        safe_unlink_file(candidate)
+
+    if source is None:
+        return None
+    if not source.exists() or not source.is_file():
+        if log_func:
+            log_func(f"封面图片不存在，已跳过: {source}")
+        return None
+
+    assert preferred_output is not None
+    preferred_output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, preferred_output)
+    if log_func:
+        log_func(f"封面已输出: {preferred_output}")
+    return preferred_output
 
 
 def datetime_now_text() -> str:
@@ -6312,7 +6774,7 @@ class VideoProcessor:
                 "-select_streams",
                 "v:0",
                 "-show_entries",
-                "stream=width,height,avg_frame_rate",
+                "stream=width,height,avg_frame_rate,duration,nb_frames",
                 "-show_entries",
                 "format=duration",
                 "-of",
@@ -6330,11 +6792,21 @@ class VideoProcessor:
             raise RuntimeError(result.stderr.strip() or "ffprobe failed")
         payload = json.loads(result.stdout)
         stream = payload["streams"][0]
+        stream_duration = stream.get("duration")
+        if not stream_duration:
+            try:
+                frame_count = int(str(stream.get("nb_frames", "") or "0"))
+                fps_ratio = Fraction(str(stream.get("avg_frame_rate", "") or "0"))
+                if frame_count > 0 and fps_ratio > 0:
+                    stream_duration = str(frame_count / float(fps_ratio))
+            except Exception:
+                stream_duration = ""
         return {
             "width": str(stream["width"]),
             "height": str(stream["height"]),
             "fps": stream["avg_frame_rate"],
             "duration": str(payload["format"]["duration"]),
+            "video_duration": str(stream_duration or payload["format"]["duration"]),
         }
 
     def cut_segment(
@@ -6413,41 +6885,68 @@ class VideoProcessor:
                 "20",
                 "-pix_fmt",
                 "yuv420p",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "160k",
-                "-ar",
-                "48000",
-                "-ac",
-                "2",
+                *intermediate_audio_encode_args(output),
                 str(output),
             ]
         )
-        result = run_subprocess_hidden(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=300,
-            check=False,
-        )
+        try:
+            result = run_subprocess_hidden(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=300,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                "ffmpeg cut timed out after 300s: "
+                f"{source.name} start={start:.3f}s duration={duration:.3f}s"
+            ) from exc
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip()[:400] or "ffmpeg cut failed")
 
     def concat_videos(self, concat_list: Path, output: Path) -> None:
         valid_lines: List[str] = []
+        input_suffixes: set[str] = set()
         for line in concat_list.read_text(encoding="utf-8", errors="ignore").splitlines():
             if not line.startswith("file '"):
                 continue
             path_text = line[len("file '") : -1]
-            if Path(path_text).exists():
+            input_path = Path(path_text)
+            if input_path.exists():
                 valid_lines.append(line)
+                input_suffixes.add(input_path.suffix.lower())
         if not valid_lines:
             raise RuntimeError("没有可拼接的片段。")
         concat_list.write_text("\n".join(valid_lines) + "\n", encoding="utf-8")
-        concat_commands = [
+        concat_commands: List[List[str]] = []
+        if input_suffixes and input_suffixes <= {".mp4"}:
+            concat_commands.append(
+                [
+                    str(self.ffmpeg),
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostdin",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_list),
+                    "-fflags",
+                    "+genpts",
+                    "-c",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                    str(output),
+                ]
+            )
+        concat_commands.append(
             [
                 str(self.ffmpeg),
                 "-hide_banner",
@@ -6463,25 +6962,6 @@ class VideoProcessor:
                 str(concat_list),
                 "-fflags",
                 "+genpts",
-                "-c",
-                "copy",
-                "-movflags",
-                "+faststart",
-                str(output),
-            ],
-            [
-                str(self.ffmpeg),
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-nostdin",
-                "-y",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(concat_list),
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -6494,22 +6974,32 @@ class VideoProcessor:
                 "aac",
                 "-b:a",
                 "192k",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-use_editlist",
+                "0",
                 "-movflags",
                 "+faststart",
                 str(output),
-            ],
-        ]
+            ]
+        )
         last_error = ""
         for command in concat_commands:
-            result = run_subprocess_hidden(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=900,
-                check=False,
-            )
+            try:
+                result = run_subprocess_hidden(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=900,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    "ffmpeg concat timed out after 900s: "
+                    f"{output.name}"
+                ) from exc
             if result.returncode == 0 and output.exists() and output.stat().st_size > 0:
                 return
             last_error = result.stderr.strip()[:400]
@@ -6525,6 +7015,8 @@ class VideoProcessor:
         *,
         filter_mode: str = "vf",
     ) -> None:
+        profile = self.probe_video(source)
+        video_fps = fps_to_float(profile["fps"])
         command = [
             str(self.ffmpeg),
             "-hide_banner",
@@ -6532,6 +7024,8 @@ class VideoProcessor:
             "error",
             "-nostdin",
             "-y",
+            "-fflags",
+            "+genpts",
             "-i",
             str(source),
         ]
@@ -6548,7 +7042,7 @@ class VideoProcessor:
             command.extend(
                 [
                     "-vf",
-                    filter_expr,
+                    f"setpts=PTS-STARTPTS,{filter_expr}",
                     "-map",
                     "0:v?",
                 ]
@@ -6557,16 +7051,11 @@ class VideoProcessor:
             [
                 "-map",
                 "0:a?",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "20",
-                "-pix_fmt",
-                "yuv420p",
+                *build_seek_safe_x264_args(video_fps, crf="20"),
                 "-c:a",
                 "copy",
+                "-avoid_negative_ts",
+                "make_zero",
                 "-movflags",
                 "+faststart",
                 str(output),
@@ -7766,6 +8255,123 @@ def run_funasr_reference_transcription(
     return sentence_entries
 
 
+def run_funasr_media_transcription(
+    media_path: Path,
+    video_processor: VideoProcessor,
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+    log_name: str = "Rendered audio subtitle lock",
+) -> List[SubtitleEntry]:
+    audio_path = extract_reference_audio_for_classification(media_path, video_processor, log_func=None)
+    if audio_path is None or not audio_path.exists():
+        return []
+
+    python_exe, source_dir = resolve_funasr_runtime()
+    helper_path = Path(__file__).with_name("funasr_transcribe_helper.py")
+    if python_exe is None or not helper_path.exists():
+        if log_func:
+            log_func(f"  {log_name}: FunASR runtime unavailable")
+        return []
+
+    cache_dir = Path(__file__).parent / "audio_cache" / "funasr"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    request_payload = {
+        "audio_path": str(audio_path),
+        "funasr_source": str(source_dir) if source_dir is not None else "",
+        "model": FUNASR_MODEL_SOURCE,
+        "vad_model": FUNASR_VAD_MODEL_SOURCE,
+        "punc_model": FUNASR_PUNC_MODEL_SOURCE,
+        "batch_size_s": FUNASR_BATCH_SIZE_SECONDS,
+        "max_single_segment_time": 60000,
+    }
+    fingerprint = hashlib.sha1(
+        json.dumps(request_payload, ensure_ascii=False, sort_keys=True).encode("utf-8", errors="ignore")
+    ).hexdigest()[:20]
+    request_path = cache_dir / f"request_{fingerprint}.json"
+    output_path = cache_dir / f"output_{fingerprint}.json"
+    if not output_path.exists():
+        request_path.write_text(json.dumps(request_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        result = run_subprocess_hidden(
+            [
+                str(python_exe),
+                str(helper_path),
+                "--request",
+                str(request_path),
+                "--output",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=FUNASR_REQUEST_TIMEOUT_SECONDS,
+            check=False,
+        )
+        safe_unlink_file(request_path)
+        if result.returncode != 0 or not output_path.exists():
+            safe_unlink_file(output_path)
+            if log_func:
+                detail = summarize_for_log((result.stderr or result.stdout or "").strip(), limit=220) or "funasr helper failed"
+                log_func(f"  {log_name}: {detail}")
+            return []
+
+    try:
+        parsed = json.loads(output_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    audio_samples, sample_rate = load_wav_mono_samples(audio_path)
+    sentence_entries = build_funasr_sentence_entries_from_sentence_info(
+        parsed.get("sentence_info") or [],
+        samples=audio_samples,
+        sample_rate=sample_rate,
+    )
+    if log_func and sentence_entries:
+        log_func(f"  {log_name}: recognized {len(sentence_entries)} sentence(s)")
+    return sentence_entries
+
+
+def lock_delivery_subtitle_timeline_to_rendered_audio(
+    entries: Sequence[SubtitleEntry],
+    rendered_audio_path: Path,
+    video_processor: VideoProcessor,
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> List[SubtitleEntry]:
+    planned_entries = reindex_subtitle_entries(preserve_reference_timeline_entries(entries))
+    if not planned_entries or not rendered_audio_path.exists():
+        return list(planned_entries)
+
+    funasr_entries = run_funasr_media_transcription(
+        rendered_audio_path,
+        video_processor,
+        log_func=log_func,
+    )
+    if not funasr_entries:
+        return list(planned_entries)
+    if not should_use_funasr_primary_timeline(funasr_entries, planned_entries):
+        if log_func:
+            log_func("  Rendered audio subtitle lock skipped: insufficient audio coverage")
+        return list(planned_entries)
+
+    locked_entries, visual_fix_count = build_primary_entries_from_funasr_and_visual(
+        funasr_entries,
+        planned_entries,
+    )
+    if not locked_entries:
+        return list(planned_entries)
+
+    source_span = max(0.0, float(planned_entries[-1].end) - float(planned_entries[0].start))
+    locked_span = max(0.0, float(locked_entries[-1].end) - float(locked_entries[0].start))
+    if log_func:
+        log_func(
+            "  Delivery subtitle timeline locked to rendered audio: "
+            f"{len(locked_entries)} entries / audio {len(funasr_entries)} sentence(s) / "
+            f"visual assist {visual_fix_count} / span {source_span:.2f}s -> {locked_span:.2f}s"
+        )
+    return locked_entries
+
+
 def refine_reference_entries_with_funasr(
     entries: Sequence[SubtitleEntry],
     sentence_entries: Sequence[SubtitleEntry],
@@ -7877,11 +8483,31 @@ def load_wav_mono_samples(audio_path: Path) -> Tuple[Optional["np.ndarray"], int
     return samples, sample_rate
 
 
+def exact_wav_duration_seconds(audio_path: Path) -> Optional[float]:
+    if audio_path.suffix.lower() != ".wav":
+        return None
+    try:
+        with wave.open(str(audio_path), "rb") as handle:
+            frame_rate = int(handle.getframerate())
+            if frame_rate <= 0:
+                return None
+            return handle.getnframes() / frame_rate
+    except (wave.Error, OSError):
+        return None
+
+
+def audio_timeline_duration(audio_path: Path, video_processor: VideoProcessor) -> float:
+    exact_duration = exact_wav_duration_seconds(audio_path)
+    if exact_duration is not None:
+        return max(0.0, exact_duration)
+    return max(0.0, video_processor.probe_duration(audio_path))
+
+
 def detect_wav_tts_activity_window(
     audio_path: Path,
     video_processor: VideoProcessor,
 ) -> Tuple[float, float, float, float, float]:
-    total_duration = max(0.0, video_processor.probe_duration(audio_path))
+    total_duration = audio_timeline_duration(audio_path, video_processor)
     if audio_path.suffix.lower() != ".wav" or total_duration <= 0.05:
         return total_duration, 0.0, total_duration, 0.0, total_duration
 
@@ -7930,6 +8556,44 @@ def detect_wav_tts_activity_window(
 
     first_index = int(active_indices[0])
     last_index = int(active_indices[-1])
+    head_extension_threshold = max(TTS_ACTIVITY_MIN_RMS, activity_threshold * TTS_ACTIVITY_HEAD_EXTENSION_RATIO)
+    max_head_extension_frames = max(
+        1,
+        int(round(TTS_ACTIVITY_HEAD_MAX_EXTENSION_SECONDS / max(TTS_ACTIVITY_RMS_HOP_SECONDS, 1e-3))),
+    )
+    head_probe = first_index - 1
+    head_quiet_frames = 0
+    head_extension_frames = 0
+    while head_probe >= 0 and head_extension_frames < max_head_extension_frames:
+        probe_value = float(rms_values[head_probe])
+        if probe_value >= head_extension_threshold:
+            first_index = head_probe
+            head_quiet_frames = 0
+        else:
+            head_quiet_frames += 1
+            if head_quiet_frames >= 2:
+                break
+        head_probe -= 1
+        head_extension_frames += 1
+    tail_extension_threshold = max(TTS_ACTIVITY_MIN_RMS, activity_threshold * TTS_ACTIVITY_TAIL_EXTENSION_RATIO)
+    max_tail_extension_frames = max(
+        1,
+        int(round(TTS_ACTIVITY_TAIL_MAX_EXTENSION_SECONDS / max(TTS_ACTIVITY_RMS_HOP_SECONDS, 1e-3))),
+    )
+    tail_probe = last_index + 1
+    tail_quiet_frames = 0
+    tail_extension_frames = 0
+    while tail_probe < len(rms_values) and tail_extension_frames < max_tail_extension_frames:
+        probe_value = float(rms_values[tail_probe])
+        if probe_value >= tail_extension_threshold:
+            last_index = tail_probe
+            tail_quiet_frames = 0
+        else:
+            tail_quiet_frames += 1
+            if tail_quiet_frames >= 2:
+                break
+        tail_probe += 1
+        tail_extension_frames += 1
     speech_start = max(0.0, frame_starts[first_index] / sample_rate)
     speech_end = min(total_duration, frame_starts[last_index] / sample_rate + window_size / sample_rate)
     if speech_end <= speech_start + 0.03:
@@ -7945,16 +8609,17 @@ def detect_wav_tts_activity_window(
 def normalize_wav_tts_activity_in_place(
     audio_path: Path,
     video_processor: VideoProcessor,
-) -> Tuple[float, float, float]:
+) -> Tuple[float, float, float, float]:
     total_duration, trim_start, trim_end, speech_start, speech_end = detect_wav_tts_activity_window(
         audio_path,
         video_processor,
     )
     if total_duration <= 0.05:
-        return total_duration, 0.0, total_duration
+        return total_duration, 0.0, total_duration, 0.0
 
     lead_trim = max(0.0, trim_start)
     trail_trim = max(0.0, total_duration - trim_end)
+    applied_trim_start = 0.0
     should_trim = (
         audio_path.suffix.lower() == ".wav"
         and trim_end > trim_start + 0.05
@@ -7989,7 +8654,8 @@ def normalize_wav_tts_activity_in_place(
         if result.returncode == 0 and temp_path.exists() and temp_path.stat().st_size > 0:
             audio_path.unlink(missing_ok=True)
             temp_path.replace(audio_path)
-            total_duration = max(0.0, video_processor.probe_duration(audio_path))
+            total_duration = audio_timeline_duration(audio_path, video_processor)
+            applied_trim_start = trim_start
             speech_start = max(0.0, speech_start - trim_start)
             speech_end = max(speech_start + 0.01, min(total_duration, speech_end - trim_start))
         else:
@@ -8001,7 +8667,7 @@ def normalize_wav_tts_activity_in_place(
         speech_start + 0.01,
         max(total_duration, speech_start + 0.01),
     )
-    return total_duration, speech_start, speech_end
+    return total_duration, speech_start, speech_end, applied_trim_start
 
 
 def detect_narration_audio_duck_intervals(
@@ -8743,6 +9409,123 @@ def retime_dialogue_to_narration_runs_by_local_voice(
     updated_entries = list(entries)
     adjusted_boundaries = 0
     total_shift = 0.0
+    for _ in range(LOCAL_VOICE_BOUNDARY_MAX_PASSES):
+        pass_adjusted = 0
+        index = 1
+        while index < len(updated_entries):
+            previous_entry = updated_entries[index - 1]
+            current_entry = updated_entries[index]
+            if previous_entry.entry_type not in {"dialogue", "original_subtitle"} or current_entry.entry_type != "narration":
+                index += 1
+                continue
+
+            boundary_time = _estimate_local_voice_boundary_time(
+                updated_entries,
+                index - 1,
+                index,
+                samples,
+                sample_rate,
+                total_duration,
+            )
+            if boundary_time is None:
+                index += 1
+                continue
+
+            current_start = float(current_entry.start)
+            requested_shift = boundary_time - current_start
+            if requested_shift < LOCAL_VOICE_BOUNDARY_MIN_DELAY_SECONDS:
+                index += 1
+                continue
+            requested_shift = min(requested_shift, LOCAL_VOICE_BOUNDARY_MAX_DELAY_SECONDS)
+
+            run_end = index
+            while run_end + 1 < len(updated_entries) and updated_entries[run_end + 1].entry_type == "narration":
+                run_end += 1
+            next_block_start = float(updated_entries[run_end + 1].start) if run_end + 1 < len(updated_entries) else total_duration
+            allowed_shift = max(
+                0.0,
+                next_block_start - float(updated_entries[run_end].end) - 0.02,
+            )
+            shift_seconds = min(requested_shift, allowed_shift)
+            if shift_seconds < LOCAL_VOICE_BOUNDARY_MIN_RUN_SHIFT_SECONDS:
+                index = run_end + 1
+                continue
+
+            for run_index in range(index, run_end + 1):
+                run_entry = updated_entries[run_index]
+                updated_entries[run_index] = clone_subtitle_entry(
+                    run_entry,
+                    start=float(run_entry.start) + shift_seconds,
+                    end=float(run_entry.end) + shift_seconds,
+                )
+
+            shifted_first_entry = updated_entries[index]
+            extended_previous_end = min(
+                float(shifted_first_entry.start) - 0.02,
+                max(float(previous_entry.end), float(previous_entry.end) + shift_seconds),
+            )
+            if extended_previous_end > float(previous_entry.end) + 0.01:
+                updated_entries[index - 1] = clone_subtitle_entry(previous_entry, end=extended_previous_end)
+
+            adjusted_boundaries += 1
+            total_shift += shift_seconds
+            pass_adjusted += 1
+            index = run_end + 1
+        if pass_adjusted == 0:
+            break
+
+    if log_func and adjusted_boundaries > 0:
+        log_func(
+            "  "
+            + f"Local voice boundary retime: shifted {adjusted_boundaries} dialogue->narration run(s), total +{total_shift:.2f}s"
+        )
+    return updated_entries
+
+
+def retime_narration_runs_by_clean_audio_tail(
+    entries: Sequence[SubtitleEntry],
+    clean_video: Optional[Path],
+    video_processor: Optional[VideoProcessor] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> List[SubtitleEntry]:
+    if not entries or clean_video is None or not NUMPY_AVAILABLE or not clean_video.exists():
+        return list(entries)
+
+    processor = video_processor or VideoProcessor()
+    audio_path = extract_reference_audio_for_classification(clean_video, processor, log_func=None)
+    if audio_path is None:
+        return list(entries)
+
+    samples, sample_rate = load_wav_mono_samples(audio_path)
+    if samples is None or sample_rate <= 0 or samples.size <= 0:
+        return list(entries)
+
+    total_duration = float(samples.size) / float(sample_rate)
+    updated_entries = list(entries)
+    adjusted_boundaries = 0
+    capped_boundaries = 0
+    slack_limited_boundaries = 0
+    compressed_boundaries = 0
+    max_requested_shift = 0.0
+    total_shift = 0.0
+
+    def is_clean_tail_speech_like(profile: AudioSegmentProfile) -> bool:
+        strong_voice = (
+            profile.confidence >= 0.48
+            and profile.speech_ratio >= 0.24
+            and profile.voiced_ratio >= 0.38
+        )
+        weak_tail_voice = (
+            profile.confidence >= 0.34
+            and profile.rms_db >= -25.0
+            and profile.spectral_flatness <= 0.62
+            and (
+                profile.voiced_ratio >= 0.58
+                or (profile.speech_ratio >= 0.18 and profile.voiced_ratio >= 0.28)
+            )
+        )
+        return strong_voice or weak_tail_voice
+
     index = 1
     while index < len(updated_entries):
         previous_entry = updated_entries[index - 1]
@@ -8751,50 +9534,137 @@ def retime_dialogue_to_narration_runs_by_local_voice(
             index += 1
             continue
 
-        boundary_time = _estimate_local_voice_boundary_time(
-            updated_entries,
-            index - 1,
-            index,
-            samples,
-            sample_rate,
-            total_duration,
+        window_seconds = CLEAN_AUDIO_TAIL_WINDOW_SECONDS
+        hop_seconds = CLEAN_AUDIO_TAIL_HOP_SECONDS
+        current_start = float(current_entry.start)
+        search_start = max(
+            0.0,
+            float(previous_entry.end) - window_seconds * 0.30,
+            current_start - hop_seconds,
         )
-        if boundary_time is None:
+        search_end = min(
+            max(0.0, total_duration - window_seconds),
+            current_start + CLEAN_AUDIO_TAIL_MAX_DELAY_SECONDS,
+        )
+        if search_end <= search_start + hop_seconds:
             index += 1
             continue
 
-        current_start = float(current_entry.start)
-        requested_shift = boundary_time - current_start
-        if requested_shift < LOCAL_VOICE_BOUNDARY_MIN_DELAY_SECONDS:
+        speech_tail_end: Optional[float] = None
+        saw_overlap_speech = False
+        cursor = search_start
+        while cursor <= search_end + 1e-6:
+            profile = build_audio_profile_for_range(
+                samples,
+                sample_rate,
+                cursor,
+                min(total_duration, cursor + window_seconds),
+                profile_index=int(round(cursor * 1000.0)),
+                edge_trim_seconds=0.02,
+                edge_trim_ratio=0.05,
+                min_duration=0.18,
+            )
+            cursor += hop_seconds
+            if profile is None:
+                if saw_overlap_speech:
+                    break
+                continue
+
+            profile_end = min(total_duration, float(profile.end))
+            is_speech_like = is_clean_tail_speech_like(profile)
+            overlaps_boundary = float(profile.start) <= current_start + hop_seconds and profile_end >= current_start - hop_seconds
+            if not saw_overlap_speech:
+                if is_speech_like and overlaps_boundary:
+                    saw_overlap_speech = True
+                    speech_tail_end = profile_end
+                continue
+
+            if is_speech_like and float(profile.start) <= float(speech_tail_end or current_start) + hop_seconds * 1.25:
+                speech_tail_end = max(float(speech_tail_end or current_start), profile_end)
+                continue
+            break
+
+        if speech_tail_end is None:
             index += 1
             continue
-        requested_shift = min(requested_shift, LOCAL_VOICE_BOUNDARY_MAX_DELAY_SECONDS)
+
+        requested_shift = speech_tail_end + CLEAN_AUDIO_TAIL_PAD_SECONDS - current_start
+        max_requested_shift = max(max_requested_shift, requested_shift)
+        if requested_shift < CLEAN_AUDIO_TAIL_MIN_DELAY_SECONDS:
+            index += 1
+            continue
+        if requested_shift > CLEAN_AUDIO_TAIL_MAX_DELAY_SECONDS + 0.01:
+            capped_boundaries += 1
+            if log_func:
+                log_func(
+                    "  "
+                    + f"Clean audio tail cap entry #{current_entry.index}: "
+                    + f"start {current_start:.2f}s / wanted +{requested_shift:.2f}s / "
+                    + f"cap +{CLEAN_AUDIO_TAIL_MAX_DELAY_SECONDS:.2f}s"
+                )
+        requested_shift = min(requested_shift, CLEAN_AUDIO_TAIL_MAX_DELAY_SECONDS)
 
         run_end = index
         while run_end + 1 < len(updated_entries) and updated_entries[run_end + 1].entry_type == "narration":
             run_end += 1
+        run_entries = list(updated_entries[index : run_end + 1])
         next_block_start = float(updated_entries[run_end + 1].start) if run_end + 1 < len(updated_entries) else total_duration
-        allowed_shift = max(
-            0.0,
-            next_block_start - float(updated_entries[run_end].end) - 0.02,
-        )
-        shift_seconds = min(requested_shift, allowed_shift)
-        if shift_seconds < LOCAL_VOICE_BOUNDARY_MIN_RUN_SHIFT_SECONDS:
+        run_gap_guard = 0.02
+        run_original_start = float(run_entries[0].start)
+        run_original_end = float(run_entries[-1].end)
+        run_original_duration = max(0.05, run_original_end - run_original_start)
+        run_limit_end = max(run_original_start + 0.05, next_block_start - run_gap_guard)
+        min_run_duration = max(0.05, run_original_duration / max(MAX_TTS_SPEED_FACTOR, 1.0))
+        max_supported_shift = max(0.0, run_limit_end - run_original_start - min_run_duration)
+        shift_seconds = min(requested_shift, max_supported_shift)
+        if shift_seconds < CLEAN_AUDIO_TAIL_MIN_RUN_SHIFT_SECONDS:
             index = run_end + 1
             continue
+        if shift_seconds + 0.01 < requested_shift:
+            slack_limited_boundaries += 1
+            if log_func:
+                log_func(
+                    "  "
+                    + f"Clean audio tail run-fit entry #{current_entry.index}: "
+                    + f"wanted +{requested_shift:.2f}s / allowed +{max_supported_shift:.2f}s / "
+                    + f"run {len(run_entries)} line(s)"
+                )
 
-        for run_index in range(index, run_end + 1):
-            run_entry = updated_entries[run_index]
+        shifted_run_start = run_original_start + shift_seconds
+        shifted_run_end = min(run_limit_end, run_original_end + shift_seconds)
+        run_scale = clamp(
+            (shifted_run_end - shifted_run_start) / run_original_duration,
+            min_run_duration / run_original_duration,
+            1.0,
+        )
+        if run_scale < 0.999:
+            compressed_boundaries += 1
+
+        for local_index, run_entry in enumerate(run_entries):
+            relative_start = max(0.0, float(run_entry.start) - run_original_start)
+            relative_end = max(relative_start + 0.01, float(run_entry.end) - run_original_start)
+            mapped_start = shifted_run_start + relative_start * run_scale
+            mapped_end = shifted_run_start + relative_end * run_scale
+            if local_index + 1 < len(run_entries):
+                next_relative_start = max(0.0, float(run_entries[local_index + 1].start) - run_original_start)
+                next_mapped_start = shifted_run_start + next_relative_start * run_scale
+                mapped_end = min(mapped_end, max(mapped_start + 0.01, next_mapped_start - run_gap_guard))
+            else:
+                mapped_end = min(run_limit_end, max(mapped_start + 0.01, mapped_end))
+            run_index = index + local_index
             updated_entries[run_index] = clone_subtitle_entry(
                 run_entry,
-                start=float(run_entry.start) + shift_seconds,
-                end=float(run_entry.end) + shift_seconds,
+                start=mapped_start,
+                end=mapped_end,
             )
 
         shifted_first_entry = updated_entries[index]
         extended_previous_end = min(
             float(shifted_first_entry.start) - 0.02,
-            max(float(previous_entry.end), float(previous_entry.end) + shift_seconds),
+            max(
+                float(previous_entry.end),
+                max(float(previous_entry.end) + shift_seconds, speech_tail_end + CLEAN_AUDIO_TAIL_PAD_SECONDS - 0.02),
+            ),
         )
         if extended_previous_end > float(previous_entry.end) + 0.01:
             updated_entries[index - 1] = clone_subtitle_entry(previous_entry, end=extended_previous_end)
@@ -8804,10 +9674,17 @@ def retime_dialogue_to_narration_runs_by_local_voice(
         index = run_end + 1
 
     if log_func and adjusted_boundaries > 0:
-        log_func(
+        summary = (
             "  "
-            + f"Local voice boundary retime: shifted {adjusted_boundaries} dialogue->narration run(s), total +{total_shift:.2f}s"
+            + f"Clean audio tail retime: shifted {adjusted_boundaries} dialogue->narration run(s), total +{total_shift:.2f}s"
         )
+        if capped_boundaries > 0:
+            summary += f", capped {capped_boundaries} boundary(s) (max wanted +{max_requested_shift:.2f}s)"
+        if slack_limited_boundaries > 0:
+            summary += f", run-fit limited {slack_limited_boundaries} boundary(s)"
+        if compressed_boundaries > 0:
+            summary += f", compressed {compressed_boundaries} run(s)"
+        log_func(summary)
     return updated_entries
 
 
@@ -9608,7 +10485,11 @@ def build_audio_classification_overrides(
         if narrator_voice_guard:
             hint_dialogue_score *= 0.58
         ai_dialogue_hint = raw_ai_dialogue_hint and not narrator_voice_guard
-        text_dialogue_hint = entry.entry_type == "dialogue" and not narrator_voice_guard
+        text_dialogue_hint = (
+            entry.entry_type == "dialogue"
+            and dialogue_like_text(entry_text)
+            and not narrator_voice_guard
+        )
 
         strong_dialogue = hint_dialogue_score >= 2.0 or (ai_dialogue_hint and ai_confidence >= 0.86)
         strong_narration = hint_narration_score >= 1.7 or (ai_narration_hint and ai_confidence >= 0.86)
@@ -10145,8 +11026,9 @@ def audio_override_is_protected(
             "audio_speaker_speechbrain",
         } and confidence >= 0.78
     if target_type == "dialogue":
+        if source == "audio_speaker_anti_narrator":
+            return confidence >= AUDIO_ANTI_NARRATOR_PROTECTION_MIN_CONFIDENCE
         return source in {
-            "audio_speaker_anti_narrator",
             "audio_speaker_voice_dialogue_lock",
             "audio_speaker_voice_dialogue_recovery",
             "audio_speaker_speechbrain",
@@ -10185,6 +11067,27 @@ def stabilize_audio_classification_runs(
         has_dialogue_text = any(dialogue_like_text(text) for text in texts)
         has_strong_narration = any(strong_narration_text(text) for text in texts)
         has_original_text = any(original_subtitle_score(text) >= 2 for text in texts)
+        run_overrides = [
+            (override_meta or {}).get(entry.index)
+            for entry in run_entries
+        ]
+        run_dialogue_overrides = [
+            override
+            for override in run_overrides
+            if override and str(override.get("type") or "") == "dialogue"
+        ]
+        weak_anti_narrator_only_dialogue_run = (
+            bool(run_dialogue_overrides)
+            and all(
+                str(override.get("source") or "") == "audio_speaker_anti_narrator"
+                for override in run_dialogue_overrides
+            )
+            and max(
+                float(override.get("confidence", 0.0) or 0.0)
+                for override in run_dialogue_overrides
+            )
+            < AUDIO_ANTI_NARRATOR_PROTECTION_MIN_CONFIDENCE
+        )
         protected_narration = any(
             audio_override_is_protected((override_meta or {}).get(entry.index), "narration")
             for entry in run_entries
@@ -10196,7 +11099,13 @@ def stabilize_audio_classification_runs(
 
         if (
             run_type in {"dialogue", "original_subtitle"}
-            and run_duration <= AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS
+            and (
+                run_duration <= AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS
+                or (
+                    weak_anti_narrator_only_dialogue_run
+                    and run_duration <= AUDIO_CLASSIFICATION_ANTI_NARRATOR_WEAK_ISLAND_SECONDS
+                )
+            )
             and left_type == "narration"
             and right_type == "narration"
             and not protected_dialogue
@@ -10213,6 +11122,7 @@ def stabilize_audio_classification_runs(
             and run_duration <= AUDIO_CLASSIFICATION_DIALOGUE_RECOVERY_SECONDS
             and left_type in {"dialogue", "original_subtitle"}
             and right_type in {"dialogue", "original_subtitle"}
+            and protected_dialogue
             and not protected_narration
             and not has_strong_narration
             and (has_dialogue_text or left_type == "dialogue" or right_type == "dialogue")
@@ -10229,6 +11139,7 @@ def stabilize_audio_classification_runs(
             and run_duration <= max(AUDIO_CLASSIFICATION_DIALOGUE_RECOVERY_SECONDS, 1.8)
             and right_entry is not None
             and right_type == "dialogue"
+            and protected_dialogue
             and subtitle_entry_gap(run_entries[-1], right_entry) <= 0.45
             and not protected_narration
             and not has_strong_narration
@@ -10400,6 +11311,8 @@ class AINarrationGenerator:
         max_tokens: int = 8192,
         max_attempts: int = 1,
         retry_delay: float = 1.2,
+        heartbeat_seconds: float = 0.0,
+        heartbeat_label: str = "",
     ) -> Optional[object]:
         while True:
             last_issue = ""
@@ -10427,6 +11340,8 @@ class AINarrationGenerator:
                 max_tokens=max_tokens,
                 max_attempts=max_attempts,
                 retry_delay=retry_delay,
+                heartbeat_seconds=heartbeat_seconds,
+                heartbeat_label=heartbeat_label,
             )
             if parsed is not None:
                 return parsed
@@ -10449,6 +11364,25 @@ class AINarrationGenerator:
         while True:
             last_issue = ""
             request_label = f"{label} [{self.model or 'unknown-model'}]"
+            request_started_at = time.perf_counter()
+            heartbeat_stop: Optional[threading.Event] = None
+            heartbeat_thread: Optional[threading.Thread] = None
+            heartbeat_seconds = float(REWRITE_REQUEST_HEARTBEAT_SECONDS)
+            if log_func and heartbeat_seconds > 0:
+                log_func(f"  {request_label}: request start (timeout {int(timeout)}s)")
+                heartbeat_stop = threading.Event()
+
+                def heartbeat_worker() -> None:
+                    while heartbeat_stop is not None and not heartbeat_stop.wait(heartbeat_seconds):
+                        elapsed = time.perf_counter() - request_started_at
+                        log_func(f"  {request_label}: waiting {elapsed:.0f}s")
+
+                heartbeat_thread = threading.Thread(
+                    target=heartbeat_worker,
+                    name="text_completion_heartbeat",
+                    daemon=True,
+                )
+                heartbeat_thread.start()
             try:
                 response = requests.post(
                     self.api_url,
@@ -10468,9 +11402,20 @@ class AINarrationGenerator:
                     timeout=timeout,
                 )
             except Exception as exc:
+                if heartbeat_stop is not None:
+                    heartbeat_stop.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=0.2)
                 last_issue = f"{request_label} request failed: {type(exc).__name__}: {exc}"
                 self.note_rewrite_issue(last_issue, log_func=log_func)
             else:
+                if heartbeat_stop is not None:
+                    heartbeat_stop.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=0.2)
+                if log_func and heartbeat_seconds > 0:
+                    elapsed = time.perf_counter() - request_started_at
+                    log_func(f"  {request_label}: response received in {elapsed:.1f}s")
                 try:
                     response.raise_for_status()
                 except Exception:
@@ -10580,18 +11525,19 @@ class AINarrationGenerator:
                 for entry in review_chunk
             ]
             system_prompt = (
-                "You review Chinese short-drama subtitles before rewrite and TTS. "
-                "Return JSON only. "
-                "Use the surrounding lines as full-script context and correct only high-confidence OCR, ASR, or subtitle-recognition mistakes. "
-                "Keep the same meaning and sentence boundary. Do not rewrite for style. "
-                "If you are not confident, keep the original text unchanged. "
-                "Return only entries that should actually be changed. "
-                "JSON format: {\"entries\":[{\"index\":1,\"corrected\":\"...\"}]}"
+                "你负责在改写和 TTS 之前复核中文短剧字幕。"
+                "只返回 JSON。"
+                "请把周围字幕当作整篇剧本上下文，只纠正那些你高置信度判断为 OCR、ASR 或字幕识别造成的错误。"
+                "保持原意和原有断句边界不变。"
+                "不要为了风格去改写。"
+                "如果你没有把握，就保持原文不变。"
+                "只返回那些确实需要修改的条目。"
+                "JSON 格式：{\"entries\":[{\"index\":1,\"corrected\":\"...\"}]}"
             )
             user_prompt = (
-                "Review this subtitle window from a full script. "
-                "Only return changed entries whose focus=true. "
-                "Return JSON only.\n\n"
+                "请复核这一个来自完整剧本的字幕窗口。"
+                "只返回被修改且 focus=true 的条目。"
+                "只返回 JSON。\n\n"
                 f"{json.dumps({'entries': payload_entries}, ensure_ascii=False, indent=2)}"
             )
             request_issue = ""
@@ -10616,6 +11562,8 @@ class AINarrationGenerator:
                 max_tokens=1536,
                 max_attempts=2,
                 retry_delay=1.25,
+                heartbeat_seconds=15.0,
+                heartbeat_label=f"AI OCR review window {start_offset + 1}-{end_offset}",
             )
             if isinstance(parsed, dict):
                 items = parsed.get("entries")
@@ -10880,6 +11828,8 @@ def rewrite_narration_entries(
     retry_recovered = 0
     local_diversified = 0
     empty_response_chunks = 0
+    remote_rewrite_enabled = True
+    slow_unproductive_streak = 0
     total_chunks = max(1, math.ceil(len(entries) / max(1, effective_chunk_size)))
     for chunk_number, offset in enumerate(range(0, len(entries), effective_chunk_size), start=1):
         chunk = list(entries[offset : offset + effective_chunk_size])
@@ -10893,6 +11843,19 @@ def rewrite_narration_entries(
                 + f"\u6b63\u5728\u5904\u7406 {len(chunk)} \u6761"
                 + f"\uff08#{start_index}-#{end_index}\uff09"
             )
+        if not remote_rewrite_enabled:
+            local_chunk_map = build_local_rewrite_map(chunk)
+            rewrite_map.update(local_chunk_map)
+            local_diversified += len(local_chunk_map)
+            if log_func:
+                log_func(
+                    "  "
+                    + "\u6539\u5199\u5206\u6279 "
+                    + f"{chunk_number}/{total_chunks}\uff1a"
+                    + "\u672c\u8f6e AI \u6539\u5199\u5df2\u81ea\u52a8\u964d\u7ea7\uff0c"
+                    + f"\u672c\u5730\u5140\u5e95 {len(local_chunk_map)} \u6761"
+                )
+            continue
         chunk_by_index = {entry.index: entry for entry in chunk}
         previous_context = [
             {
@@ -10935,6 +11898,7 @@ def rewrite_narration_entries(
             previous_context,
             payload_entries,
             next_context,
+            allow_split_retry=slow_unproductive_streak <= 0,
             log_func=log_func,
         )
         if not items:
@@ -10943,8 +11907,21 @@ def rewrite_narration_entries(
             if local_chunk_map:
                 rewrite_map.update(local_chunk_map)
                 local_diversified += len(local_chunk_map)
+            elapsed = time.perf_counter() - chunk_start
+            if elapsed >= REWRITE_REMOTE_BREAKER_MIN_ELAPSED_SECONDS:
+                slow_unproductive_streak += 1
+            else:
+                slow_unproductive_streak = 0
+            if remote_rewrite_enabled and slow_unproductive_streak >= REWRITE_REMOTE_BREAKER_CONSECUTIVE_LIMIT:
+                remote_rewrite_enabled = False
+                if log_func:
+                    log_func(
+                        "  AI \u6539\u5199\u81ea\u52a8\u964d\u7ea7\uff1a"
+                        + f"\u8fde\u7eed {slow_unproductive_streak} \u6279"
+                        + "\u8bf7\u6c42\u8d85\u65f6\u6216\u7a7a\u8fd4\u56de\uff0c"
+                        + "\u5269\u4f59\u5206\u6279\u6539\u4e3a\u672c\u5730\u5140\u5e95\uff0c\u907f\u514d\u5de5\u4f5c\u95f4\u5047\u5361\u4f4f"
+                    )
             if log_func:
-                elapsed = time.perf_counter() - chunk_start
                 log_func(
                     "  "
                     + "\u6539\u5199\u5206\u6279 "
@@ -11029,6 +12006,7 @@ def rewrite_narration_entries(
                 retry_payload_entries,
                 next_context,
                 force_variation=True,
+                allow_split_retry=slow_unproductive_streak <= 0,
                 log_func=log_func,
             )
             for item in retry_items:
@@ -11060,6 +12038,8 @@ def rewrite_narration_entries(
                 accepted_chunk[index] = candidate
                 retry_recovered += 1
 
+        remote_accepted_count = len(accepted_chunk)
+
         for payload in retry_payload_entries:
             index = int(payload["index"])
             if index in accepted_chunk:
@@ -11085,8 +12065,21 @@ def rewrite_narration_entries(
                 accepted_chunk[index] = fallback_candidate
 
         rewrite_map.update(accepted_chunk)
+        elapsed = time.perf_counter() - chunk_start
+        if remote_accepted_count == 0 and elapsed >= REWRITE_REMOTE_BREAKER_MIN_ELAPSED_SECONDS:
+            slow_unproductive_streak += 1
+        else:
+            slow_unproductive_streak = 0
+        if remote_rewrite_enabled and slow_unproductive_streak >= REWRITE_REMOTE_BREAKER_CONSECUTIVE_LIMIT:
+            remote_rewrite_enabled = False
+            if log_func:
+                log_func(
+                    "  AI \u6539\u5199\u81ea\u52a8\u964d\u7ea7\uff1a"
+                    + f"\u8fde\u7eed {slow_unproductive_streak} \u6279"
+                    + "\u8017\u65f6\u957f\u4e14\u672a\u4ea7\u51fa\u53ef\u7528\u7ed3\u679c\uff0c"
+                    + "\u5269\u4f59\u5206\u6279\u6539\u4e3a\u672c\u5730\u5140\u5e95\uff0c\u907f\u514d\u5de5\u4f5c\u95f4\u5047\u5361\u4f4f"
+                )
         if log_func:
-            elapsed = time.perf_counter() - chunk_start
             retry_success_count = retry_recovered - retry_success_before
             local_fallback_count = local_diversified - local_diversified_before
             log_func(
@@ -11451,11 +12444,12 @@ def build_processed_subtitles(
     video_processor: Optional[VideoProcessor] = None,
     settings: Optional[CloneSettings] = None,
 ) -> ProcessedSubtitleBundle:
-    visual_entries = preserve_reference_timeline_entries(original_entries)
+    prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
+    precomputed_funasr_input = bool(prefer_funasr_audio_subtitles and original_entries)
+    visual_entries = preserve_reference_timeline_entries([] if precomputed_funasr_input else original_entries)
     working_entries: List[SubtitleEntry] = list(visual_entries)
     funasr_entries: List[SubtitleEntry] = []
     funasr_primary_mode = False
-    prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
     disable_ai_subtitle_review = bool(settings.disable_ai_subtitle_review) if settings else False
     disable_ai_narration_rewrite = bool(settings.disable_ai_narration_rewrite) if settings else False
     force_no_narration_mode = bool(settings.force_no_narration_mode) if settings else False
@@ -11467,7 +12461,11 @@ def build_processed_subtitles(
             [],
             {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": 0},
         )
-    if reference_video is not None and video_processor is not None:
+    if precomputed_funasr_input:
+        funasr_entries = reindex_subtitle_entries(preserve_reference_timeline_entries(original_entries))
+        if log_func:
+            log_func(f"  FunASR audio-first subtitle mode: using precomputed stage-3 audio SRT ({len(funasr_entries)} entries)")
+    elif reference_video is not None and video_processor is not None:
         funasr_entries = run_funasr_reference_transcription(
             reference_video,
             video_processor,
@@ -11476,7 +12474,7 @@ def build_processed_subtitles(
     if prefer_funasr_audio_subtitles and funasr_entries:
         working_entries = reindex_subtitle_entries(funasr_entries)
         funasr_primary_mode = True
-        if log_func:
+        if log_func and not precomputed_funasr_input:
             log_func(f"  FunASR audio-first subtitle mode: using {len(working_entries)} audio entries directly")
     elif funasr_entries and should_use_funasr_primary_timeline(funasr_entries, visual_entries):
         working_entries, visual_aux_fix_count = build_primary_entries_from_funasr_and_visual(
@@ -11556,53 +12554,20 @@ def build_processed_subtitles(
         if log_func and full_text_fix_after_funasr:
             log_func(f"  FunASR 后全文一致性修正：{full_text_fix_after_funasr} 条")
 
-    reference_content = entries_to_srt(working_entries) if working_entries else raw_content
-
     local_classification = classify_entries_locally(working_entries)
-    local_classified_map = {
+    classified_map: Dict[int, Dict[str, str]] = {
         int(item.get("index", 0)): item
         for item in local_classification.get("entries", [])
         if int(item.get("index", 0) or 0) > 0
     }
-    classification = classify_subtitle_entries(ai_generator, working_entries, log_func=log_func)
-    classification_stable_local_only = bool(classification.get("stable_local_only"))
-    if not classification.get("entries") and not classification_stable_local_only:
-        classification = ai_generator.classify_srt(reference_content)
+    local_classified_map = classified_map
+    classification_stable_local_only = False
     ai_classified_map: Dict[int, Dict[str, str]] = {}
-    for item in classification.get("entries", []):
-        try:
-            index = int(item.get("index", 0))
-        except (TypeError, ValueError):
-            continue
-        if index <= 0:
-            continue
-        ai_classified_map[index] = item
-
-    classified_map: Dict[int, Dict[str, str]] = dict(local_classified_map)
     ai_agreement_count = 0
     ai_conflict_count = 0
     ai_text_fix_count = 0
-    for index, item in ai_classified_map.items():
-        local_item = local_classified_map.get(index)
-        if local_item is None:
-            classified_map[index] = item
-            continue
-
-        merged_item = dict(local_item)
-        local_type = str(local_item.get("type", "") or "").strip().lower()
-        ai_type = str(item.get("type", "") or "").strip().lower()
-        ai_corrected = cleanup_rewrite_text(extract_ai_text_scalar(item.get("corrected", "")))
-        if ai_corrected:
-            local_corrected = cleanup_rewrite_text(str(local_item.get("corrected", "") or local_item.get("original", "") or ""))
-            if normalize_subtitle_text(ai_corrected) != normalize_subtitle_text(local_corrected):
-                merged_item["corrected"] = ai_corrected
-                ai_text_fix_count += 1
-        if ai_type and ai_type == local_type:
-            merged_item["type"] = ai_type
-            ai_agreement_count += 1
-        elif ai_type and ai_type != local_type:
-            ai_conflict_count += 1
-        classified_map[index] = merged_item
+    if log_func:
+        log_func(f"  Subtitle classification: local-only mode {len(classified_map)}/{len(working_entries)} entries")
 
     if classification_stable_local_only and log_func:
         log_func(
@@ -11685,40 +12650,62 @@ def build_processed_subtitles(
             if rewrite_map and log_func:
                 log_func(f"  Rewrite applied: {len(rewrite_map)} entries")
             if not rewrite_map:
-                rewrite_input = entries_to_srt(narration_seed)
-                rewritten_content = ai_generator.rewrite_srt_full(rewrite_input, log_func=log_func)
-                rewritten_entries = parse_srt(rewritten_content)
-                local_full_fallback = 0
-                if len(rewritten_entries) == len(narration_seed):
-                    for source_entry, rewritten_entry in zip(narration_seed, rewritten_entries):
-                        candidate = prefer_complete_narration_text(source_entry.text, rewritten_entry.text)
-                        budget = subtitle_char_budget(max(0.1, source_entry.end - source_entry.start))
-                        _, speech_budget = narration_rewrite_speech_budgets(source_entry)
-                        candidate = fit_rewrite_candidate_to_timing(
-                            source_entry,
-                            candidate,
-                            display_budget=budget,
-                            speech_budget=speech_budget,
-                        )
-                        if not candidate:
-                            candidate = diversify_narration_locally(source_entry.text, budget)
+                rewrite_last_issue = str(ai_generator.last_rewrite_issue or "").strip()
+                skip_full_remote_rewrite = (
+                    len(narration_seed) >= REWRITE_LARGE_BATCH_LOCAL_THRESHOLD
+                    and (
+                        not rewrite_last_issue
+                        or ai_issue_requires_failover(rewrite_last_issue)
+                        or ai_issue_supports_smaller_chunk(rewrite_last_issue)
+                    )
+                )
+                if skip_full_remote_rewrite:
+                    if log_func:
+                        if rewrite_last_issue:
+                            log_func(
+                                "  AI full rewrite skipped after unstable batch rewrite; "
+                                + f"falling back locally. Last issue: {rewrite_last_issue}"
+                            )
+                        else:
+                            log_func(
+                                "  AI full rewrite skipped after unstable batch rewrite; "
+                                + "falling back locally."
+                            )
+                else:
+                    rewrite_input = entries_to_srt(narration_seed)
+                    rewritten_content = ai_generator.rewrite_srt_full(rewrite_input, log_func=log_func)
+                    rewritten_entries = parse_srt(rewritten_content)
+                    local_full_fallback = 0
+                    if len(rewritten_entries) == len(narration_seed):
+                        for source_entry, rewritten_entry in zip(narration_seed, rewritten_entries):
+                            candidate = prefer_complete_narration_text(source_entry.text, rewritten_entry.text)
+                            budget = subtitle_char_budget(max(0.1, source_entry.end - source_entry.start))
+                            _, speech_budget = narration_rewrite_speech_budgets(source_entry)
                             candidate = fit_rewrite_candidate_to_timing(
                                 source_entry,
                                 candidate,
                                 display_budget=budget,
                                 speech_budget=speech_budget,
                             )
-                            if candidate:
-                                local_full_fallback += 1
-                        if not candidate or rewrite_needs_more_variation(source_entry.text, candidate):
-                            continue
-                        rewrite_map[source_entry.index] = candidate
-                    if log_func:
-                        log_func(f"  AI rewrite accepted: {len(rewrite_map)} entries")
-                        if local_full_fallback:
-                            log_func(f"  AI rewrite local fallback: {local_full_fallback} entries")
-                elif log_func:
-                    log_func("  AI full rewrite result count mismatch; fallback to corrected source text.")
+                            if not candidate:
+                                candidate = diversify_narration_locally(source_entry.text, budget)
+                                candidate = fit_rewrite_candidate_to_timing(
+                                    source_entry,
+                                    candidate,
+                                    display_budget=budget,
+                                    speech_budget=speech_budget,
+                                )
+                                if candidate:
+                                    local_full_fallback += 1
+                            if not candidate or rewrite_needs_more_variation(source_entry.text, candidate):
+                                continue
+                            rewrite_map[source_entry.index] = candidate
+                        if log_func:
+                            log_func(f"  AI rewrite accepted: {len(rewrite_map)} entries")
+                            if local_full_fallback:
+                                log_func(f"  AI rewrite local fallback: {local_full_fallback} entries")
+                    elif log_func:
+                        log_func("  AI full rewrite result count mismatch; fallback to corrected source text.")
                 if not rewrite_map:
                     local_rewrite_map = build_local_rewrite_map(narration_seed)
                     if local_rewrite_map:
@@ -11984,34 +12971,74 @@ def extract_reference_frames(
     frames: List[ReferenceFrame] = []
     timestamp = 0.0
     frame_index = 0
+    recovered_by_backoff = 0
+    tail_skip_count = 0
+    fallback_offsets = [0.0]
+    for candidate_offset in (
+        min(frame_interval * 0.35, 0.18),
+        min(frame_interval * 0.65, 0.32),
+        min(frame_interval, 0.50),
+    ):
+        if candidate_offset > 0.001 and all(abs(candidate_offset - existing) > 0.001 for existing in fallback_offsets):
+            fallback_offsets.append(candidate_offset)
     while timestamp < duration:
         jpg_path = frames_dir / f"ref_{timestamp:.1f}.jpg"
-        result = run_subprocess_hidden(
-            [
-                str(video_processor.ffmpeg),
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-nostdin",
-                "-y",
-                "-ss",
-                f"{timestamp:.3f}",
-                "-i",
-                str(reference_video),
-                "-frames:v",
-                "1",
-                "-q:v",
-                "2",
-                str(jpg_path),
-            ],
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        if result.returncode != 0 or not jpg_path.exists():
-            detail = result.stderr.decode("utf-8", errors="ignore")[:400].strip()
+        extracted = False
+        last_detail = ""
+        attempted_timestamps: set[float] = set()
+        max_seek_timestamp = max(0.0, duration - 0.001)
+        for fallback_offset in fallback_offsets:
+            seek_timestamp = round(clamp(timestamp - fallback_offset, 0.0, max_seek_timestamp), 3)
+            if seek_timestamp in attempted_timestamps:
+                continue
+            attempted_timestamps.add(seek_timestamp)
+            if jpg_path.exists():
+                jpg_path.unlink(missing_ok=True)
+            result = run_subprocess_hidden(
+                [
+                    str(video_processor.ffmpeg),
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostdin",
+                    "-y",
+                    "-ss",
+                    f"{seek_timestamp:.3f}",
+                    "-i",
+                    str(reference_video),
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    "-strict",
+                    "-1",
+                    str(jpg_path),
+                ],
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0 and jpg_path.exists() and jpg_path.stat().st_size > 0:
+                if fallback_offset > 0.001:
+                    recovered_by_backoff += 1
+                extracted = True
+                break
+            last_detail = result.stderr.decode("utf-8", errors="ignore")[:400].strip()
+            jpg_path.unlink(missing_ok=True)
+        if not extracted:
+            tail_guard = max(frame_interval + 0.01, 0.45)
+            if duration - timestamp <= tail_guard:
+                tail_skip_count += 1
+                if log_func:
+                    log_func(
+                        "  参考帧尾部缺帧："
+                        + f"跳过 {timestamp:.1f}s"
+                        + (f" ({last_detail})" if last_detail else "")
+                    )
+                timestamp += frame_interval
+                continue
             raise RuntimeError(
-                detail or f"reference frame extraction failed at {timestamp:.1f}s"
+                last_detail or f"reference frame extraction failed at {timestamp:.1f}s"
             )
         if jpg_path.exists():
             frames.append(
@@ -12025,6 +13052,10 @@ def extract_reference_frames(
             frame_index += 1
         timestamp += frame_interval
     if log_func:
+        if recovered_by_backoff:
+            log_func(f"  参考帧回退补救: {recovered_by_backoff} 帧")
+        if tail_skip_count:
+            log_func(f"  参考帧尾部跳过: {tail_skip_count} 帧")
         log_func(f"参考帧总数: {len(frames)}")
     return frames, duration
 
@@ -14264,6 +15295,129 @@ def audit_match_alignment(
     }
 
 
+def build_matching_reference_frames(
+    reference_frames: Sequence[ReferenceFrame],
+    speed_factor: float,
+) -> List[ReferenceFrame]:
+    normalized_factor = normalize_reference_speed_factor(speed_factor, 1.0)
+    if not reference_frames or abs(normalized_factor - 1.0) < 0.0005:
+        return list(reference_frames)
+    return [replace(frame, timestamp=frame.timestamp * normalized_factor) for frame in reference_frames]
+
+
+def estimate_reference_speed_factor_from_matches(
+    matches: Sequence[Dict[str, object]],
+    frame_interval: float,
+    *,
+    min_similarity: float = 0.68,
+) -> Optional[float]:
+    if len(matches) < REFERENCE_SPEED_ESTIMATION_MIN_RUN_LENGTH:
+        return None
+
+    weighted_ratios: List[Tuple[float, float]] = []
+    current_run: List[Dict[str, float | str]] = []
+    min_span = max(
+        REFERENCE_SPEED_ESTIMATION_MIN_SPAN_SECONDS,
+        frame_interval * (REFERENCE_SPEED_ESTIMATION_MIN_RUN_LENGTH - 1),
+    )
+
+    def flush_run() -> None:
+        if len(current_run) < REFERENCE_SPEED_ESTIMATION_MIN_RUN_LENGTH:
+            current_run.clear()
+            return
+        first = current_run[0]
+        last = current_run[-1]
+        ref_delta = float(last["ref_time"]) - float(first["ref_time"])
+        source_delta = float(last["source_start"]) - float(first["source_start"])
+        if ref_delta < min_span or source_delta <= 0:
+            current_run.clear()
+            return
+        ratio = source_delta / ref_delta
+        if not (REFERENCE_SPEED_FACTOR_MIN <= ratio <= REFERENCE_SPEED_FACTOR_MAX):
+            current_run.clear()
+            return
+        avg_similarity = sum(float(item["similarity"]) for item in current_run) / len(current_run)
+        weight = max(ref_delta, frame_interval) * max(0.50, avg_similarity)
+        weighted_ratios.append((ratio, weight))
+        current_run.clear()
+
+    for match in matches:
+        similarity = float(match.get("similarity", 0.0) or 0.0)
+        source_video = str(match.get("source_video", "") or "")
+        ref_time = float(match.get("ref_time", 0.0) or 0.0)
+        source_start = float(match.get("source_start", 0.0) or 0.0)
+        if similarity < min_similarity or not source_video:
+            flush_run()
+            continue
+
+        point: Dict[str, float | str] = {
+            "source_video": source_video,
+            "ref_time": ref_time,
+            "source_start": source_start,
+            "similarity": similarity,
+        }
+        if not current_run:
+            current_run.append(point)
+            continue
+
+        previous = current_run[-1]
+        same_video = source_video == str(previous["source_video"])
+        ref_gap = ref_time - float(previous["ref_time"])
+        source_gap = source_start - float(previous["source_start"])
+        if (
+            same_video
+            and ref_gap > 0
+            and source_gap >= -frame_interval * 0.25
+            and source_gap <= max(frame_interval * 8.0, ref_gap * 6.0)
+        ):
+            current_run.append(point)
+            continue
+
+        flush_run()
+        current_run.append(point)
+
+    flush_run()
+    if not weighted_ratios:
+        return None
+
+    ordered = sorted(weighted_ratios, key=lambda item: item[0])
+    total_weight = sum(weight for _, weight in ordered)
+    cumulative = 0.0
+    median_ratio = ordered[-1][0]
+    for ratio, weight in ordered:
+        cumulative += weight
+        if cumulative >= total_weight / 2.0:
+            median_ratio = ratio
+            break
+
+    filtered = [(ratio, weight) for ratio, weight in ordered if abs(ratio - median_ratio) <= 0.02]
+    if not filtered:
+        filtered = ordered
+    weighted_average = sum(ratio * weight for ratio, weight in filtered) / max(
+        1e-6,
+        sum(weight for _, weight in filtered),
+    )
+    normalized = normalize_reference_speed_factor(weighted_average, 1.0)
+    if abs(normalized - 1.0) < REFERENCE_SPEED_ESTIMATION_MIN_DELTA:
+        return None
+    return normalized
+
+
+def restore_match_reference_times(
+    matches: Sequence[Dict[str, object]],
+    reference_frames: Sequence[ReferenceFrame],
+) -> List[Dict[str, object]]:
+    restored: List[Dict[str, object]] = []
+    limit = min(len(matches), len(reference_frames))
+    for index in range(limit):
+        restored_match = dict(matches[index])
+        restored_match["ref_time"] = reference_frames[index].timestamp
+        restored.append(restored_match)
+    for match in matches[limit:]:
+        restored.append(dict(match))
+    return restored
+
+
 def generate_silence(duration: float, output_path: Path, video_processor: VideoProcessor) -> None:
     codec_args = ["-c:a", "pcm_s16le"] if output_path.suffix.lower() == ".wav" else ["-c:a", "libmp3lame", "-b:a", "192k"]
     result = run_subprocess_hidden(
@@ -14345,12 +15499,108 @@ def build_tts_cleanup_filters(
     return filters
 
 
+def compute_audio_fit_plan(
+    source_duration: float,
+    target_duration: float,
+    *,
+    max_speed_factor: float = MAX_TTS_SPEED_FACTOR,
+    allow_slowdown_to_fill: bool = True,
+    allow_tail_trim: bool = True,
+) -> Tuple[Optional[float], float]:
+    adjusted_duration = source_duration
+    speed: Optional[float] = None
+    if source_duration > target_duration + 0.03:
+        speed = clamp(
+            source_duration / max(0.08, target_duration),
+            1.0,
+            max(1.0, max_speed_factor),
+        )
+        if speed > 1.01:
+            adjusted_duration = source_duration / speed
+    elif allow_slowdown_to_fill and source_duration + 0.03 < target_duration:
+        desired_speed = source_duration / max(0.08, target_duration)
+        if MIN_AUDIO_STRETCH_SPEED <= desired_speed < 0.99:
+            speed = desired_speed
+            adjusted_duration = source_duration / desired_speed
+    if allow_tail_trim:
+        output_duration = min(max(0.05, target_duration), max(0.05, adjusted_duration))
+    else:
+        output_duration = max(0.05, adjusted_duration)
+    return speed, output_duration
+
+
+def prepare_tts_boundaries_for_trim(
+    boundaries: Sequence[TTSBoundary],
+    *,
+    trim_start: float,
+    trim_end: float,
+) -> Tuple[TTSBoundary, ...]:
+    prepared: List[TTSBoundary] = []
+    available_duration = max(0.05, trim_end - trim_start)
+    for boundary in boundaries:
+        start = float(boundary.start) - trim_start
+        end = float(boundary.end) - trim_start
+        if end <= 0.0 or start >= available_duration:
+            continue
+        start = clamp(start, 0.0, available_duration)
+        end = clamp(max(start + 0.01, end), start + 0.01, available_duration)
+        prepared.append(TTSBoundary(start=start, end=end, text=boundary.text))
+    return tuple(prepared)
+
+
 def prepare_tts_source_clip(
     source_path: Path,
     output_path: Path,
     video_processor: VideoProcessor,
-) -> float:
+    boundaries: Sequence[TTSBoundary] = (),
+) -> Tuple[float, Tuple[TTSBoundary, ...]]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    source_boundaries = tuple(boundaries)
+    if source_boundaries:
+        source_duration = audio_timeline_duration(source_path, video_processor)
+        boundary_start = max(0.0, min(float(boundary.start) for boundary in source_boundaries))
+        boundary_end = max(boundary_start + 0.05, max(float(boundary.end) for boundary in source_boundaries))
+        trim_start = clamp(
+            max(0.0, boundary_start - TTS_BOUNDARY_PREPARE_HEAD_PAD_SECONDS),
+            0.0,
+            source_duration,
+        )
+        trim_end = clamp(
+            min(source_duration, boundary_end + TTS_ACTIVITY_TAIL_PAD_SECONDS),
+            trim_start + 0.05,
+            max(source_duration, trim_start + 0.05),
+        )
+        result = run_subprocess_hidden(
+            [
+                str(video_processor.ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-i",
+                str(source_path),
+                "-filter:a",
+                f"atrim=start={trim_start:.3f}:end={trim_end:.3f},asetpts=PTS-STARTPTS",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+            raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:400] or "tts boundary prepare failed")
+        duration = audio_timeline_duration(output_path, video_processor)
+        if duration <= 0.05:
+            raise RuntimeError("tts prepared clip is empty after boundary trim")
+        return duration, prepare_tts_boundaries_for_trim(source_boundaries, trim_start=trim_start, trim_end=trim_end)
+
     result = run_subprocess_hidden(
         [
             str(video_processor.ffmpeg),
@@ -14377,13 +15627,13 @@ def prepare_tts_source_clip(
     )
     if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
         raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:400] or "tts prepare failed")
-    duration, _speech_start_offset, _speech_end_offset = normalize_wav_tts_activity_in_place(
+    duration, _speech_start_offset, _speech_end_offset, _trim_start = normalize_wav_tts_activity_in_place(
         output_path,
         video_processor,
     )
     if duration <= 0.05:
         raise RuntimeError("tts prepared clip is empty after silence trim")
-    return duration
+    return duration, ()
 
 
 def tts_group_schedulable_duration(group_state: Dict[str, object]) -> float:
@@ -14413,10 +15663,12 @@ def update_group_tts_source_metrics(
     group_text = str(group_state.get("text", "") or "")
     raw_path = Path(str(group_state["raw_path"]))
     prepared_path = Path(str(group_state.get("prepared_path", ""))) if group_state.get("prepared_path") else None
+    raw_boundaries = tuple(group_state.get("raw_tts_boundaries", ()) or ())
     estimated_duration = estimate_tts_render_duration(group_text, render_rate)
     group_state["applied_rate"] = render_rate
     group_state["effective_path"] = str(raw_path)
-    group_state["trim_silence_on_fit"] = True
+    group_state["trim_silence_on_fit"] = not bool(raw_boundaries)
+    group_state["effective_tts_boundaries"] = raw_boundaries
 
     if not tts_audio_file_ready(raw_path):
         group_state["raw_duration"] = max(0.05, estimated_duration)
@@ -14430,9 +15682,16 @@ def update_group_tts_source_metrics(
         return
 
     try:
-        effective_duration = prepare_tts_source_clip(raw_path, prepared_path, video_processor)
+        effective_duration, effective_boundaries = prepare_tts_source_clip(
+            raw_path,
+            prepared_path,
+            video_processor,
+            boundaries=raw_boundaries,
+        )
     except Exception as exc:
         group_state["effective_duration"] = max(0.05, min(raw_duration, estimated_duration * 1.12))
+        group_state["trim_silence_on_fit"] = not bool(raw_boundaries)
+        group_state["effective_tts_boundaries"] = raw_boundaries
         if log_func:
             detail = summarize_for_log(str(exc), limit=180) or "unknown prepare error"
             log_func(
@@ -14443,6 +15702,7 @@ def update_group_tts_source_metrics(
     group_state["effective_duration"] = max(0.05, effective_duration)
     group_state["effective_path"] = str(prepared_path)
     group_state["trim_silence_on_fit"] = False
+    group_state["effective_tts_boundaries"] = effective_boundaries
 
 
 def split_tts_recovery_chunks(text: str, split_depth: int = 0) -> List[str]:
@@ -14475,6 +15735,10 @@ def split_tts_recovery_chunks(text: str, split_depth: int = 0) -> List[str]:
     return best_parts
 
 
+def tts_boundary_sidecar_path(audio_path: Path) -> Path:
+    return audio_path.with_suffix(audio_path.suffix + ".boundaries.jsonl")
+
+
 async def _synthesize_tts_async(
     text: str,
     voice: str,
@@ -14482,12 +15746,25 @@ async def _synthesize_tts_async(
     output_path: Path,
     volume: str = DEFAULT_TTS_VOLUME,
     pitch: str = DEFAULT_TTS_PITCH,
-) -> None:
-    communicate = edge_tts.Communicate(text=text, voice=voice, rate=rate, volume=volume, pitch=pitch)
-    await asyncio.wait_for(
-        communicate.save(str(output_path)),
-        timeout=TTS_REQUEST_TIMEOUT_SECONDS,
+) -> Tuple[TTSBoundary, ...]:
+    metadata_path = tts_boundary_sidecar_path(output_path)
+    metadata_path.unlink(missing_ok=True)
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=voice,
+        rate=rate,
+        volume=volume,
+        pitch=pitch,
+        boundary="WordBoundary",
     )
+    try:
+        await asyncio.wait_for(
+            communicate.save(str(output_path), str(metadata_path)),
+            timeout=TTS_REQUEST_TIMEOUT_SECONDS,
+        )
+        return parse_edge_tts_boundary_metadata(metadata_path)
+    finally:
+        metadata_path.unlink(missing_ok=True)
 
 
 def tts_voice_candidates(preferred_voice: str) -> List[str]:
@@ -14811,7 +16088,7 @@ def synthesize_tts_with_fallback(
     for candidate_voice, volume, pitch in attempts:
         for retry in range(3):
             try:
-                asyncio.run(
+                boundaries = asyncio.run(
                     _synthesize_tts_async(
                         text,
                         candidate_voice,
@@ -14822,7 +16099,13 @@ def synthesize_tts_with_fallback(
                     )
                 )
                 if output_path.exists() and output_path.stat().st_size > 0:
-                    return TTSAttemptResult(True, candidate_voice, "", TTS_PROVIDER_EDGE)
+                    return TTSAttemptResult(
+                        True,
+                        candidate_voice,
+                        "",
+                        TTS_PROVIDER_EDGE,
+                        tuple(boundaries),
+                    )
             except Exception as exc:
                 last_error = str(exc).strip() or type(exc).__name__
             output_path.unlink(missing_ok=True)
@@ -14964,27 +16247,19 @@ def fit_audio_clip(
     max_speed_factor: float = MAX_TTS_SPEED_FACTOR,
     trim_silence: bool = True,
     allow_slowdown_to_fill: bool = True,
+    allow_tail_trim: bool = True,
 ) -> float:
-    source_duration = video_processor.probe_duration(source_path)
+    source_duration = audio_timeline_duration(source_path, video_processor)
     is_wav = output_path.suffix.lower() == ".wav"
     codec_args = ["-c:a", "pcm_s16le"] if is_wav else ["-c:a", "libmp3lame", "-b:a", "192k"]
     output_audio_args = ["-ar", "48000", "-ac", "2"] if is_wav else []
-    adjusted_duration = source_duration
-    speed: Optional[float] = None
-    if source_duration > target_duration + 0.03:
-        speed = clamp(
-            source_duration / max(0.08, target_duration),
-            1.0,
-            max(1.0, max_speed_factor),
-        )
-        if speed > 1.01:
-            adjusted_duration = source_duration / speed
-    elif allow_slowdown_to_fill and source_duration + 0.03 < target_duration:
-        desired_speed = source_duration / max(0.08, target_duration)
-        if MIN_AUDIO_STRETCH_SPEED <= desired_speed < 0.99:
-            speed = desired_speed
-            adjusted_duration = source_duration / desired_speed
-    output_duration = min(max(0.05, target_duration), max(0.05, adjusted_duration))
+    speed, output_duration = compute_audio_fit_plan(
+        source_duration,
+        target_duration,
+        max_speed_factor=max_speed_factor,
+        allow_slowdown_to_fill=allow_slowdown_to_fill,
+        allow_tail_trim=allow_tail_trim,
+    )
     filters = build_tts_cleanup_filters(
         trim_silence=trim_silence,
         volume_gain=volume_gain,
@@ -15013,7 +16288,7 @@ def fit_audio_clip(
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:400] or "audio fit failed")
-    return video_processor.probe_duration(output_path)
+    return audio_timeline_duration(output_path, video_processor)
 
 
 def concat_audio_files(parts: Sequence[Path], output_path: Path, video_processor: VideoProcessor) -> None:
@@ -15206,8 +16481,15 @@ def try_restore_tts_cache(
         return TTSAttemptResult(False, "", validation_error, "")
 
     metadata = load_tts_cache_metadata(metadata_path)
+    cached_provider = str(metadata.get("provider", "") or TTS_PROVIDER_EDGE).strip() or TTS_PROVIDER_EDGE
+    cached_boundaries = deserialize_tts_boundaries(metadata.get("boundaries"))
+    if cached_provider != TTS_PROVIDER_AZURE and not cached_boundaries:
+        output_path.unlink(missing_ok=True)
+        cache_audio_path.unlink(missing_ok=True)
+        metadata_path.unlink(missing_ok=True)
+        return TTSAttemptResult(False, "", "tts cache missing boundary metadata", "")
     used_voice = str(metadata.get("used_voice", "") or "").strip() or voice
-    return TTSAttemptResult(True, used_voice, "", TTS_PROVIDER_CACHE)
+    return TTSAttemptResult(True, used_voice, "", TTS_PROVIDER_CACHE, cached_boundaries)
 
 
 def persist_tts_cache_entry(
@@ -15220,6 +16502,7 @@ def persist_tts_cache_entry(
     volume: str = DEFAULT_TTS_VOLUME,
     pitch: str = DEFAULT_TTS_PITCH,
     provider: str = TTS_PROVIDER_EDGE,
+    boundaries: Sequence[TTSBoundary] = (),
 ) -> None:
     if not output_path.exists() or output_path.stat().st_size <= 0:
         return
@@ -15242,6 +16525,7 @@ def persist_tts_cache_entry(
         "suffix": output_path.suffix or ".mp3",
         "text_units": subtitle_speech_units(text),
         "provider": (provider or "").strip() or TTS_PROVIDER_EDGE,
+        "boundaries": serialize_tts_boundaries(boundaries),
     }
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -15262,7 +16546,13 @@ def synthesize_tts_resilient_validated(
     used_provider = ""
     cache_result = try_restore_tts_cache(text, voice, rate, output_path, video_processor)
     if cache_result.success:
-        return TTSAttemptResult(True, cache_result.used_voice or used_voice, "", cache_result.provider)
+        return TTSAttemptResult(
+            True,
+            cache_result.used_voice or used_voice,
+            "",
+            cache_result.provider,
+            cache_result.boundaries,
+        )
     if cache_result.error_text:
         last_error = cache_result.error_text
     rounds = max(1, validation_rounds)
@@ -15314,8 +16604,15 @@ def synthesize_tts_resilient_validated(
                 rate,
                 output_path,
                 provider=attempt_result.provider or used_provider or TTS_PROVIDER_EDGE,
+                boundaries=attempt_result.boundaries,
             )
-            return TTSAttemptResult(True, used_voice, "", attempt_result.provider or used_provider or TTS_PROVIDER_EDGE)
+            return TTSAttemptResult(
+                True,
+                used_voice,
+                "",
+                attempt_result.provider or used_provider or TTS_PROVIDER_EDGE,
+                attempt_result.boundaries,
+            )
 
         last_error = validation_error or last_error
         output_path.unlink(missing_ok=True)
@@ -15342,12 +16639,14 @@ def synthesize_tts_resilient_validated(
                         rate,
                         output_path,
                         provider=backup_result.provider or used_provider or TTS_PROVIDER_AZURE,
+                        boundaries=backup_result.boundaries,
                     )
                     return TTSAttemptResult(
                         True,
                         used_voice,
                         "",
                         backup_result.provider or used_provider or TTS_PROVIDER_AZURE,
+                        backup_result.boundaries,
                     )
                 last_error = backup_validation_error or last_error
                 output_path.unlink(missing_ok=True)
@@ -15413,6 +16712,7 @@ def synthesize_tts_segment(
     recovered_voice = used_voice
     recovered_provider = used_provider
     chunk_paths: List[Path] = []
+    recovered_boundaries: List[TTSBoundary] = []
     try:
         for idx, chunk_text in enumerate(chunk_texts, start=1):
             chunk_path = output_path.with_name(f"{output_path.stem}_part{idx:02d}{output_path.suffix}")
@@ -15436,6 +16736,15 @@ def synthesize_tts_segment(
             if chunk_result.used_voice:
                 recovered_voice = chunk_result.used_voice
             recovered_provider = merge_tts_provider(recovered_provider, chunk_result.provider)
+            chunk_offset = sum(audio_timeline_duration(path, video_processor) for path in chunk_paths)
+            recovered_boundaries.extend(
+                TTSBoundary(
+                    start=chunk_offset + float(boundary.start),
+                    end=chunk_offset + float(boundary.end),
+                    text=boundary.text,
+                )
+                for boundary in chunk_result.boundaries
+            )
             chunk_paths.append(chunk_path)
         concat_audio_files(chunk_paths, output_path, video_processor)
         output_valid, output_error = validate_tts_audio_output(text, rate, output_path, video_processor)
@@ -15449,8 +16758,15 @@ def synthesize_tts_segment(
             rate,
             output_path,
             provider=recovered_provider or TTS_PROVIDER_EDGE,
+            boundaries=recovered_boundaries,
         )
-        return TTSAttemptResult(True, recovered_voice, "", recovered_provider or TTS_PROVIDER_EDGE)
+        return TTSAttemptResult(
+            True,
+            recovered_voice,
+            "",
+            recovered_provider or TTS_PROVIDER_EDGE,
+            tuple(recovered_boundaries),
+        )
     finally:
         for chunk_path in chunk_paths:
             chunk_path.unlink(missing_ok=True)
@@ -15513,6 +16829,7 @@ def _legacy_build_tts_track_unused(
     last_tts_error = ""
     backup_notice_state: Dict[str, bool] = {}
     rendered_entries: List[SubtitleEntry] = []
+    previous_render_end: Optional[float] = None
     target_gap = normalize_reference_gap(reference_gap)
     speech_entries: List[SubtitleEntry] = []
     for entry in entries:
@@ -15683,6 +17000,7 @@ def build_tts_track(
     last_tts_error = ""
     backup_notice_state: Dict[str, bool] = {}
     rendered_entries: List[SubtitleEntry] = []
+    previous_render_end: Optional[float] = None
     target_gap = normalize_reference_gap(reference_gap)
     speech_entries: List[SubtitleEntry] = []
     for entry in entries:
@@ -15726,11 +17044,8 @@ def build_tts_track(
         raise RuntimeError(f"Selected TTS voice {locked_voice} is currently unavailable: {lock_error}")
 
     prefer_sentence_pauses = bool(settings.prefer_funasr_sentence_pauses) if settings else False
-    strict_audio_timing_mode = bool(
-        settings
-        and settings.prefer_funasr_audio_subtitles
-        and settings.prefer_funasr_sentence_pauses
-    )
+    strict_audio_timing_mode = prefer_sentence_pauses
+    audio_master_timeline_mode = strict_audio_timing_mode
     duck_release = 0.0 if strict_audio_timing_mode else 0.04
     tts_join_map = (
         {entry.index: False for entry in speech_entries[:-1]}
@@ -15798,6 +17113,7 @@ def build_tts_track(
             )
             log_tts_backup_notice_once(result, backup_notice_state, log_func)
             if result.success and tts_audio_file_ready(raw_path):
+                group_state["raw_tts_boundaries"] = tuple(result.boundaries)
                 update_group_tts_source_metrics(
                     group_state,
                     render_rate,
@@ -15820,6 +17136,8 @@ def build_tts_track(
                 group_state["effective_duration"] = raw_duration
                 group_state["effective_path"] = str(raw_path)
                 group_state["trim_silence_on_fit"] = True
+                group_state["raw_tts_boundaries"] = ()
+                group_state["effective_tts_boundaries"] = ()
             group_state["success"] = result.success and tts_audio_file_ready(raw_path)
             group_state["used_voice"] = result.used_voice
             group_state["used_provider"] = result.provider
@@ -15917,9 +17235,14 @@ def build_tts_track(
             f"planned end drift <= {schedule_stats['max_end_drift']:.2f}s"
         )
         if schedule_stats["hard_trim_count"] > 0:
-            log_func(
-                f"  TTS timing guard: {int(schedule_stats['hard_trim_count'])} group(s) still require tail trim after applying the drift cap"
-            )
+            if audio_master_timeline_mode:
+                log_func(
+                    f"  TTS timing guard: {int(schedule_stats['hard_trim_count'])} group(s) still exceed the original subtitle window after the drift cap; later subtitle timing will follow the rendered audio"
+                )
+            else:
+                log_func(
+                    f"  TTS timing guard: {int(schedule_stats['hard_trim_count'])} group(s) still require tail trim after applying the drift cap"
+                )
 
     for group_index, group_state in enumerate(prepared_groups):
         order = int(group_state["order"])
@@ -15930,14 +17253,28 @@ def build_tts_track(
             scheduled_start + 0.05,
             float(group_state.get("scheduled_end", group_state.get("window_end", scheduled_start + 0.05)) or (scheduled_start + 0.05)),
         )
+        latest_start = max(
+            scheduled_start,
+            float(group_state.get("latest_start", scheduled_start) or scheduled_start),
+        )
         aligned_path = aligned_dir / f"{order:03d}.wav"
 
         actual_start = max(scheduled_start, cursor)
+        if strict_audio_timing_mode and previous_render_end is not None:
+            desired_start = previous_render_end + STRICT_TTS_MIN_SENTENCE_GAP_SECONDS
+            if desired_start > actual_start + 0.001:
+                actual_start = min(desired_start, latest_start)
         if actual_start > cursor + min_gap_threshold:
             silence_path = aligned_dir / f"gap_{order:03d}.wav"
             generate_silence(actual_start - cursor, silence_path, video_processor)
             parts.append(silence_path)
-            cursor = actual_start
+            cursor += audio_timeline_duration(silence_path, video_processor)
+            actual_start = cursor
+        else:
+            # If we skip a tiny inter-sentence gap, the audio concat cursor does
+            # not move. Keep the subtitle anchored to the real concat position so
+            # sub-30ms gaps cannot accumulate into visible SRT lag later on.
+            actual_start = cursor
 
         available_duration = max(0.05, scheduled_end - actual_start)
         speech_start_offset = 0.0
@@ -15958,6 +17295,7 @@ def build_tts_track(
                 log_tts_backup_notice_once(restore_result, backup_notice_state, log_func)
                 if restore_result.success and tts_audio_file_ready(raw_path):
                     group_state["success"] = True
+                    group_state["raw_tts_boundaries"] = tuple(restore_result.boundaries)
                     update_group_tts_source_metrics(
                         group_state,
                         restore_rate,
@@ -15996,17 +17334,31 @@ def build_tts_track(
                 and raw_duration / max(MAX_TTS_SPEED_FACTOR, 1.0) > target_duration + 0.03
                 and log_func
             ):
-                log_func(
-                    f"  TTS #{order} [{group_state['label']}] still exceeds its drift-capped sentence window at max speed; tail will be trimmed to stay within {MAX_TTS_TIMELINE_OVERFLOW_SECONDS:.2f}s subtitle drift"
-            )
+                if audio_master_timeline_mode:
+                    log_func(
+                        f"  TTS #{order} [{group_state['label']}] still exceeds its original sentence window at max speed; keeping the full rendered audio and letting the later timeline follow it"
+                    )
+                else:
+                    log_func(
+                        f"  TTS #{order} [{group_state['label']}] still exceeds its drift-capped sentence window at max speed; tail will be trimmed to stay within {MAX_TTS_TIMELINE_OVERFLOW_SECONDS:.2f}s subtitle drift"
+                    )
             fit_speed_factor = choose_local_tts_fit_speed_factor(raw_duration, target_duration)
             group_state["fit_speed_factor"] = fit_speed_factor
             fit_source_path = Path(str(group_state.get("effective_path", group_state["raw_path"]) or group_state["raw_path"]))
             if not tts_audio_file_ready(fit_source_path):
                 fit_source_path = Path(str(group_state["raw_path"]))
-            trim_silence = bool(group_state.get("trim_silence_on_fit", True))
+            fit_source_boundaries = tuple(group_state.get("effective_tts_boundaries", ()) or ())
             if fit_source_path == Path(str(group_state["raw_path"])):
+                fit_source_boundaries = tuple(group_state.get("raw_tts_boundaries", ()) or ())
+            trim_silence = bool(group_state.get("trim_silence_on_fit", True))
+            if fit_source_path == Path(str(group_state["raw_path"])) and not fit_source_boundaries:
                 trim_silence = True
+            fit_speed, _fit_output_duration = compute_audio_fit_plan(
+                audio_timeline_duration(fit_source_path, video_processor),
+                target_duration,
+                max_speed_factor=fit_speed_factor,
+                allow_slowdown_to_fill=True,
+            )
             actual_duration = fit_audio_clip(
                 fit_source_path,
                 target_duration=target_duration,
@@ -16016,17 +17368,26 @@ def build_tts_track(
                 max_speed_factor=fit_speed_factor,
                 trim_silence=trim_silence,
                 allow_slowdown_to_fill=True,
+                allow_tail_trim=not audio_master_timeline_mode,
             )
-            actual_duration, speech_start_offset, speech_end_offset = normalize_wav_tts_activity_in_place(
+            actual_duration, speech_start_offset, speech_end_offset, final_trim_start = normalize_wav_tts_activity_in_place(
                 aligned_path,
                 video_processor,
+            )
+            final_tts_boundaries = transform_tts_boundaries_for_final_timeline(
+                fit_source_boundaries,
+                group_start=actual_start,
+                clip_duration=actual_duration,
+                speed=fit_speed,
+                trim_start=final_trim_start,
             )
         else:
             target_duration = max(0.05, available_duration)
             generate_silence(target_duration, aligned_path, video_processor)
-            actual_duration = target_duration
+            actual_duration = audio_timeline_duration(aligned_path, video_processor)
             speech_start_offset = 0.0
             speech_end_offset = actual_duration
+            final_tts_boundaries = ()
 
         parts.append(aligned_path)
         audio_end = actual_start + max(0.05, actual_duration)
@@ -16035,15 +17396,27 @@ def build_tts_track(
         if speech_end <= speech_start + 0.02:
             speech_start = actual_start
             speech_end = audio_end
-        # Duck from the actual narration onset instead of the theoretical subtitle
-        # start. This avoids silent holes when a new TTS group is scheduled a bit
-        # later than the reference subtitle window.
-        duck_start = max(0.0, speech_start)
+        render_end = speech_end
+        render_tail_hold = 0.0
+        if strict_audio_timing_mode:
+            render_tail_hold = min(
+                STRICT_TTS_RENDER_TAIL_HOLD_SECONDS,
+                max(0.0, audio_end - speech_end),
+            )
+            if render_tail_hold > 0.01:
+                render_end = min(audio_end, speech_end + render_tail_hold)
+        # In strict timing mode we prefer muting the source dialogue from the
+        # scheduled subtitle window start, otherwise the original speech can leak
+        # ahead of the TTS and make the subtitles feel increasingly late.
+        render_start = speech_start
+        if final_tts_boundaries:
+            render_start = final_tts_boundaries[0].start
+        duck_start = max(0.0, speech_start if not strict_audio_timing_mode else strict_start)
         duck_end = min(
             strict_timeline_duration,
-            speech_end + duck_release
+            render_end + duck_release
             if strict_audio_timing_mode
-            else max(strict_end, speech_end + duck_release),
+            else max(strict_end, render_end + duck_release),
         )
         if strict_audio_timing_mode and group_index + 1 < len(prepared_groups):
             next_group_state = prepared_groups[group_index + 1]
@@ -16059,12 +17432,25 @@ def build_tts_track(
                     ),
                 )
                 next_actual_start = max(next_scheduled_start, audio_end)
-                short_gap = next_actual_start - speech_end
+                short_gap = next_actual_start - render_end
                 if 0.0 < short_gap <= STRICT_TTS_DUCK_BRIDGE_GAP_SECONDS:
                     duck_end = max(duck_end, next_actual_start)
         duck_intervals.append((duck_start, duck_end))
-        rendered_entries.extend(distribute_group_rendered_entries(list(group_state["entries"]), speech_start, speech_end))
+        rendered_group_entries = render_entries_from_tts_boundaries(
+            list(group_state["entries"]),
+            final_tts_boundaries,
+            fallback_start=render_start,
+            fallback_end=render_end,
+        )
+        if not rendered_group_entries:
+            rendered_group_entries = distribute_group_rendered_entries(
+                list(group_state["entries"]),
+                render_start,
+                render_end,
+            )
+        rendered_entries.extend(rendered_group_entries)
         cursor = audio_end
+        previous_render_end = render_end
         if log_func:
             fit_speed_factor = float(group_state.get("fit_speed_factor", 1.0) or 1.0)
             fit_note = (
@@ -16072,12 +17458,23 @@ def build_tts_track(
                 if fit_speed_factor > 1.01 and fit_speed_factor <= LOCAL_TTS_MICRO_SPEED_FACTOR + 0.005
                 else ""
             )
+            tail_hold_note = (
+                f" / tail hold +{render_tail_hold:.02f}s"
+                if render_tail_hold > 0.01
+                else ""
+            )
+            onset_shift_note = ""
+            if strict_audio_timing_mode:
+                onset_shift = max(0.0, speech_start - actual_start)
+                if onset_shift > 0.005:
+                    onset_shift_note = f" / onset+{onset_shift:.02f}s"
             raw_probe_duration = max(0.05, float(group_state.get("raw_duration", actual_duration) or actual_duration))
             core_duration = max(0.05, tts_group_schedulable_duration(group_state))
             log_func(
                 f"  TTS #{order} [{group_state['label']}]: raw {raw_probe_duration:.2f}s / core {core_duration:.2f}s -> final {actual_duration:.2f}s / "
-                f"subtitle {strict_start:.2f}-{strict_end:.2f}s / speech {speech_start:.2f}-{speech_end:.2f}s / "
-                f"rate {group_state.get('applied_rate', rate)}{fit_note}"
+                f"subtitle {render_start:.2f}-{render_end:.2f}s / speech {speech_start:.2f}-{speech_end:.2f}s / "
+                f"window {strict_start:.2f}-{strict_end:.2f}s / "
+                f"rate {group_state.get('applied_rate', rate)}{fit_note}{tail_hold_note}{onset_shift_note}"
             )
 
     if strict_timeline_duration > cursor + min_gap_threshold:
@@ -16121,21 +17518,45 @@ def build_tts_track(
 
 def mix_final_video(
     clean_video: Path,
-    narration_audio: Path,
+    narration_audio: Optional[Path],
     duck_intervals: Sequence[Tuple[float, float]],
     output_path: Path,
     video_processor: VideoProcessor,
     duck_volume: float = DEFAULT_DUCK_VOLUME,
     duck_padding_seconds: float = AUDIO_DUCK_PADDING_SECONDS,
     duck_merge_gap_seconds: float = AUDIO_DUCK_MERGE_GAP_SECONDS,
+    bgm_audio: Optional[Path] = None,
+    bgm_volume_percent: float = 0.0,
 ) -> None:
+    video_profile = video_processor.probe_video(clean_video)
     video_duration = max(0.0, video_processor.probe_duration(clean_video))
-    narration_duration = max(0.0, video_processor.probe_duration(narration_audio))
+    video_fps = fps_to_float(video_profile["fps"])
+    delivery_fps = delivery_visual_fps(video_fps)
+    has_narration_audio = bool(
+        narration_audio
+        and Path(narration_audio).exists()
+        and Path(narration_audio).is_file()
+        and Path(narration_audio).stat().st_size > 0
+    )
+    narration_duration = (
+        max(0.0, video_processor.probe_duration(Path(narration_audio)))
+        if has_narration_audio
+        else 0.0
+    )
     background_has_audio = video_processor.has_audio_stream(clean_video)
+    bgm_volume_ratio = clamp(float(bgm_volume_percent) / 100.0, 0.0, 1.0)
+    has_bgm_audio = bool(
+        bgm_audio
+        and bgm_volume_ratio > 0.0
+        and Path(bgm_audio).exists()
+        and Path(bgm_audio).is_file()
+        and Path(bgm_audio).stat().st_size > 0
+    )
     pad_duration = max(0.0, narration_duration - video_duration)
+    output_duration = max(0.05, video_duration, narration_duration)
     effective_duck_intervals = list(duck_intervals)
-    if not effective_duck_intervals:
-        effective_duck_intervals = detect_narration_audio_duck_intervals(narration_audio, video_processor)
+    if has_narration_audio and not effective_duck_intervals:
+        effective_duck_intervals = detect_narration_audio_duck_intervals(Path(narration_audio), video_processor)
     normalized_duck_intervals: List[Tuple[float, float]] = []
     for start, end in sorted(
         (
@@ -16157,75 +17578,349 @@ def mix_final_video(
             normalized_duck_intervals[-1] = (previous_start, max(previous_end, end))
         else:
             normalized_duck_intervals.append((start, end))
-    video_filter = (
-        f"[0:v]tpad=stop_mode=clone:stop_duration={pad_duration:.3f}[vout];"
-        if pad_duration > 0.03
-        else "[0:v]null[vout];"
-    )
+    filter_parts = [
+        (
+            f"[0:v]setpts=PTS-STARTPTS,fps={delivery_fps:.6f},tpad=stop_mode=clone:stop_duration={pad_duration:.3f}[vout]"
+            if pad_duration > 0.03
+            else f"[0:v]setpts=PTS-STARTPTS,fps={delivery_fps:.6f}[vout]"
+        )
+    ]
+    audio_labels: List[str] = []
+    audio_weights: List[str] = []
+    next_input_index = 1
+
     if background_has_audio:
-        active_expr = "+".join(
-            f"between(t,{start:.3f},{end:.3f})"
-            for start, end in normalized_duck_intervals
-            if end > start
-        ) or "0"
-        background_volume = f"if(gt({active_expr},0),{duck_volume:.3f},1)"
-        filter_complex = (
-            f"{video_filter}"
-            f"[0:a]aresample=48000,highpass=f=70,lowpass=f=12000,"
-            f"volume='{background_volume}':eval=frame[bg];"
-            f"[1:a]aresample=48000,highpass=f=85,lowpass=f=9000,"
-            f"volume=1.10[vo];"
-            f"[bg][vo]amix=inputs=2:weights='0.88 1.10':normalize=0:duration=longest:dropout_transition=0,"
-            f"atrim=duration={max(0.05, video_duration):.3f},asetpts=PTS-STARTPTS,"
-            f"alimiter=limit=0.97[aout]"
+        if has_narration_audio:
+            active_expr = "+".join(
+                f"between(t,{start:.3f},{end:.3f})"
+                for start, end in normalized_duck_intervals
+                if end > start
+            ) or "0"
+            background_volume = f"if(gt({active_expr},0),{duck_volume:.3f},1)"
+            background_weight = "0.88"
+        else:
+            background_volume = "1"
+            background_weight = "1.00"
+        filter_parts.append(
+            "[0:a]aresample=48000:async=1:first_pts=0,asetpts=PTS-STARTPTS,highpass=f=70,lowpass=f=12000,"
+            f"volume='{background_volume}':eval=frame[bg]"
+        )
+        audio_labels.append("[bg]")
+        audio_weights.append(background_weight)
+
+    if has_narration_audio:
+        filter_parts.append(
+            f"[{next_input_index}:a]aresample=48000:async=1:first_pts=0,asetpts=PTS-STARTPTS,highpass=f=85,lowpass=f=9000,volume=1.10[vo]"
+        )
+        audio_labels.append("[vo]")
+        audio_weights.append("1.10")
+        next_input_index += 1
+
+    if has_bgm_audio:
+        filter_parts.append(
+            f"[{next_input_index}:a]aresample=48000:async=1:first_pts=0,lowpass=f=12000,"
+            f"volume={bgm_volume_ratio:.3f},atrim=duration={output_duration:.3f},asetpts=PTS-STARTPTS[bgm]"
+        )
+        audio_labels.append("[bgm]")
+        audio_weights.append("1.00")
+
+    if not audio_labels:
+        raise RuntimeError("final mix requires at least one audio source")
+
+    if len(audio_labels) == 1:
+        filter_parts.append(
+            f"{audio_labels[0]}atrim=duration={output_duration:.3f},asetpts=PTS-STARTPTS,alimiter=limit=0.97[aout]"
         )
     else:
-        filter_complex = (
-            f"{video_filter}"
-            f"[1:a]aresample=48000,highpass=f=85,lowpass=f=9000,"
-            f"volume=1.10,atrim=duration={max(0.05, video_duration):.3f},asetpts=PTS-STARTPTS,"
-            f"alimiter=limit=0.97[aout]"
+        filter_parts.append(
+            "".join(audio_labels)
+            + f"amix=inputs={len(audio_labels)}:weights='{' '.join(audio_weights)}':normalize=0:duration=longest:dropout_transition=0,"
+            + f"atrim=duration={output_duration:.3f},asetpts=PTS-STARTPTS,alimiter=limit=0.97[aout]"
         )
-    result = run_subprocess_hidden(
+
+    filter_complex = ";".join(filter_parts)
+    command = [
+        str(video_processor.ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-fflags",
+        "+genpts",
+        "-i",
+        str(clean_video),
+    ]
+    if has_narration_audio:
+        command.extend(["-i", str(Path(narration_audio))])
+    if has_bgm_audio:
+        command.extend(["-stream_loop", "-1", "-i", str(Path(bgm_audio))])
+    command.extend(
         [
-            str(video_processor.ffmpeg),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-nostdin",
-            "-y",
-            "-i",
-            str(clean_video),
-            "-i",
-            str(narration_audio),
             "-filter_complex",
             filter_complex,
             "-map",
             "[vout]",
             "-map",
             "[aout]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
-            "-pix_fmt",
-            "yuv420p",
+            *build_seek_safe_x264_args(
+                delivery_fps,
+                crf="20",
+                keyframe_interval_seconds=DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS,
+            ),
             "-c:a",
             "aac",
             "-b:a",
             "192k",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-use_editlist",
+            "0",
             "-movflags",
             "+faststart",
             str(output_path),
-        ],
+        ]
+    )
+    result = run_subprocess_hidden(
+        command,
         capture_output=True,
         timeout=600,
         check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:400] or "final mix failed")
+
+
+def _build_delivery_timeline_retime_slices(
+    source_entries: Sequence[SubtitleEntry],
+    target_entries: Sequence[SubtitleEntry],
+    video_duration: float,
+) -> List[Dict[str, object]]:
+    slices: List[Dict[str, object]] = []
+    source_cursor = 0.0
+    target_cursor = 0.0
+    for index, (source_entry, target_entry) in enumerate(zip(source_entries, target_entries), start=1):
+        source_gap = max(0.0, float(source_entry.start) - source_cursor)
+        target_gap = max(0.0, float(target_entry.start) - target_cursor)
+        if target_gap > 0.01 or source_gap > 0.01:
+            slices.append(
+                {
+                    "kind": "gap",
+                    "label": f"gap#{index}",
+                    "source_start": source_cursor,
+                    "source_duration": source_gap,
+                    "target_duration": max(0.0, target_gap),
+                }
+            )
+        slices.append(
+            {
+                "kind": "entry",
+                "label": f"subtitle#{index}",
+                "source_start": float(source_entry.start),
+                "source_duration": max(0.0, float(source_entry.end) - float(source_entry.start)),
+                "target_duration": max(0.05, float(target_entry.end) - float(target_entry.start)),
+            }
+        )
+        source_cursor = float(source_entry.end)
+        target_cursor = float(target_entry.end)
+
+    tail_duration = max(0.0, float(video_duration) - source_cursor)
+    if tail_duration > 0.01:
+        slices.append(
+            {
+                "kind": "tail",
+                "label": "tail",
+                "source_start": source_cursor,
+                "source_duration": tail_duration,
+                "target_duration": tail_duration,
+            }
+        )
+    return slices
+
+
+def render_delivery_timeline_retime_segment(
+    source_video: Path,
+    output_path: Path,
+    video_processor: VideoProcessor,
+    *,
+    delivery_fps: float,
+    source_video_duration: float,
+    source_has_audio: bool,
+    source_start: float,
+    source_duration: float,
+    target_duration: float,
+    segment_kind: str,
+) -> None:
+    min_source_duration = max(1.0 / max(1.0, delivery_fps), 0.04)
+    normalized_target_duration = max(0.05, float(target_duration))
+    normalized_source_duration = max(0.0, float(source_duration))
+    normalized_start = clamp(float(source_start), 0.0, max(0.0, source_video_duration))
+    if normalized_source_duration <= min_source_duration:
+        if segment_kind == "gap":
+            normalized_start = clamp(
+                normalized_start - min_source_duration,
+                0.0,
+                max(0.0, source_video_duration - min_source_duration),
+            )
+        normalized_source_duration = min_source_duration
+    if normalized_target_duration + 0.01 < normalized_source_duration:
+        normalized_source_duration = normalized_target_duration
+    normalized_start = clamp(
+        normalized_start,
+        0.0,
+        max(0.0, source_video_duration - normalized_source_duration),
+    )
+    normalized_end = clamp(
+        normalized_start + normalized_source_duration,
+        normalized_start + 0.01,
+        max(source_video_duration, normalized_start + 0.01),
+    )
+    normalized_source_duration = max(0.01, normalized_end - normalized_start)
+    pad_duration = max(0.0, normalized_target_duration - normalized_source_duration)
+    target_frame_count = max(1, int(round(normalized_target_duration * delivery_fps)))
+
+    video_filters = [
+        f"trim=start={normalized_start:.3f}:end={normalized_end:.3f}",
+        "setpts=PTS-STARTPTS",
+        f"fps={delivery_fps:.6f}",
+    ]
+    if pad_duration > 0.01:
+        video_filters.append(f"tpad=stop_mode=clone:stop_duration={pad_duration:.3f}")
+    video_filter = ",".join(video_filters)
+
+    command = [
+        str(video_processor.ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-i",
+        str(source_video),
+    ]
+    if not source_has_audio:
+        command.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=stereo:sample_rate=48000",
+            ]
+        )
+    if source_has_audio:
+        audio_filter = (
+            f"[0:a]atrim=start={normalized_start:.3f}:end={normalized_end:.3f},asetpts=PTS-STARTPTS"
+        )
+        if pad_duration > 0.01:
+            audio_filter += f",apad=pad_dur={pad_duration:.3f}"
+        audio_filter += f",atrim=duration={normalized_target_duration:.3f}[aout]"
+    else:
+        audio_filter = f"[1:a]atrim=duration={normalized_target_duration:.3f},asetpts=PTS-STARTPTS[aout]"
+    filter_complex = f"[0:v]{video_filter}[vout];{audio_filter}"
+    command.extend(
+        [
+            "-filter_complex",
+            filter_complex,
+            "-frames:v",
+            str(target_frame_count),
+            "-map",
+            "[vout]",
+            "-map",
+            "[aout]",
+            *build_seek_safe_x264_args(delivery_fps, crf="20"),
+            *intermediate_audio_encode_args(output_path),
+            str(output_path),
+        ]
+    )
+    result = run_subprocess_hidden(
+        command,
+        capture_output=True,
+        timeout=300,
+        check=False,
+    )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:400] or "delivery timeline retime segment failed")
+
+
+def retime_delivery_video_to_subtitle_timeline(
+    source_video: Path,
+    source_entries: Sequence[SubtitleEntry],
+    target_entries: Sequence[SubtitleEntry],
+    output_path: Path,
+    video_processor: VideoProcessor,
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> bool:
+    source_list = list(source_entries)
+    target_list = list(target_entries)
+    if not source_list or not target_list or len(source_list) != len(target_list):
+        return False
+
+    max_edge_shift = 0.0
+    total_positive_extension = 0.0
+    for source_entry, target_entry in zip(source_list, target_list):
+        start_shift = abs(float(target_entry.start) - float(source_entry.start))
+        end_shift = abs(float(target_entry.end) - float(source_entry.end))
+        max_edge_shift = max(max_edge_shift, start_shift, end_shift)
+        total_positive_extension += max(
+            0.0,
+            (float(target_entry.end) - float(target_entry.start))
+            - (float(source_entry.end) - float(source_entry.start)),
+        )
+    if max_edge_shift < 0.04 and total_positive_extension < 0.08:
+        shutil.copy2(source_video, output_path)
+        return False
+
+    video_profile = video_processor.probe_video(source_video)
+    delivery_fps = delivery_visual_fps(fps_to_float(video_profile["fps"]))
+    source_video_duration = max(0.05, video_processor.probe_duration(source_video))
+    source_has_audio = video_processor.has_audio_stream(source_video)
+    retime_slices = _build_delivery_timeline_retime_slices(source_list, target_list, source_video_duration)
+    if not retime_slices:
+        shutil.copy2(source_video, output_path)
+        return False
+
+    segment_dir = output_path.parent / f"{output_path.stem}_segments"
+    safe_remove_dir(segment_dir)
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    concat_list = output_path.with_suffix(".retime.concat.txt")
+    concat_lines: List[str] = []
+    try:
+        generated_count = 0
+        for slice_index, slice_info in enumerate(retime_slices, start=1):
+            target_duration = float(slice_info.get("target_duration", 0.0) or 0.0)
+            if target_duration <= 0.01:
+                continue
+            segment_path = segment_dir / f"{slice_index:04d}{INTERMEDIATE_SEGMENT_SUFFIX}"
+            render_delivery_timeline_retime_segment(
+                source_video,
+                segment_path,
+                video_processor,
+                delivery_fps=delivery_fps,
+                source_video_duration=source_video_duration,
+                source_has_audio=source_has_audio,
+                source_start=float(slice_info.get("source_start", 0.0) or 0.0),
+                source_duration=float(slice_info.get("source_duration", 0.0) or 0.0),
+                target_duration=target_duration,
+                segment_kind=str(slice_info.get("kind", "") or ""),
+            )
+            concat_lines.append(f"file '{segment_path.resolve().as_posix()}'")
+            generated_count += 1
+        if not concat_lines:
+            shutil.copy2(source_video, output_path)
+            return False
+        concat_list.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+        video_processor.concat_videos(concat_list, output_path)
+        if log_func:
+            log_func(
+                "  Delivery video retimed to the rendered subtitle timeline: "
+                f"{generated_count} slice(s) / max edge shift {max_edge_shift:.2f}s / "
+                f"extra hold +{total_positive_extension:.2f}s"
+            )
+        return True
+    finally:
+        concat_list.unlink(missing_ok=True)
+        safe_remove_dir(segment_dir)
 
 
 def export_final_audio(video_path: Path, output_path: Path, video_processor: VideoProcessor) -> None:
@@ -16271,8 +17966,10 @@ def burn_subtitles_into_video(
     profile = video_processor.probe_video(source_video)
     video_width = int(profile["width"])
     video_height = int(profile["height"])
+    video_fps = delivery_visual_fps(fps_to_float(profile["fps"]))
     subtitle_entries = build_delivery_subtitle_entries(
-        parse_subtitle_content(load_text_file(subtitle_path), subtitle_path.suffix.lower())
+        parse_subtitle_content(load_text_file(subtitle_path), subtitle_path.suffix.lower()),
+        fps=video_fps,
     )
     if not subtitle_entries:
         shutil.copy2(source_video, output_path)
@@ -16283,7 +17980,7 @@ def burn_subtitles_into_video(
         temp_dir = Path(temp_dir_text)
         working_subtitle_path = temp_dir / "burn_subtitles.ass"
         working_subtitle_path.write_text(ass_content, encoding="utf-8-sig")
-        filter_expr = "ass=burn_subtitles.ass"
+        filter_expr = f"fps={video_fps:.6f},ass=burn_subtitles.ass"
         result = run_subprocess_hidden(
             [
                 str(video_processor.ffmpeg),
@@ -16292,24 +17989,25 @@ def burn_subtitles_into_video(
                 "error",
                 "-nostdin",
                 "-y",
+                "-fflags",
+                "+genpts",
                 "-i",
                 str(source_video),
                 "-vf",
-                filter_expr,
+                f"setpts=PTS-STARTPTS,{filter_expr}",
                 "-map",
                 "0:v:0",
                 "-map",
                 "0:a?",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "20",
-                "-pix_fmt",
-                "yuv420p",
+                *build_seek_safe_x264_args(
+                    video_fps,
+                    crf="20",
+                    keyframe_interval_seconds=DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS,
+                ),
                 "-c:a",
                 "copy",
+                "-avoid_negative_ts",
+                "make_zero",
                 "-movflags",
                 "+faststart",
                 str(output_path),
@@ -16328,6 +18026,726 @@ def burn_subtitles_into_video(
             else "default bottom region"
         )
         log_func(f"  Delivery subtitles burned into video: {region_text}")
+
+
+def mux_delivery_subtitle_track(
+    source_video: Path,
+    subtitle_path: Path,
+    output_path: Path,
+    video_processor: VideoProcessor,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> None:
+    if not subtitle_path.exists() or subtitle_path.stat().st_size <= 0:
+        shutil.copy2(source_video, output_path)
+        return
+
+    result = run_subprocess_hidden(
+        [
+            str(video_processor.ffmpeg),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-y",
+            "-i",
+            str(source_video),
+            "-i",
+            str(subtitle_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-map",
+            "1:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-c:s",
+            "mov_text",
+            "-metadata:s:s:0",
+            "language=zho",
+            "-disposition:s:0",
+            "default",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ],
+        capture_output=True,
+        timeout=1800,
+        check=False,
+    )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:600] or "subtitle track mux failed")
+    if log_func:
+        log_func("  Delivery subtitle track embedded into MP4")
+
+
+def normalize_output_watermark_text(value: object, limit: int = 48) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not text:
+        return ""
+    return text[:limit].strip()
+
+
+def escape_ffmpeg_filter_value(value: object) -> str:
+    text = str(value or "").replace("\\", "/")
+    text = text.replace(":", "\\:")
+    text = text.replace("'", r"\'")
+    return f"'{text}'"
+
+
+def resolve_output_watermark_font_option() -> str:
+    windir = Path(os.environ.get("WINDIR", "C:/Windows"))
+    candidates = (
+        windir / "Fonts" / "msyh.ttc",
+        windir / "Fonts" / "msyhbd.ttc",
+        windir / "Fonts" / "msyh.ttf",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            font_path = escape_ffmpeg_filter_value(candidate.as_posix())
+            return f"fontfile={font_path}"
+    return "font='Microsoft YaHei'"
+
+
+def build_output_watermark_filter(
+    text: str,
+    video_width: int,
+    video_height: int,
+) -> str:
+    normalized = normalize_output_watermark_text(text)
+    if not normalized:
+        return ""
+    font_size = int(
+        round(clamp(video_height * 0.030, OUTPUT_WATERMARK_MIN_FONT_SIZE, OUTPUT_WATERMARK_MAX_FONT_SIZE))
+    )
+    horizontal_margin = max(18, int(round(video_width * 0.03)))
+    top_margin = max(16, int(round(video_height * 0.08)))
+    vertical_span = max(font_size + 10, int(round(video_height * 0.22)))
+    seed = int(hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:8], 16)
+    x_phase = (seed % 628) / 100.0
+    y_phase = ((seed // 97) % 628) / 100.0
+    font_option = resolve_output_watermark_font_option()
+    return (
+        "drawtext="
+        f"{font_option}:"
+        "textfile=watermark.txt:"
+        "reload=0:"
+        f"fontsize={font_size}:"
+        f"fontcolor=white@{OUTPUT_WATERMARK_ALPHA:.2f}:"
+        f"borderw={max(2, int(round(font_size * 0.08)))}:"
+        f"bordercolor=black@{OUTPUT_WATERMARK_BORDER_ALPHA:.2f}:"
+        "shadowx=0:"
+        "shadowy=0:"
+        f"x={horizontal_margin}+((w-tw-{horizontal_margin * 2})*(0.5+0.5*sin((t+{x_phase:.2f})*0.31))):"
+        f"y={top_margin}+({vertical_span}*(0.5+0.5*sin((t+{y_phase:.2f})*0.19)))"
+    )
+
+
+def burn_output_watermark_into_video(
+    source_video: Path,
+    output_path: Path,
+    video_processor: VideoProcessor,
+    text: str,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> None:
+    normalized = normalize_output_watermark_text(text)
+    if not normalized:
+        shutil.copy2(source_video, output_path)
+        return
+
+    profile = video_processor.probe_video(source_video)
+    video_fps = delivery_visual_fps(fps_to_float(profile["fps"]))
+    filter_expr = build_output_watermark_filter(
+        normalized,
+        int(profile["width"]),
+        int(profile["height"]),
+    )
+    if not filter_expr:
+        shutil.copy2(source_video, output_path)
+        return
+
+    with tempfile.TemporaryDirectory(prefix="watermark_burn_", dir=str(output_path.parent)) as temp_dir_text:
+        temp_dir = Path(temp_dir_text)
+        (temp_dir / "watermark.txt").write_text(normalized, encoding="utf-8")
+        result = run_subprocess_hidden(
+            [
+                str(video_processor.ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-fflags",
+                "+genpts",
+                "-i",
+                str(source_video),
+                "-vf",
+                f"setpts=PTS-STARTPTS,fps={video_fps:.6f},{filter_expr}",
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                *build_seek_safe_x264_args(
+                    video_fps,
+                    crf="20",
+                    keyframe_interval_seconds=DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS,
+                ),
+                "-c:a",
+                "copy",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            ],
+            capture_output=True,
+            timeout=1800,
+            check=False,
+            cwd=str(temp_dir),
+        )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore")[:600] or "watermark burn failed")
+    if log_func:
+        log_func(f"  Output watermark burned: {normalized}")
+
+
+def normalize_delivery_video_for_seek(
+    source_video: Path,
+    output_path: Path,
+    video_processor: VideoProcessor,
+) -> None:
+    profile = video_processor.probe_video(source_video)
+    video_duration = max(0.05, float(profile.get("video_duration", profile.get("duration", "0")) or 0.0))
+    delivery_fps = delivery_visual_fps(fps_to_float(profile["fps"]))
+    has_audio = video_processor.has_audio_stream(source_video)
+    command = [
+        str(video_processor.ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-fflags",
+        "+genpts",
+        "-i",
+        str(source_video),
+    ]
+    if has_audio:
+        command.extend(
+            [
+                "-filter_complex",
+                (
+                    f"[0:v]setpts=PTS-STARTPTS,fps={delivery_fps:.6f}[vout];"
+                    f"[0:a]atrim=duration={video_duration:.6f},asetpts=PTS-STARTPTS[aout]"
+                ),
+                "-map",
+                "[vout]",
+                "-map",
+                "[aout]",
+                *build_seek_safe_x264_args(
+                    delivery_fps,
+                    crf="20",
+                    keyframe_interval_seconds=DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS,
+                ),
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-shortest",
+            ]
+        )
+    else:
+        command.extend(
+            [
+                "-vf",
+                f"setpts=PTS-STARTPTS,fps={delivery_fps:.6f}",
+                "-map",
+                "0:v:0",
+                *build_seek_safe_x264_args(
+                    delivery_fps,
+                    crf="20",
+                    keyframe_interval_seconds=DELIVERY_SEEK_KEYFRAME_INTERVAL_SECONDS,
+                ),
+            ]
+        )
+    command.extend(
+        [
+            "-avoid_negative_ts",
+            "make_zero",
+            "-use_editlist",
+            "0",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
+    result = run_subprocess_hidden(
+        command,
+        capture_output=True,
+        timeout=1800,
+        check=False,
+    )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(
+            result.stderr.decode("utf-8", errors="ignore")[:600]
+            or "delivery seek normalization failed"
+        )
+
+
+def delivery_video_needs_seek_normalization(
+    source_video: Path,
+    video_processor: VideoProcessor,
+) -> Tuple[bool, str]:
+    try:
+        stream_result = run_subprocess_hidden(
+            [
+                str(video_processor.ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,start_time",
+                "-of",
+                "json",
+                str(source_video),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        if stream_result.returncode != 0:
+            return True, "stream-start probe failed"
+        stream_payload = json.loads(stream_result.stdout or "{}")
+        stream_starts = {
+            str(stream.get("codec_type", "") or "").strip(): float(stream.get("start_time", 0.0) or 0.0)
+            for stream in stream_payload.get("streams") or []
+            if str(stream.get("codec_type", "") or "").strip()
+        }
+        video_start = float(stream_starts.get("video", 0.0) or 0.0)
+        if abs(video_start) > 0.001:
+            return True, f"video start_time {video_start:.6f}s"
+
+        if video_processor.has_audio_stream(source_video):
+            audio_start = float(stream_starts.get("audio", 0.0) or 0.0)
+            if abs(audio_start) > 0.001:
+                return True, f"audio start_time {audio_start:.6f}s"
+
+            packet_result = run_subprocess_hidden(
+                [
+                    str(video_processor.ffprobe),
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a:0",
+                    "-read_intervals",
+                    "0%+1",
+                    "-show_packets",
+                    "-show_entries",
+                    "packet=pts_time",
+                    "-of",
+                    "json",
+                    str(source_video),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+            if packet_result.returncode != 0:
+                return True, "audio-packet probe failed"
+            packet_payload = json.loads(packet_result.stdout or "{}")
+            packets = list(packet_payload.get("packets") or [])
+            if packets:
+                first_audio_pts = float(packets[0].get("pts_time", 0.0) or 0.0)
+                if first_audio_pts < -0.001:
+                    return True, f"audio priming packet {first_audio_pts:.6f}s"
+
+        keyframe_result = run_subprocess_hidden(
+            [
+                str(video_processor.ffprobe),
+                "-v",
+                "error",
+                "-skip_frame",
+                "nokey",
+                "-select_streams",
+                "v:0",
+                "-read_intervals",
+                "0%+6",
+                "-show_frames",
+                "-show_entries",
+                "frame=best_effort_timestamp_time",
+                "-of",
+                "json",
+                str(source_video),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        if keyframe_result.returncode != 0:
+            return True, "keyframe probe failed"
+        keyframe_payload = json.loads(keyframe_result.stdout or "{}")
+        keyframe_times = [
+            float(frame.get("best_effort_timestamp_time", 0.0) or 0.0)
+            for frame in keyframe_payload.get("frames") or []
+            if frame.get("best_effort_timestamp_time") not in (None, "")
+        ]
+        if len(keyframe_times) >= 2:
+            max_keyframe_gap = max(
+                max(0.0, next_time - current_time)
+                for current_time, next_time in zip(keyframe_times, keyframe_times[1:])
+            )
+            if max_keyframe_gap > SEEK_SAFE_KEYFRAME_INTERVAL_SECONDS + 0.08:
+                return True, f"sparse keyframes {max_keyframe_gap:.3f}s"
+        return False, "already zero-based and dense-keyframed"
+    except Exception as exc:
+        return True, f"seek-safe probe failed: {summarize_for_log(str(exc), limit=120)}"
+
+
+def normalize_reference_x264_profile(value: object) -> str:
+    profile = str(value or "").strip().lower()
+    if profile in {"baseline", "main", "high"}:
+        return profile
+    return "high"
+
+
+def parse_time_base_denominator(value: object, default: int = 12800) -> int:
+    text = str(value or "").strip()
+    if "/" not in text:
+        return max(1, int(default))
+    try:
+        fraction = Fraction(text)
+    except (ValueError, ZeroDivisionError):
+        return max(1, int(default))
+    denominator = int(abs(fraction.denominator))
+    return max(1, denominator or int(default))
+
+
+def probe_delivery_reference_format(
+    reference_video: Path,
+    video_processor: VideoProcessor,
+) -> Optional[Dict[str, object]]:
+    if not reference_video.exists():
+        return None
+    result = run_subprocess_hidden(
+        [
+            str(video_processor.ffprobe),
+            "-v",
+            "error",
+            "-show_entries",
+            (
+                "stream=index,codec_type,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,"
+                "has_b_frames,time_base,bit_rate,sample_rate,channels,channel_layout"
+            ),
+            "-of",
+            "json",
+            str(reference_video),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    payload = json.loads(result.stdout or "{}")
+    streams = list(payload.get("streams") or [])
+    if not streams:
+        return None
+
+    video_stream = next(
+        (stream for stream in streams if str(stream.get("codec_type", "") or "").strip() == "video"),
+        None,
+    )
+    if not isinstance(video_stream, dict):
+        return None
+    audio_stream = next(
+        (stream for stream in streams if str(stream.get("codec_type", "") or "").strip() == "audio"),
+        None,
+    )
+    target_fps = fps_to_float(
+        str(video_stream.get("avg_frame_rate", "") or video_stream.get("r_frame_rate", "") or "0/0")
+    )
+    if target_fps <= 1.0:
+        target_fps = fps_to_float(str(video_stream.get("r_frame_rate", "0/0") or "0/0"))
+    if target_fps <= 1.0:
+        target_fps = 25.0
+    target_sample_rate = 48000
+    target_channels = 2
+    target_audio_bitrate = 128000
+    if isinstance(audio_stream, dict):
+        try:
+            target_sample_rate = max(8000, int(audio_stream.get("sample_rate", 48000) or 48000))
+        except (TypeError, ValueError):
+            target_sample_rate = 48000
+        try:
+            target_channels = max(1, int(audio_stream.get("channels", 2) or 2))
+        except (TypeError, ValueError):
+            target_channels = 2
+        try:
+            reference_audio_bitrate = int(audio_stream.get("bit_rate", 0) or 0)
+        except (TypeError, ValueError):
+            reference_audio_bitrate = 0
+        if reference_audio_bitrate > 0:
+            target_audio_bitrate = clamp(reference_audio_bitrate, 48000, 192000)
+
+    audio_index = 9999
+    if isinstance(audio_stream, dict):
+        try:
+            audio_index = int(audio_stream.get("index", 9999))
+        except (TypeError, ValueError):
+            audio_index = 9999
+    try:
+        video_index = int(video_stream.get("index", 9999))
+    except (TypeError, ValueError):
+        video_index = 9999
+    return {
+        "fps": target_fps,
+        "profile": normalize_reference_x264_profile(video_stream.get("profile", "")),
+        "level": int(video_stream.get("level", 31) or 31),
+        "pix_fmt": str(video_stream.get("pix_fmt", "") or "yuv420p"),
+        "has_b_frames": int(video_stream.get("has_b_frames", 0) or 0),
+        "time_base_denominator": parse_time_base_denominator(video_stream.get("time_base", "1/12800")),
+        "sample_rate": target_sample_rate,
+        "channels": target_channels,
+        "audio_bitrate": int(target_audio_bitrate),
+        "audio_first": audio_index < video_index,
+    }
+
+
+def delivery_video_needs_reference_format_alignment(
+    source_video: Path,
+    reference_video: Path,
+    video_processor: VideoProcessor,
+) -> Tuple[bool, str, Optional[Dict[str, object]]]:
+    reference_format = probe_delivery_reference_format(reference_video, video_processor)
+    if reference_format is None:
+        return False, "reference format probe unavailable", None
+
+    result = run_subprocess_hidden(
+        [
+            str(video_processor.ffprobe),
+            "-v",
+            "error",
+            "-show_entries",
+            (
+                "stream=index,codec_type,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,"
+                "has_b_frames,sample_rate,channels"
+            ),
+            "-of",
+            "json",
+            str(source_video),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        return True, "output format probe failed", reference_format
+    payload = json.loads(result.stdout or "{}")
+    streams = list(payload.get("streams") or [])
+    if not streams:
+        return True, "output stream info missing", reference_format
+
+    video_stream = next(
+        (stream for stream in streams if str(stream.get("codec_type", "") or "").strip() == "video"),
+        None,
+    )
+    audio_stream = next(
+        (stream for stream in streams if str(stream.get("codec_type", "") or "").strip() == "audio"),
+        None,
+    )
+    if not isinstance(video_stream, dict):
+        return True, "output video stream missing", reference_format
+
+    source_fps = fps_to_float(
+        str(video_stream.get("avg_frame_rate", "") or video_stream.get("r_frame_rate", "") or "0/0")
+    )
+    if source_fps <= 1.0:
+        source_fps = fps_to_float(str(video_stream.get("r_frame_rate", "0/0") or "0/0"))
+    source_has_b_frames = int(video_stream.get("has_b_frames", 0) or 0)
+    try:
+        source_level = int(video_stream.get("level", 0) or 0)
+    except (TypeError, ValueError):
+        source_level = 0
+    source_profile = normalize_reference_x264_profile(video_stream.get("profile", ""))
+    source_pix_fmt = str(video_stream.get("pix_fmt", "") or "")
+    source_audio_rate = 0
+    source_audio_channels = 0
+    source_audio_index = 9999
+    if isinstance(audio_stream, dict):
+        try:
+            source_audio_rate = int(audio_stream.get("sample_rate", 0) or 0)
+        except (TypeError, ValueError):
+            source_audio_rate = 0
+        try:
+            source_audio_channels = int(audio_stream.get("channels", 0) or 0)
+        except (TypeError, ValueError):
+            source_audio_channels = 0
+        try:
+            source_audio_index = int(audio_stream.get("index", 9999))
+        except (TypeError, ValueError):
+            source_audio_index = 9999
+    try:
+        source_video_index = int(video_stream.get("index", 9999))
+    except (TypeError, ValueError):
+        source_video_index = 9999
+
+    mismatches: List[str] = []
+    if abs(source_fps - float(reference_format["fps"])) > 0.01:
+        mismatches.append(f"fps {source_fps:.2f}->{float(reference_format['fps']):.2f}")
+    if source_has_b_frames != int(reference_format["has_b_frames"]):
+        mismatches.append(f"bframes {source_has_b_frames}->{int(reference_format['has_b_frames'])}")
+    if source_level and source_level != int(reference_format["level"]):
+        mismatches.append(f"level {source_level}->{int(reference_format['level'])}")
+    if source_profile != str(reference_format["profile"]):
+        mismatches.append(f"profile {source_profile}->{reference_format['profile']}")
+    if source_pix_fmt and source_pix_fmt != str(reference_format["pix_fmt"]):
+        mismatches.append(f"pix_fmt {source_pix_fmt}->{reference_format['pix_fmt']}")
+    if source_audio_rate and source_audio_rate != int(reference_format["sample_rate"]):
+        mismatches.append(f"audio {source_audio_rate}->{int(reference_format['sample_rate'])}Hz")
+    if source_audio_channels and source_audio_channels != int(reference_format["channels"]):
+        mismatches.append(f"channels {source_audio_channels}->{int(reference_format['channels'])}")
+    if bool(reference_format["audio_first"]) and not (source_audio_index < source_video_index):
+        mismatches.append("stream order video-first->audio-first")
+    if mismatches:
+        return True, ", ".join(mismatches), reference_format
+    return False, "already reference-compatible", reference_format
+
+
+def align_delivery_video_to_reference_format(
+    source_video: Path,
+    output_path: Path,
+    reference_video: Path,
+    video_processor: VideoProcessor,
+    *,
+    reference_format: Optional[Dict[str, object]] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> None:
+    effective_reference_format = reference_format or probe_delivery_reference_format(reference_video, video_processor)
+    if effective_reference_format is None:
+        shutil.copy2(source_video, output_path)
+        return
+
+    target_fps = max(1.0, float(effective_reference_format["fps"]))
+    target_profile = str(effective_reference_format["profile"])
+    target_level = int(effective_reference_format["level"])
+    target_pix_fmt = str(effective_reference_format["pix_fmt"])
+    target_b_frames = max(0, int(effective_reference_format["has_b_frames"]))
+    target_sample_rate = max(8000, int(effective_reference_format["sample_rate"]))
+    target_channels = max(1, int(effective_reference_format["channels"]))
+    target_audio_bitrate = max(48000, int(effective_reference_format["audio_bitrate"]))
+    target_timescale = max(1, int(effective_reference_format["time_base_denominator"]))
+    gop_frames = max(1, int(round(target_fps * 2.0)))
+    keyint_min = max(1, int(round(target_fps)))
+    # Locked by explicit user request on 2026-04-21.
+    # Do not change this final MP4 mux alignment logic without user approval:
+    # audio must be trimmed to video duration and MP4 edit lists must stay enabled,
+    # otherwise B-frame timing can regress to non-zero stream starts / A/V drift.
+    source_video_profile = video_processor.probe_video(source_video)
+    source_video_duration = max(
+        0.05,
+        float(
+            source_video_profile.get(
+                "video_duration",
+                source_video_profile.get("duration", video_processor.probe_duration(source_video)),
+            )
+            or 0.0
+        ),
+    )
+
+    command = [
+        str(video_processor.ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-fflags",
+        "+genpts",
+        "-i",
+        str(source_video),
+        "-filter_complex",
+        (
+            f"[0:v]setpts=PTS-STARTPTS,fps={target_fps:.6f}[vout];"
+            f"[0:a]aresample={target_sample_rate}:async=1:first_pts=0,"
+            f"atrim=duration={source_video_duration:.6f},asetpts=PTS-STARTPTS[aout]"
+        ),
+        "-map",
+        "[aout]",
+        "-map",
+        "[vout]",
+        "-map",
+        "0:s?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-profile:v",
+        target_profile,
+        "-level:v",
+        f"{target_level / 10.0:.1f}",
+        "-pix_fmt",
+        target_pix_fmt,
+        "-bf",
+        str(target_b_frames),
+        "-g",
+        str(gop_frames),
+        "-keyint_min",
+        str(keyint_min),
+        "-sc_threshold",
+        "40" if target_b_frames > 0 else "0",
+        "-video_track_timescale",
+        str(target_timescale),
+        "-c:a",
+        "aac",
+        "-ar",
+        str(target_sample_rate),
+        "-ac",
+        str(target_channels),
+        "-b:a",
+        str(target_audio_bitrate),
+        "-c:s",
+        "copy",
+        "-use_editlist",
+        "1",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    result = run_subprocess_hidden(
+        command,
+        capture_output=True,
+        timeout=1800,
+        check=False,
+    )
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError(
+            result.stderr.decode("utf-8", errors="ignore")[:600]
+            or "reference format alignment failed"
+        )
+    if log_func:
+        log_func(
+            "  Delivery reference format aligned: "
+            f"{target_fps:.2f}fps / {target_profile}@{target_level / 10.0:.1f} / "
+            f"audio {target_sample_rate}Hz / bframes {target_b_frames}"
+        )
 
 
 def _clamp_entries(entries: Sequence[SubtitleEntry], total_duration: float) -> List[SubtitleEntry]:
@@ -16448,6 +18866,35 @@ def run_clone_pipeline(
             raise RuntimeError("参考帧提取失败。")
 
         progress(60, "匹配画面")
+        matching_reference_speed_factor = normalize_reference_speed_factor(settings.reference_speed_factor, 1.0)
+        if abs(matching_reference_speed_factor - 1.0) > 0.0005:
+            log(f"Reference speed compensation: manual {matching_reference_speed_factor:.4f}x")
+        else:
+            coarse_threshold = min(settings.match_threshold, 0.72)
+            coarse_matches, _, _ = match_frames(
+                reference_frames,
+                source_frames,
+                hasher,
+                settings.frame_interval,
+                coarse_threshold,
+                1,
+                log_func=None,
+            )
+            estimated_reference_speed_factor = estimate_reference_speed_factor_from_matches(
+                coarse_matches,
+                settings.frame_interval,
+                min_similarity=max(0.64, coarse_threshold - 0.04),
+            )
+            if estimated_reference_speed_factor is not None:
+                matching_reference_speed_factor = estimated_reference_speed_factor
+                log(f"Reference speed compensation: auto {matching_reference_speed_factor:.4f}x")
+            else:
+                log("Reference speed compensation: 1.0000x")
+        matching_reference_frames = build_matching_reference_frames(
+            reference_frames,
+            matching_reference_speed_factor,
+        )
+
         strategies = [(0.72, 1), (0.70, 2), (0.67, 3), (0.64, 4), (0.60, 5)]
         best_matches: List[Dict[str, object]] = []
         best_rate = -1.0
@@ -16476,7 +18923,7 @@ def run_clone_pipeline(
             effective_threshold = min(settings.match_threshold, threshold)
             log(f"  尝试匹配: 阈值 {effective_threshold:.2f}, 策略 {attempt}")
             matches, rate, diagnostics = match_frames(
-                reference_frames,
+                matching_reference_frames,
                 source_frames,
                 hasher,
                 settings.frame_interval,
@@ -16537,12 +18984,16 @@ def run_clone_pipeline(
             )
 
         progress(72, "切片并拼接")
+        if abs(matching_reference_speed_factor - 1.0) > 0.0005:
+            best_matches = restore_match_reference_times(best_matches, reference_frames)
+
         profile = video_processor.probe_video(settings.reference_video)
         width = int(profile["width"])
         height = int(profile["height"])
         fps = fps_to_float(profile["fps"])
 
         jobs = merge_matches(best_matches)
+        log(f"  Segment plan: {len(jobs)} merged segment(s) from {len(best_matches)} matched frame window(s)")
         random_episode_flip_overrides: Dict[str, bool] = {}
         if settings.enable_random_episode_flip:
             random_episode_flip_overrides = choose_random_episode_flip_overrides(
@@ -16555,24 +19006,59 @@ def run_clone_pipeline(
         concat_path = temp_root / "concat.txt"
         concat_lines: List[str] = []
         for idx, job in enumerate(jobs, start=1):
-            segment_path = segment_dir / f"{idx:04d}.mp4"
+            progress(72 + 10 * idx / max(1, len(jobs)), f"切片并拼接 {idx}/{len(jobs)}")
+            segment_path = segment_dir / f"{idx:04d}{INTERMEDIATE_SEGMENT_SUFFIX}"
             final_hflip = bool(job.hflip) ^ bool(random_episode_flip_overrides.get(str(job.source_video), False))
-            video_processor.cut_segment(
-                source=Path(job.source_video),
-                output=segment_path,
-                start=job.start,
-                duration=job.duration,
-                width=width,
-                height=height,
-                fps=fps,
-                hflip=final_hflip,
+            log(
+                f"  Segment {idx}/{len(jobs)}: "
+                f"{Path(str(job.source_video)).name} "
+                f"{float(job.start):.2f}s + {float(job.duration):.2f}s"
+                + (" [hflip]" if final_hflip else "")
             )
+            try:
+                video_processor.cut_segment(
+                    source=Path(job.source_video),
+                    output=segment_path,
+                    start=job.start,
+                    duration=job.duration,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    hflip=final_hflip,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"segment cut failed {idx}/{len(jobs)}: "
+                    f"{Path(str(job.source_video)).name} "
+                    f"start={float(job.start):.2f}s duration={float(job.duration):.2f}s"
+                ) from exc
             concat_lines.append(f"file '{segment_path.resolve().as_posix()}'")
         concat_path.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
         clean_video_path = temp_root / "clean_video.mp4"
-        video_processor.concat_videos(concat_path, clean_video_path)
+        progress(83, "拼接片段")
+        log(f"  Concat start: {len(concat_lines)} segment file(s)")
+        try:
+            video_processor.concat_videos(concat_path, clean_video_path)
+        except Exception as exc:
+            raise RuntimeError(f"segment concat failed: {len(concat_lines)} file(s)") from exc
         clean_duration = video_processor.probe_duration(clean_video_path)
+        log(f"  Concat done: {clean_video_path.name}")
         log(f"清洁视频时长: {clean_duration:.2f}s")
+        retimed_clean_entries = retime_narration_runs_by_clean_audio_tail(
+            subtitle_bundle.all_entries,
+            clean_video_path,
+            video_processor=video_processor,
+            log_func=log,
+        )
+        if retimed_clean_entries != subtitle_bundle.all_entries:
+            refreshed_counts = {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": 0}
+            for entry in retimed_clean_entries:
+                refreshed_counts[entry.entry_type] = refreshed_counts.get(entry.entry_type, 0) + 1
+            subtitle_bundle = ProcessedSubtitleBundle(
+                all_entries=retimed_clean_entries,
+                narration_entries=[entry for entry in retimed_clean_entries if entry.entry_type == "narration"],
+                counts=refreshed_counts,
+            )
 
         progress(84, "生成字幕和配音")
         progress(84, "Detect subtitle mask")
@@ -16661,8 +19147,36 @@ def run_clone_pipeline(
             preserve_reference_timeline_entries(reference_timeline_entries),
             rendered_entries,
         )
-        output_entries = build_delivery_subtitle_entries(final_timeline_entries)
+        strict_audio_timing_mode = bool(
+            settings.prefer_funasr_audio_subtitles and settings.prefer_funasr_sentence_pauses
+        )
+        reference_output_entries = build_delivery_subtitle_entries(
+            reference_timeline_entries,
+            fps=delivery_visual_fps(fps),
+        )
+        output_entries = build_delivery_subtitle_entries(
+            final_timeline_entries,
+            fps=delivery_visual_fps(fps),
+        )
+        if strict_audio_timing_mode and audio_path is not None and output_entries:
+            output_entries = lock_delivery_subtitle_timeline_to_rendered_audio(
+                output_entries,
+                audio_path,
+                video_processor,
+                log_func=log,
+            )
         write_srt(final_srt_path, output_entries)
+        if reference_output_entries and output_entries:
+            retimed_delivery_video_path = temp_root / "clean_video_timeline_locked.mp4"
+            if retime_delivery_video_to_subtitle_timeline(
+                delivery_video_path,
+                reference_output_entries,
+                output_entries,
+                retimed_delivery_video_path,
+                video_processor,
+                log_func=log,
+            ):
+                delivery_video_path = retimed_delivery_video_path
 
         if settings.enable_random_visual_filter:
             progress(92, "应用随机画面滤镜")
@@ -16685,13 +19199,20 @@ def run_clone_pipeline(
 
         progress(94, "混合成片")
         staged_video_path = temp_root / "final_video_stage.mp4"
-        if audio_path is not None:
-            strict_audio_timing_mode = bool(
-                settings.prefer_funasr_audio_subtitles and settings.prefer_funasr_sentence_pauses
-            )
+        bgm_audio_path = Path(settings.bgm_audio_path).resolve() if settings.bgm_audio_path else None
+        if bgm_audio_path is not None and not bgm_audio_path.exists():
+            log(f"  BGM skipped: file not found {bgm_audio_path}")
+            bgm_audio_path = None
+        bgm_volume_percent = normalize_percent_value(settings.bgm_volume_percent, 12.0)
+        if audio_path is not None or bgm_audio_path is not None:
             narration_background_percent = normalize_percent_value(
                 settings.narration_background_percent,
-                15.0,
+                3.0,
+            )
+            duck_volume = (
+                0.0
+                if strict_audio_timing_mode
+                else narration_background_duck_volume(narration_background_percent)
             )
             mix_final_video(
                 delivery_video_path,
@@ -16699,9 +19220,11 @@ def run_clone_pipeline(
                 duck_intervals,
                 staged_video_path,
                 video_processor,
-                duck_volume=narration_background_duck_volume(narration_background_percent),
+                duck_volume=duck_volume,
                 duck_padding_seconds=0.0 if strict_audio_timing_mode else AUDIO_DUCK_PADDING_SECONDS,
                 duck_merge_gap_seconds=0.03 if strict_audio_timing_mode else AUDIO_DUCK_MERGE_GAP_SECONDS,
+                bgm_audio=bgm_audio_path,
+                bgm_volume_percent=bgm_volume_percent,
             )
         else:
             shutil.copy2(delivery_video_path, staged_video_path)
@@ -16721,10 +19244,63 @@ def run_clone_pipeline(
             finalized_video_path = burned_video_path
         else:
             log("  Delivery subtitles skipped: no visible subtitle entries to burn")
-        if settings.keep_temp:
-            log(f"  Delivery subtitles kept: {final_srt_path}")
+        if normalize_output_watermark_text(settings.output_watermark_text):
+            watermarked_video_path = temp_root / "final_video_watermarked.mp4"
+            burn_output_watermark_into_video(
+                finalized_video_path,
+                watermarked_video_path,
+                video_processor,
+                settings.output_watermark_text,
+                log_func=log,
+            )
+            safe_unlink_file(finalized_video_path)
+            finalized_video_path = watermarked_video_path
+        seek_needs_normalization, seek_reason = delivery_video_needs_seek_normalization(
+            finalized_video_path,
+            video_processor,
+        )
+        if seek_needs_normalization:
+            seek_safe_video_path = temp_root / "final_video_seek_safe.mp4"
+            log(
+                "  Delivery seek normalization: rebuilding the final MP4 for frame-accurate browser scrubbing "
+                f"({seek_reason})"
+            )
+            normalize_delivery_video_for_seek(
+                finalized_video_path,
+                seek_safe_video_path,
+                video_processor,
+            )
+            safe_unlink_file(finalized_video_path)
+            finalized_video_path = seek_safe_video_path
         else:
-            safe_unlink_file(final_srt_path)
+            log(f"  Delivery seek normalization skipped: {seek_reason}")
+        if output_entries:
+            log("  Delivery subtitle track skipped: subtitles are already burned into the final MP4; exporting external SRT only")
+        reference_alignment_needed, reference_alignment_reason, reference_format = (
+            delivery_video_needs_reference_format_alignment(
+                finalized_video_path,
+                settings.reference_video,
+                video_processor,
+            )
+        )
+        if reference_alignment_needed:
+            reference_compatible_video_path = temp_root / "final_video_reference_compatible.mp4"
+            log(
+                "  Delivery reference format alignment: rebuilding the final MP4 to match the reference "
+                f"container characteristics ({reference_alignment_reason})"
+            )
+            align_delivery_video_to_reference_format(
+                finalized_video_path,
+                reference_compatible_video_path,
+                settings.reference_video,
+                video_processor,
+                reference_format=reference_format,
+                log_func=log,
+            )
+            safe_unlink_file(finalized_video_path)
+            finalized_video_path = reference_compatible_video_path
+        else:
+            log(f"  Delivery reference format alignment skipped: {reference_alignment_reason}")
 
         final_video_path = move_output_file(
             finalized_video_path,
@@ -16732,12 +19308,31 @@ def run_clone_pipeline(
             log_func=log,
             artifact_label="video",
         )
+        final_subtitle_path: Optional[Path] = None
+        if output_entries:
+            final_subtitle_path = move_output_file(
+                final_srt_path,
+                final_video_path.with_suffix(".srt"),
+                log_func=log,
+                artifact_label="subtitle",
+            )
+        elif not settings.keep_temp:
+            safe_unlink_file(final_srt_path)
+        elif final_srt_path.exists():
+            log(f"  Delivery subtitles kept: {final_srt_path}")
+        sync_cover_output_file(
+            settings.cover_image_path,
+            output_dir,
+            stem,
+            log_func=log,
+        )
 
         for obsolete_path in (
             output_dir / f"{stem}_clean.mp4",
-            output_dir / f"{stem}.srt",
             output_dir / f"{stem}.mp3",
         ):
+            if final_subtitle_path is not None and obsolete_path == final_subtitle_path:
+                continue
             safe_unlink_file(obsolete_path)
 
         diff_pct = abs(clean_duration - reference_duration) / max(reference_duration, 0.01) * 100
@@ -16748,7 +19343,7 @@ def run_clone_pipeline(
 
         return CloneResult(
             video_path=final_video_path,
-            subtitle_path=None,
+            subtitle_path=final_subtitle_path,
             audio_path=None,
             clean_video_path=final_video_path,
             reconstructed_duration=clean_duration,
