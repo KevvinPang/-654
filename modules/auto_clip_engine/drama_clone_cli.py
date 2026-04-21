@@ -24,6 +24,7 @@ from drama_clone_core import (
     load_text_file,
     normalize_episode_flip_ratio,
     normalize_percent_value,
+    normalize_reference_speed_factor,
     parse_subtitle_content,
     run_clone_pipeline,
     sanitize_stem,
@@ -99,11 +100,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-no-narration-mode", dest="force_no_narration_mode", action="store_true", default=None)
     parser.add_argument("--disable-force-no-narration-mode", dest="force_no_narration_mode", action="store_false")
     parser.add_argument("--narration-background-percent", type=float)
+    parser.add_argument("--output-watermark-text")
     parser.add_argument("--random-flip-episodes", dest="enable_random_episode_flip", action="store_true", default=None)
     parser.add_argument("--disable-random-flip-episodes", dest="enable_random_episode_flip", action="store_false")
     parser.add_argument("--random-flip-ratio", type=float)
     parser.add_argument("--random-visual-filter", dest="enable_random_visual_filter", action="store_true", default=None)
     parser.add_argument("--disable-random-visual-filter", dest="enable_random_visual_filter", action="store_false")
+    parser.add_argument("--reference-speed-factor")
+    parser.add_argument("--cover-image-path", type=Path)
+    parser.add_argument("--bgm-audio-path", type=Path)
+    parser.add_argument("--bgm-volume-percent", type=float)
     parser.add_argument("--ffmpeg", type=Path, default=DEFAULT_FFMPEG)
     parser.add_argument("--ffprobe", type=Path, default=DEFAULT_FFPROBE)
     parser.add_argument("--log-file", type=Path)
@@ -115,6 +121,8 @@ def parse_args() -> argparse.Namespace:
     args.reference_subtitle = args.reference_subtitle or _job_path(job, "reference_subtitle")
     args.source_dir = args.source_dir or _job_path(job, "source_dir")
     args.output_dir = args.output_dir or _job_path(job, "output_dir")
+    args.cover_image_path = args.cover_image_path or _job_path(job, "cover_image_path")
+    args.bgm_audio_path = args.bgm_audio_path or _job_path(job, "bgm_audio_path")
     args.title = args.title or job.get("title") or "output"
     args.date = args.date or job.get("date") or datetime.now().strftime("%Y%m%d")
     args.ai_api_key = args.ai_api_key or job.get("ai_api_key", "")
@@ -142,8 +150,19 @@ def parse_args() -> argparse.Namespace:
     args.narration_background_percent = normalize_percent_value(
         args.narration_background_percent
         if args.narration_background_percent is not None
-        else job.get("narration_background_percent", 15.0),
-        15.0,
+        else job.get("narration_background_percent", 3.0),
+        3.0,
+    )
+    args.bgm_volume_percent = normalize_percent_value(
+        args.bgm_volume_percent
+        if args.bgm_volume_percent is not None
+        else job.get("bgm_volume_percent", 12.0),
+        12.0,
+    )
+    args.output_watermark_text = (
+        args.output_watermark_text
+        if args.output_watermark_text is not None
+        else str(job.get("output_watermark_text", "") or "")
     )
     if args.enable_random_episode_flip is None:
         args.enable_random_episode_flip = bool(
@@ -153,6 +172,12 @@ def parse_args() -> argparse.Namespace:
         args.enable_random_visual_filter = bool(
             job.get("enable_random_visual_filter", DEFAULT_ENABLE_RANDOM_VISUAL_FILTER)
         )
+    args.reference_speed_factor = normalize_reference_speed_factor(
+        args.reference_speed_factor
+        if args.reference_speed_factor is not None
+        else job.get("reference_speed_factor", 1.0),
+        1.0,
+    )
     args.random_flip_ratio = normalize_episode_flip_ratio(
         args.random_flip_ratio
         if args.random_flip_ratio is not None
@@ -215,9 +240,14 @@ def main() -> None:
         prefer_funasr_sentence_pauses=bool(args.prefer_funasr_sentence_pauses),
         force_no_narration_mode=bool(args.force_no_narration_mode),
         narration_background_percent=args.narration_background_percent,
+        output_watermark_text=args.output_watermark_text,
         enable_random_episode_flip=bool(args.enable_random_episode_flip),
         random_episode_flip_ratio=args.random_flip_ratio,
         enable_random_visual_filter=bool(args.enable_random_visual_filter),
+        reference_speed_factor=args.reference_speed_factor,
+        cover_image_path=args.cover_image_path,
+        bgm_audio_path=args.bgm_audio_path,
+        bgm_volume_percent=args.bgm_volume_percent,
         keep_temp=args.keep_temp,
     )
     result = run_clone_pipeline(

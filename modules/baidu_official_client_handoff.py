@@ -38,7 +38,6 @@ LOCAL_CLIENT_BASE_URL = "https://localhost.pan.baidu.com:10000"
 CLIENT_INVOKER_SOURCE = "wp-download_web_share"
 CLIENT_INVOKER_TYPE = "web_sharelink_page"
 CLIENT_LOCAL_SOURCE = "web_https"
-SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
 COMMON_DOWNLOAD_DIR_NAMES = ("BaiduNetdiskDownload", "百度网盘下载", "Downloads", "下载", "Download")
 DOWNLOAD_MOVE_TIMEOUT_SECONDS = 8 * 60 * 60
 DOWNLOAD_MOVE_POLL_SECONDS = 6
@@ -465,17 +464,123 @@ def iter_client_descendants(window: Any) -> list[Any]:
     return descendants
 
 
+def confirm_button_priority(text: Any) -> int:
+    normalized = normalize_ui_text(text)
+    if not normalized:
+        return 999
+    priority_tokens = (
+        "转存并下载",
+        "立即下载",
+        "开始下载",
+        "下载",
+        "加入传输",
+        "继续",
+        "确定",
+        "确认",
+        "保存",
+    )
+    for index, token in enumerate(priority_tokens):
+        if normalize_ui_text(token) in normalized:
+            return index
+    return 999
+
+
+def prepare_share_window_for_download(window: Any) -> dict[str, Any] | None:
+    if send_keys is None:
+        return None
+    window_title = control_text(window)
+    normalized = normalize_ui_text(window_title)
+    if "资源分享" not in normalized and "分享" not in normalized:
+        return None
+    focus_window(window)
+    try:
+        send_keys("^a")
+    except Exception:
+        return None
+    return {
+        "action": "select_all",
+        "window_title": window_title,
+        "button_text": "",
+        "control_type": control_type_name(window),
+    }
+
+
+def click_window_relative(window: Any, x_ratio: float, y_ratio: float) -> bool:
+    try:
+        rect = window.rectangle()
+        offset_x = max(1, int(rect.width() * x_ratio))
+        offset_y = max(1, int(rect.height() * y_ratio))
+    except Exception:
+        return False
+    for action_name in ("click_input", "click"):
+        action = getattr(window, action_name, None)
+        if action is None:
+            continue
+        try:
+            action(coords=(offset_x, offset_y))
+            return True
+        except TypeError:
+            try:
+                action()
+                return True
+            except Exception:
+                continue
+        except Exception:
+            continue
+    return False
+
+
+def try_handle_download_storage_dialog(window: Any) -> dict[str, Any] | None:
+    window_title = control_text(window)
+    normalized = normalize_ui_text(window_title)
+    if "设置下载存储路径" not in normalized and "下载存储路径" not in normalized:
+        return None
+    focus_window(window)
+    if not click_window_relative(window, 0.88, 0.86):
+        return None
+    return {
+        "action": "dialog_download_click",
+        "window_title": window_title,
+        "button_text": "下载",
+        "control_type": control_type_name(window),
+    }
+
+
+def try_close_intro_window(window: Any) -> dict[str, Any] | None:
+    if send_keys is None:
+        return None
+    window_title = control_text(window)
+    normalized = normalize_ui_text(window_title)
+    if "欢迎使用百度网盘" not in normalized and "同步空间" not in normalized:
+        return None
+    focus_window(window)
+    try:
+        send_keys("%{F4}")
+    except Exception:
+        return None
+    return {
+        "action": "close_intro_window",
+        "window_title": window_title,
+        "button_text": "",
+        "control_type": control_type_name(window),
+    }
+
+
 def try_click_client_confirm_controls(window: Any) -> dict[str, Any] | None:
     window_title = control_text(window)
     candidates = [window]
     candidates.extend(iter_client_descendants(window))
-    for control in candidates:
+    ranked_controls: list[tuple[int, int, Any, str, str]] = []
+    for order_index, control in enumerate(candidates):
         text = control_text(control)
         if not ui_text_matches(text, CLIENT_UI_CONFIRM_BUTTON_TOKENS):
             continue
         control_type = control_type_name(control)
         if control is not window and control_type and "button" not in normalize_ui_text(control_type):
             continue
+        ranked_controls.append((confirm_button_priority(text), order_index, control, text, control_type))
+
+    for _, _, control, text, control_type in sorted(ranked_controls, key=lambda item: (item[0], item[1])):
         focus_window(window)
         if click_control(control):
             return {
@@ -519,7 +624,11 @@ def maybe_confirm_client_download_ui(workspace_name: str) -> dict[str, Any]:
     deadline = time.time() + CLIENT_UI_CONFIRM_TIMEOUT_SECONDS
     clicked: list[dict[str, Any]] = []
     seen_titles: set[str] = set()
+    prepared_windows: set[int | str] = set()
+    confirmed = False
+    idle_rounds = 0
     while time.time() < deadline:
+        acted_this_round = False
         windows = iter_client_top_windows()
         for _, window in windows:
             window_title = control_text(window)
@@ -528,36 +637,64 @@ def maybe_confirm_client_download_ui(workspace_name: str) -> dict[str, Any]:
                 seen_titles.add(window_title)
             if window_title and not ui_text_matches(window_title, CLIENT_UI_CONFIRM_TITLE_TOKENS):
                 continue
+            close_intro_result = try_close_intro_window(window)
+            if close_intro_result is not None:
+                close_intro_result["workspace_name"] = workspace_name
+                clicked.append(close_intro_result)
+                print_json("OFFICIAL_CLIENT_UI_CONFIRM", close_intro_result)
+                confirmed = True
+                acted_this_round = True
+                break
+            dialog_result = try_handle_download_storage_dialog(window)
+            if dialog_result is not None:
+                dialog_result["workspace_name"] = workspace_name
+                clicked.append(dialog_result)
+                print_json("OFFICIAL_CLIENT_UI_CONFIRM", dialog_result)
+                confirmed = True
+                acted_this_round = True
+                break
+            try:
+                prepare_key: int | str = int(window.handle)
+            except Exception:
+                prepare_key = window_title or id(window)
+            if prepare_key not in prepared_windows:
+                prepare_result = prepare_share_window_for_download(window)
+                if prepare_result is not None:
+                    prepare_result["workspace_name"] = workspace_name
+                    clicked.append(prepare_result)
+                    prepared_windows.add(prepare_key)
+                    print_json("OFFICIAL_CLIENT_UI_PREPARE", prepare_result)
+                    acted_this_round = True
+                    break
             click_result = try_click_client_confirm_controls(window)
             if click_result is not None:
                 click_result["workspace_name"] = workspace_name
                 clicked.append(click_result)
                 print_json("OFFICIAL_CLIENT_UI_CONFIRM", click_result)
-                return {
-                    "available": True,
-                    "confirmed": True,
-                    "reason": "button_clicked",
-                    "clicked": clicked,
-                    "seen_windows": sorted(seen_titles),
-                }
+                confirmed = True
+                acted_this_round = True
+                break
             keyboard_result = try_keyboard_confirm_window(window)
             if keyboard_result is not None:
                 keyboard_result["workspace_name"] = workspace_name
                 clicked.append(keyboard_result)
                 print_json("OFFICIAL_CLIENT_UI_CONFIRM", keyboard_result)
-                return {
-                    "available": True,
-                    "confirmed": True,
-                    "reason": "keyboard_confirmed",
-                    "clicked": clicked,
-                    "seen_windows": sorted(seen_titles),
-                }
+                confirmed = True
+                acted_this_round = True
+                break
+        if acted_this_round:
+            idle_rounds = 0
+            time.sleep(CLIENT_UI_CONFIRM_POLL_SECONDS)
+            continue
+        idle_rounds += 1
+        if confirmed and idle_rounds >= 2:
+            break
         time.sleep(CLIENT_UI_CONFIRM_POLL_SECONDS)
 
     result = {
         "available": True,
-        "confirmed": False,
-        "reason": "no_confirm_dialog_detected",
+        "confirmed": confirmed,
+        "reason": "handled_dialogs" if confirmed else "no_confirm_dialog_detected",
         "clicked": clicked,
         "seen_windows": sorted(seen_titles),
     }
@@ -1210,9 +1347,10 @@ def execute_queue_handoff(
     runtime: dict[str, Any],
     selected_items: list[dict[str, Any]],
     main_exe: Path | None,
+    current_user_uk: str = "",
 ) -> int:
     if args.dry_run:
-        client_user_dir = detect_client_user_dir(main_exe, str(runtime.get("share_uk") or "")) if main_exe else None
+        client_user_dir = detect_client_user_dir(main_exe, current_user_uk) if main_exe else None
         print_json(
             "OFFICIAL_CLIENT_QUEUED",
             {
@@ -1274,8 +1412,17 @@ def execute_queue_handoff(
     if main_exe is None:
         raise RuntimeError("未检测到官方百度网盘主程序，无法写入客户端下载队列。")
 
-    client_user_dir = detect_client_user_dir(main_exe, str(runtime.get("share_uk") or ""))
+    client_user_dir = detect_client_user_dir(main_exe, current_user_uk)
     database_path = client_user_dir / "transmission.db"
+    print_json(
+        "OFFICIAL_CLIENT_QUEUE_DB",
+        {
+            "workspace_name": args.workspace_name,
+            "client_user_dir": str(client_user_dir),
+            "database_path": str(database_path),
+            "current_user_uk": current_user_uk,
+        },
+    )
     queue_result = enqueue_client_downloads(database_path, transferred_queue, dry_run=args.dry_run)
 
     running_before = list_running_baidu_processes()
@@ -1494,7 +1641,7 @@ def select_target_from_spec(files: list[dict[str, Any]], spec: dict[str, Any]) -
     raise RuntimeError(f"未在分享链接里找到目标文件：{target_filename or target_path or target_fsid}")
 
 
-def detect_client_user_dir(main_exe: Path, share_uk: str = "") -> Path:
+def detect_client_user_dir(main_exe: Path, user_uk: str = "") -> Path:
     users_root = main_exe.parent / "module" / "BrowserEngine" / "users"
     if not users_root.exists():
         raise RuntimeError(f"未找到百度网盘客户端用户目录：{users_root}")
@@ -1504,7 +1651,7 @@ def detect_client_user_dir(main_exe: Path, share_uk: str = "") -> Path:
         raise RuntimeError(f"未找到百度网盘客户端下载数据库：{users_root}")
 
     def token_hit_score(directory: Path) -> int:
-        if not share_uk:
+        if not user_uk:
             return 0
         score = 0
         for name in ("recentcache.db-wal", "recentcache.db", "transmission.db"):
@@ -1515,7 +1662,7 @@ def detect_client_user_dir(main_exe: Path, share_uk: str = "") -> Path:
                 data = path.read_bytes()
             except OSError:
                 continue
-            if share_uk.encode("utf-8") in data or share_uk.encode("utf-16le") in data:
+            if user_uk.encode("utf-8") in data or user_uk.encode("utf-16le") in data:
                 score += 10
         return score
 
@@ -1527,7 +1674,7 @@ def detect_client_user_dir(main_exe: Path, share_uk: str = "") -> Path:
                 score = max(score, path.stat().st_mtime)
         return score
 
-    selected = max(candidates, key=lambda item: (token_hit_score(item), freshness_score(item), item.name))
+    selected = max(candidates, key=lambda item: (freshness_score(item), token_hit_score(item), item.name))
     return selected
 
 
@@ -1693,6 +1840,7 @@ def main(argv: list[str] | None = None) -> int:
             "cookie_names": BAIDU_DOWNLOADER.session_baidu_cookie_names(session),
             "launch_mode": getattr(driver, "_profile_launch_mode", "unknown"),
             "user_agent": user_agent,
+            "current_user_uk": get_logged_in_user_uk(driver),
             "share_uk": str(runtime.get("share_uk") or ""),
         }
         print_json("OFFICIAL_CLIENT_LOGIN", login_state)
@@ -1704,10 +1852,10 @@ def main(argv: list[str] | None = None) -> int:
             item
             for item in file_list
             if int(item.get("isdir") or 0) == 0
-            and Path(str(item.get("server_filename") or "")).suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
+            and BAIDU_DOWNLOADER.supported_share_file_kind(item)
         ]
         if not share_files:
-            raise RuntimeError("未在分享链接中找到可下载的视频文件。")
+            raise RuntimeError("未在分享链接中找到可下载的文件。")
 
         selected_items: list[dict[str, Any]] = []
         for spec in target_specs:
@@ -1760,6 +1908,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime,
             selected_items,
             main_exe,
+            str(login_state.get("current_user_uk") or ""),
         )
     finally:
         driver.quit()

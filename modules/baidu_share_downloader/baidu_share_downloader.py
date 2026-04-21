@@ -36,6 +36,8 @@ DEFAULT_EDGE_USER_DATA = EDGE_RUNTIME_ROOT / "baidu_login_profile"
 REQUEST_TIMEOUT = 30
 BAIDU_LOGIN_COOKIE_NAMES = {"BDUSS", "BDUSS_BFESS"}
 BAIDU_DOWNLOAD_USER_AGENT = "pan.baidu.com"
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 SINGLE_DOWNLOAD_READ_TIMEOUT = 60
 SEGMENT_DOWNLOAD_READ_TIMEOUT = 20
 SINGLE_DOWNLOAD_PROGRESS_INTERVAL = 2 * 1024 * 1024
@@ -496,6 +498,15 @@ def select_target_file(files: list[dict], target_filename: str, target_path: str
                 return item
         raise RuntimeError(f"target file not found: {target_filename}")
     return min(files, key=lambda item: item.get("size") or 0)
+
+
+def supported_share_file_kind(file_item: dict) -> str:
+    suffix = Path(str(file_item.get("server_filename") or "")).suffix.lower()
+    if suffix in SUPPORTED_VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in SUPPORTED_IMAGE_EXTENSIONS:
+        return "image"
+    return ""
 
 
 def fetch_share_dir_page(session: requests.Session, runtime: dict, dir_path: str, page: int = 1, num: int = 200) -> list[dict]:
@@ -1141,11 +1152,15 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError("百度专用登录窗口还没有登录，请先点击“登录百度”，在弹出的专用窗口里完成登录后关闭窗口，再重新开始处理。")
 
         file_list = get_share_list(session, runtime)
-        files = [item for item in file_list if not item.get("isdir") and str(item.get("server_filename", "")).lower().endswith(".mp4")]
+        files = [
+            item
+            for item in file_list
+            if not item.get("isdir") and supported_share_file_kind(item)
+        ]
         if not files:
-            raise RuntimeError("no mp4 files found")
+            raise RuntimeError("no supported video or image files found")
         print(
-            "MP4_FILES",
+            "SHARE_FILES",
             json.dumps(
                 [
                     {
@@ -1153,6 +1168,7 @@ def main(argv: list[str] | None = None) -> int:
                         "size": item.get("size", 0),
                         "fs_id": item.get("fs_id"),
                         "path": item.get("path"),
+                        "file_type": supported_share_file_kind(item),
                     }
                     for item in files
                 ],
@@ -1163,7 +1179,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         root_dir = str(runtime["file_list"][0]["path"])
-        target_item = select_target_file(files, args.target_filename, args.target_path, args.target_fsid)
+        if args.target_filename or args.target_path or args.target_fsid:
+            target_pool = files
+        else:
+            target_pool = [item for item in files if supported_share_file_kind(item) == "video"]
+            if not target_pool:
+                raise RuntimeError("no video files found for default download target")
+        target_item = select_target_file(target_pool, args.target_filename, args.target_path, args.target_fsid)
         print("TARGET", json.dumps(target_item, ensure_ascii=False))
 
         share_short_id = extract_share_short_id(args.share_url, runtime)

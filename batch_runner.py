@@ -45,9 +45,14 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "prefer_funasr_sentence_pauses",
     "force_no_narration_mode",
     "narration_background_percent",
+    "output_watermark_text",
     "enable_random_episode_flip",
     "random_episode_flip_ratio",
     "enable_random_visual_filter",
+    "reference_speed_factor",
+    "cover_image_path",
+    "bgm_audio_path",
+    "bgm_volume_percent",
 )
 KNOWN_MOJIBAKE_REPLACEMENTS = {
     "E:\\鏍风墖": "E:\\样片",
@@ -197,6 +202,8 @@ def ensure_workspace_directories(workspace_root: Path) -> None:
     for relative in [
         "downloads/baidu",
         "downloads/douyin",
+        "covers",
+        "bgm",
         "subtitles",
         "clips",
         "logs",
@@ -293,10 +300,52 @@ def should_skip_existing_baidu_output(expected_output: Path, task: dict[str, Any
     return True
 
 
+def normalize_keyword_filters(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw_items = re.split(r"[,\n\r;|]+", value)
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        token = str(item or "").strip()
+        if not token:
+            continue
+        folded = token.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        normalized.append(token)
+    return normalized
+
+
+def baidu_task_excluded_keyword(workspace: WorkspaceContext, task: dict[str, Any]) -> str:
+    shared_settings = workspace.config.get("settings") or {}
+    keywords = normalize_keyword_filters(
+        task.get("exclude_name_keywords", shared_settings.get("baidu_share_exclude_keywords", []))
+    )
+    if not keywords:
+        return ""
+    haystacks = [
+        str(task.get("target_filename") or "").strip(),
+        str(task.get("target_path") or "").strip(),
+    ]
+    lowered_haystacks = [item.casefold() for item in haystacks if item]
+    for keyword in keywords:
+        lowered_keyword = keyword.casefold()
+        if any(lowered_keyword in haystack for haystack in lowered_haystacks):
+            return keyword
+    return ""
+
+
 def collect_incomplete_baidu_targets(workspace: WorkspaceContext) -> list[str]:
     pending: list[str] = []
     for index, raw_task in enumerate(workspace.config.get("baidu_share", []), start=1):
         task = dict(raw_task or {})
+        if baidu_task_excluded_keyword(workspace, task):
+            continue
         output_dir = resolve_download_output_dir(workspace, task.get("output_subdir"), "downloads/baidu")
         expected_output = expected_baidu_output_path(output_dir, task)
         target_label = (
@@ -344,9 +393,12 @@ def infer_first_douyin_output_dir(workspace: WorkspaceContext) -> Path | None:
 
 def infer_first_subtitle_output_dir(workspace: WorkspaceContext) -> Path | None:
     tasks = workspace.config.get("subtitle_extract") or []
-    if not tasks:
-        return None
-    return resolve_workspace_path(workspace.root, tasks[0].get("output_subdir"), "subtitles")
+    if tasks:
+        return resolve_workspace_path(workspace.root, tasks[0].get("output_subdir"), "subtitles/audio")
+    settings = workspace.config.get("settings") or {}
+    if bool(settings.get("prefer_funasr_audio_subtitles", False)):
+        return resolve_workspace_path(workspace.root, None, "subtitles/audio")
+    return None
 
 
 def resolve_workspace_inputs(
@@ -516,6 +568,10 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
     python_path = resolve_python([
         MODULES_ROOT / "baidu_share_downloader" / ".venv" / "Scripts" / "python.exe",
     ])
+    shared_settings = workspace.config.get("settings") or {}
+    handoff_mode = str(shared_settings.get("baidu_share_handoff_mode") or "").strip().lower()
+    if handoff_mode not in {"queue", "invoker"}:
+        handoff_mode = ""
 
     specs: list[TaskSpec] = []
     official_groups: dict[tuple[str, str], dict[str, Any]] = {}
@@ -537,6 +593,18 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
         target_label = target_filename or Path(target_path).name or f"file_{index}"
         skip_existing = bool(task.get("skip_existing", bool(target_filename)))
         download_mode = normalize_baidu_download_mode(task.get("download_mode"))
+        excluded_keyword = baidu_task_excluded_keyword(workspace, task)
+        if excluded_keyword:
+            specs.append(
+                TaskSpec(
+                    "baidu_share",
+                    f"baidu#{index}:{target_label}",
+                    None,
+                    PROJECT_ROOT,
+                    f"excluded by keyword: {excluded_keyword}",
+                )
+            )
+            continue
 
         expected_output = expected_baidu_output_path(output_dir, task)
         if expected_output is not None and skip_existing and should_skip_existing_baidu_output(expected_output, task):
@@ -626,6 +694,8 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             "--target-spec-file",
             str(spec_path),
         ]
+        if handoff_mode:
+            command.extend(["--handoff-mode", handoff_mode])
         specs.append(
             TaskSpec(
                 "baidu_share",
@@ -676,21 +746,20 @@ def build_douyin_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
 
 
 def build_subtitle_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
-    script_path = MODULES_ROOT / "subtitle_batch_runner.py"
+    script_path = MODULES_ROOT / "auto_clip_engine" / "funasr_subtitle_cli.py"
     python_path = resolve_python([
-        MODULES_ROOT / "subtitle_extractor_source" / "video-subtitle-extractor-main" / ".venv" / "Scripts" / "python.exe",
+        MODULES_ROOT / "auto_clip_engine" / ".venv" / "Scripts" / "python.exe",
     ])
 
-    specs: list[TaskSpec] = []
-    for index, task in enumerate(workspace.config.get("subtitle_extract", []), start=1):
-        task = dict(task)
-        subtitle_area = task.get("subtitle_area")
-        has_manual_area = isinstance(subtitle_area, list) and len(subtitle_area) == 4
-        auto_detect = bool(task.get("auto_detect_subtitle_area", not has_manual_area))
-        if not has_manual_area and not auto_detect:
-            specs.append(TaskSpec("subtitle_extract", f"subtitle#{index}", None, PROJECT_ROOT, "missing subtitle_area"))
-            continue
+    raw_tasks = workspace.config.get("subtitle_extract") or []
+    if not raw_tasks:
+        shared_settings = workspace.config.get("settings") or {}
+        if bool(shared_settings.get("prefer_funasr_audio_subtitles", False)):
+            raw_tasks = [{"input_glob": "downloads/douyin/*", "output_subdir": "subtitles/audio", "skip_existing": False}]
 
+    specs: list[TaskSpec] = []
+    for index, task in enumerate(raw_tasks, start=1):
+        task = dict(task)
         if not task.get("input_path") and not task.get("input_paths"):
             input_glob = str(task.get("input_glob") or "").strip()
             if input_glob in {"", "downloads/douyin/*"}:
@@ -699,17 +768,18 @@ def build_subtitle_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                     task["input_glob"] = str(douyin_output_dir / "*")
 
         input_paths = expand_subtitle_inputs(task, workspace.root)
+        input_paths = filter_paths_by_suffix(input_paths, SUPPORTED_VIDEO_EXTENSIONS)
         if not input_paths:
             specs.append(TaskSpec("subtitle_extract", f"subtitle#{index}", None, PROJECT_ROOT, "no input videos matched"))
             continue
 
-        output_dir = resolve_workspace_path(workspace.root, task.get("output_subdir"), "subtitles")
-        temp_root = resolve_workspace_path(workspace.root, task.get("temp_subdir"), "temp/subtitle")
+        output_dir = resolve_workspace_path(workspace.root, task.get("output_subdir"), "subtitles/audio")
         output_dir.mkdir(parents=True, exist_ok=True)
-        temp_root.mkdir(parents=True, exist_ok=True)
 
         for video_path in input_paths:
             output_name = task.get("output_name") or safe_output_name_from_path(video_path, workspace.root)
+            if Path(output_name).suffix.lower() != ".srt":
+                output_name = f"{Path(output_name).stem}.srt"
             output_path = output_dir / output_name
             skip_existing = bool(task.get("skip_existing", True))
 
@@ -718,39 +788,18 @@ def build_subtitle_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                 specs.append(TaskSpec("subtitle_extract", label, None, PROJECT_ROOT, f"output already exists: {output_path}"))
                 continue
 
-            temp_name = Path(output_name).with_suffix("").name
             command = [
                 python_path,
                 str(script_path),
-                "--input",
+                "--reference-video",
                 str(video_path),
-                "--output-dir",
-                str(output_dir),
-                "--output-name",
-                output_name,
-                "--language",
-                str(task.get("language", "ch")),
-                "--mode",
-                str(task.get("mode", "accurate")),
-                "--extract-frequency",
-                str(task.get("extract_frequency", 5)),
-                "--probe-extract-frequency",
-                str(task.get("probe_extract_frequency", task.get("extract_frequency", 5))),
-                "--temp-root",
-                str(temp_root),
-                "--temp-name",
-                temp_name,
+                "--output",
+                str(output_path),
             ]
-            if has_manual_area:
-                command.extend(["--subtitle-area", ",".join(str(value) for value in subtitle_area)])
-            elif auto_detect:
-                command.append("--auto-subtitle-area")
-            if task.get("generate_txt"):
-                command.append("--generate-txt")
-            if task.get("keep_temp"):
-                command.append("--keep-temp")
-            if task.get("overwrite"):
-                command.append("--overwrite")
+            if task.get("ffmpeg"):
+                command.extend(["--ffmpeg", str(resolve_workspace_path(workspace.root, task.get("ffmpeg"), ""))])
+            if task.get("ffprobe"):
+                command.extend(["--ffprobe", str(resolve_workspace_path(workspace.root, task.get("ffprobe"), ""))])
 
             specs.append(TaskSpec("subtitle_extract", label, command, PROJECT_ROOT))
     return specs
@@ -860,16 +909,21 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             continue
 
         reference_subtitles: list[Path] = []
-        if not prefer_funasr_audio_subtitles and not force_no_narration_mode:
-            reference_subtitles = resolve_workspace_inputs(
-                workspace.root,
-                task.get("reference_subtitle"),
-                task.get("reference_subtitle_glob"),
-            )
-            reference_subtitles = filter_paths_by_suffix(reference_subtitles, SUPPORTED_SUBTITLE_EXTENSIONS)
-            if not reference_subtitles:
-                specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_subtitle"))
-                continue
+        explicit_reference_subtitle = bool(task.get("reference_subtitle")) or bool(task.get("reference_subtitle_glob"))
+        candidate_subtitle_glob = str(task.get("reference_subtitle_glob") or "").strip()
+        if not task.get("reference_subtitle") and candidate_subtitle_glob in {"", "subtitles/*.srt", "subtitles/audio/*.srt"}:
+            subtitle_output_dir = infer_first_subtitle_output_dir(workspace)
+            if subtitle_output_dir is not None:
+                task["reference_subtitle_glob"] = str(subtitle_output_dir / "*.srt")
+        reference_subtitles = resolve_workspace_inputs(
+            workspace.root,
+            task.get("reference_subtitle"),
+            task.get("reference_subtitle_glob"),
+        )
+        reference_subtitles = filter_paths_by_suffix(reference_subtitles, SUPPORTED_SUBTITLE_EXTENSIONS)
+        if explicit_reference_subtitle and not reference_subtitles and not force_no_narration_mode:
+            specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_subtitle"))
+            continue
 
         raw_source_dir = str(task.get("source_dir") or "").strip()
         if raw_source_dir in {"", "downloads/baidu"}:
@@ -892,19 +946,19 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             used_subtitles: set[Path] = set()
             for video_path in reference_videos:
                 subtitle_path = None
-                if not prefer_funasr_audio_subtitles and not force_no_narration_mode:
+                if reference_subtitles and not force_no_narration_mode:
                     subtitle_path = find_matching_subtitle(reference_subtitles, used_subtitles, video_path, workspace.root)
                     if subtitle_path is not None:
                         used_subtitles.add(subtitle_path)
                 pairs.append((video_path, subtitle_path))
         else:
-            first_subtitle = None if prefer_funasr_audio_subtitles or force_no_narration_mode else reference_subtitles[0]
+            first_subtitle = None if force_no_narration_mode or not reference_subtitles else reference_subtitles[0]
             pairs = [(reference_videos[0], first_subtitle)]
 
         total_pairs = len(pairs)
-        skip_existing = bool(task.get("skip_existing", True))
+        skip_existing = False
         for pair_index, (reference_video, reference_subtitle) in enumerate(pairs, start=1):
-            if reference_subtitle is None and not prefer_funasr_audio_subtitles and not force_no_narration_mode:
+            if reference_subtitle is None and explicit_reference_subtitle and not force_no_narration_mode:
                 label = f"auto_clip#{index}:{reference_video.name}"
                 specs.append(TaskSpec("auto_clip", label, None, PROJECT_ROOT, "no matching subtitle for reference video"))
                 continue
@@ -926,9 +980,14 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                 job_payload["reference_subtitle"] = str(reference_subtitle)
             for key in AUTO_CLIP_SETTINGS_KEYS:
                 if key in task:
-                    job_payload[key] = task[key]
+                    value = task[key]
                 elif key in shared_settings:
-                    job_payload[key] = shared_settings[key]
+                    value = shared_settings[key]
+                else:
+                    continue
+                if key in {"cover_image_path", "bgm_audio_path"}:
+                    value = str(resolve_workspace_path(workspace.root, str(value or "").strip(), "")) if str(value or "").strip() else ""
+                job_payload[key] = value
 
             job_file = temp_root / "jobs" / f"{title}.json"
             write_json(job_file, job_payload)

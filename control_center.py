@@ -4,6 +4,7 @@ import argparse
 import collections
 import importlib.util
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -13,6 +14,7 @@ import sys
 import tempfile
 import threading
 import time
+import textwrap
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass, field
@@ -28,10 +30,17 @@ BATCH_RUNNER = PROJECT_ROOT / "batch_runner.py"
 MODULE_MANIFEST = PROJECT_ROOT / "module_manifest.json"
 CONTROL_CENTER_MANIFEST = PROJECT_ROOT / "control_center_manifest.json"
 CONTROL_CENTER_UI = PROJECT_ROOT / "control_center_ui.html"
+CONTROL_CENTER_ASSETS_DIR = PROJECT_ROOT / "assets"
+CONTROL_CENTER_APP_LOGO_PNG = CONTROL_CENTER_ASSETS_DIR / "app_logo.png"
+CONTROL_CENTER_APP_LOGO_ICO = CONTROL_CENTER_ASSETS_DIR / "app_logo.ico"
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
+SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 SUPPORTED_SUBTITLE_EXTENSIONS = {".srt", ".txt", ".ass", ".vtt"}
+COVER_ARTIFACT_STEM = "selected_cover"
 CONTROL_CENTER_RUNTIME_DIR = PROJECT_ROOT / "runtime" / "control_center"
 CONTROL_CENTER_PID_FILE = CONTROL_CENTER_RUNTIME_DIR / "control_center.pid"
+CONTROL_CENTER_NOTICE_FILE = CONTROL_CENTER_RUNTIME_DIR / "last_system_notice.json"
 BAIDU_LOGIN_URL = "https://pan.baidu.com/disk/main"
 BAIDU_EDGE_RUNTIME_ROOT = PROJECT_ROOT / "runtime" / "edge_profiles"
 BAIDU_MANAGED_EDGE_USER_DATA = BAIDU_EDGE_RUNTIME_ROOT / "baidu_login_profile"
@@ -39,6 +48,10 @@ BAIDU_EDGE_PROFILE = "Default"
 BAIDU_LOGIN_COOKIE_NAMES = {"BDUSS", "BDUSS_BFESS"}
 BAIDU_OFFICIAL_HANDOFF_PATH = PROJECT_ROOT / "modules" / "baidu_official_client_handoff.py"
 LOG_LINE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[([A-Z]+)\](?: \[([^\]]+)\])? (.*)$")
+TASK_SCHEMA_VERSION = 3
+TASK_SCHEMA_VERSION_KEY = "_control_center_task_version"
+UI_SESSION_HEARTBEAT_TIMEOUT_SECONDS = 15.0
+UI_SESSION_SHUTDOWN_GRACE_SECONDS = 60.0
 
 DEFAULT_CONCURRENCY = {
     "baidu_share": 1,
@@ -72,6 +85,7 @@ class JobState:
     pid: int | None = None
     process: subprocess.Popen[Any] | None = None
     workspace_members: list[str] = field(default_factory=list)
+    stop_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +99,7 @@ class JobState:
             "pid": self.pid,
             "recent_lines": list(self.recent_lines)[-80:],
             "workspace_members": list(self.workspace_members),
+            "stop_reason": self.stop_reason,
         }
 
 
@@ -93,6 +108,11 @@ JOBS: dict[str, JobState] = {}
 JOB_COUNTER = 0
 BAIDU_OFFICIAL_HANDOFF_MODULE: Any | None = None
 BAIDU_OFFICIAL_HANDOFF_LOAD_ERROR = ""
+UI_SESSION_LOCK = threading.Lock()
+UI_SESSIONS: dict[str, float] = {}
+UI_SESSION_LAST_EMPTY_AT: float | None = None
+UI_SESSION_EVER_CONNECTED = False
+SERVER_SHUTDOWN_LOCK = threading.Lock()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -110,6 +130,79 @@ def read_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def runtime_timestamp_text() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + f",{int((time.time() % 1) * 1000):03d}"
+
+
+def append_text_line(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip("\n") + "\n")
+
+
+def system_notice_message(reason: str, stopped_jobs: int = 0) -> str:
+    normalized = str(reason or "").strip()
+    if normalized == "ui-session-disconnected":
+        return (
+            f"前端界面断开超过 {int(UI_SESSION_SHUTDOWN_GRACE_SECONDS)} 秒，"
+            f"控制台已自动停止 {stopped_jobs} 个后台任务。"
+            "这次不是 AI 自己卡死，而是界面断开保护触发了自动中止。"
+        )
+    if normalized == "manual-ui-shutdown":
+        return f"控制台已按手动关闭请求停止 {stopped_jobs} 个后台任务。"
+    if normalized:
+        return normalized
+    return f"后台任务已被停止，共 {stopped_jobs} 个。"
+
+
+def persist_system_notice(message: str, *, tone: str = "warning", reason: str = "") -> None:
+    if not str(message or "").strip():
+        return
+    notice_id = f"{int(time.time())}_{abs(hash((message, tone, reason))) % 1000000}"
+    write_json(
+        CONTROL_CENTER_NOTICE_FILE,
+        {
+            "id": notice_id,
+            "message": str(message),
+            "tone": str(tone or "warning"),
+            "reason": str(reason or ""),
+            "timestamp": time.time(),
+            "time_text": runtime_timestamp_text(),
+        },
+    )
+
+
+def append_job_stop_notice(job: JobState, message: str) -> None:
+    text = str(message or "").strip()
+    if not text:
+        return
+    line = f"{runtime_timestamp_text()} [WARN] [系统] {text}"
+    log_path = Path(str(job.log_path or "")).expanduser()
+    try:
+        if log_path:
+            append_text_line(log_path, line)
+    except Exception:
+        pass
+    workspace_names = list(job.workspace_members or ([job.workspace] if job.workspace else []))
+    for workspace_name in workspace_names:
+        try:
+            workspace_dir = resolve_workspace_dir(workspace_name, create=False)
+        except Exception:
+            continue
+        try:
+            append_text_line(workspace_dir / "logs" / "workspace.log", line)
+        except Exception:
+            pass
+    with JOB_LOCK:
+        job.stop_reason = text
+        job.recent_lines.append(line)
 
 
 def repair_known_mojibake_text(value: str, workspace_name: str = "") -> str:
@@ -236,6 +329,7 @@ def resolve_workspace_dir(workspace_name: str, *, create: bool = False) -> Path:
 
 def default_workspace_task(workspace_name: str) -> dict[str, Any]:
     return {
+        TASK_SCHEMA_VERSION_KEY: TASK_SCHEMA_VERSION,
         "workspace_name": workspace_name,
         "concurrency": dict(DEFAULT_CONCURRENCY),
         "settings": {
@@ -244,14 +338,21 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
                     "ai_model": "doubao-seed-character-251128",
             "ai_fallback_models": [],
             "prefer_funasr_audio_subtitles": True,
-            "disable_ai_subtitle_review": True,
-            "disable_ai_narration_rewrite": True,
+            "disable_ai_subtitle_review": False,
+            "disable_ai_narration_rewrite": False,
             "prefer_funasr_sentence_pauses": True,
             "force_no_narration_mode": False,
-            "narration_background_percent": 15,
+            "narration_background_percent": 3,
+            "output_watermark_text": "",
             "enable_random_episode_flip": True,
             "random_episode_flip_ratio": 0.4,
             "enable_random_visual_filter": True,
+            "reference_speed_factor": 1.0,
+            "cover_image_path": "",
+            "cover_image_name": "",
+            "cover_image_share_key": "",
+            "bgm_audio_path": "",
+            "bgm_volume_percent": 12,
             "clip_output_root": "",
             "tts_voice": "zh-CN-YunxiNeural",
             "tts_rate": "+8%",
@@ -265,6 +366,225 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
         "subtitle_extract": [],
         "auto_clip": [],
     }
+
+
+def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) -> dict[str, Any]:
+    task = dict(payload)
+    task["workspace_name"] = workspace_name
+    task[TASK_SCHEMA_VERSION_KEY] = int(task.get(TASK_SCHEMA_VERSION_KEY, TASK_SCHEMA_VERSION) or TASK_SCHEMA_VERSION)
+    concurrency = task.get("concurrency")
+    if not isinstance(concurrency, dict):
+        concurrency = {}
+    task["concurrency"] = {**DEFAULT_CONCURRENCY, **concurrency}
+    settings = task.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+    task["settings"] = settings
+    settings.setdefault("ai_fallback_models", [])
+    settings.setdefault("prefer_funasr_audio_subtitles", True)
+    settings.setdefault("disable_ai_subtitle_review", False)
+    settings.setdefault("disable_ai_narration_rewrite", False)
+    settings.setdefault("prefer_funasr_sentence_pauses", True)
+    settings.setdefault("force_no_narration_mode", False)
+    settings.setdefault("narration_background_percent", 3)
+    settings.setdefault("output_watermark_text", "")
+    settings.setdefault("enable_random_episode_flip", True)
+    settings.setdefault("random_episode_flip_ratio", 0.4)
+    settings.setdefault("enable_random_visual_filter", True)
+    settings.setdefault("reference_speed_factor", 1.0)
+    settings.setdefault("cover_image_path", "")
+    settings.setdefault("cover_image_name", "")
+    settings.setdefault("cover_image_share_key", "")
+    settings.setdefault("bgm_audio_path", "")
+    settings.setdefault("bgm_volume_percent", 12)
+    settings.setdefault("clip_output_root", "")
+    settings.setdefault("tts_voice", "zh-CN-YunxiNeural")
+    settings.setdefault("tts_rate", "+8%")
+    settings.setdefault("enable_backup_tts", False)
+    settings.setdefault("azure_tts_key", "")
+    settings.setdefault("azure_tts_region", "")
+    settings.setdefault("azure_tts_voice", "")
+    for key in ("baidu_share", "douyin_download", "subtitle_extract"):
+        if not isinstance(task.get(key), list):
+            task[key] = []
+    raw_auto_clip_entries = task.get("auto_clip")
+    if not isinstance(raw_auto_clip_entries, list):
+        raw_auto_clip_entries = []
+    auto_clip_entries: list[Any] = []
+    for item in raw_auto_clip_entries:
+        if not isinstance(item, dict):
+            auto_clip_entries.append(item)
+            continue
+        current = dict(item)
+        current.setdefault("skip_existing", False)
+        auto_clip_entries.append(current)
+    task["auto_clip"] = auto_clip_entries
+    task["baidu_share"] = sanitize_baidu_share_entries(task.get("baidu_share") or [])
+    return task
+
+
+def migrate_legacy_workspace_task(payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    task = dict(payload)
+    raw_version = task.get(TASK_SCHEMA_VERSION_KEY, 0)
+    try:
+        version = int(raw_version)
+    except (TypeError, ValueError):
+        version = 0
+    if version >= TASK_SCHEMA_VERSION:
+        return task, False
+
+    changed = False
+    settings = task.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+        task["settings"] = settings
+        changed = True
+    if settings.get("enable_random_episode_flip") is False:
+        settings["enable_random_episode_flip"] = True
+        changed = True
+    if settings.get("enable_random_visual_filter") is False:
+        settings["enable_random_visual_filter"] = True
+        changed = True
+    if settings.get("disable_ai_narration_rewrite") is True:
+        settings["disable_ai_narration_rewrite"] = False
+        changed = True
+    narration_background_percent = settings.get("narration_background_percent")
+    try:
+        narration_background_percent_value = float(narration_background_percent)
+    except (TypeError, ValueError):
+        narration_background_percent_value = None
+    if narration_background_percent_value == 15.0:
+        settings["narration_background_percent"] = 3
+        changed = True
+    auto_clip_entries = task.get("auto_clip")
+    if isinstance(auto_clip_entries, list):
+        for item in auto_clip_entries:
+            if not isinstance(item, dict):
+                continue
+            if item.get("skip_existing", True):
+                item["skip_existing"] = False
+                changed = True
+    task[TASK_SCHEMA_VERSION_KEY] = TASK_SCHEMA_VERSION
+    return task, changed or version != TASK_SCHEMA_VERSION
+
+
+def prune_expired_ui_sessions(now: float | None = None) -> int:
+    global UI_SESSION_LAST_EMPTY_AT
+    current_time = time.time() if now is None else now
+    with UI_SESSION_LOCK:
+        expired_ids = [
+            session_id
+            for session_id, last_seen_at in UI_SESSIONS.items()
+            if current_time - last_seen_at > UI_SESSION_HEARTBEAT_TIMEOUT_SECONDS
+        ]
+        for session_id in expired_ids:
+            UI_SESSIONS.pop(session_id, None)
+        if UI_SESSIONS:
+            UI_SESSION_LAST_EMPTY_AT = None
+        elif UI_SESSION_EVER_CONNECTED and UI_SESSION_LAST_EMPTY_AT is None:
+            UI_SESSION_LAST_EMPTY_AT = current_time
+        return len(UI_SESSIONS)
+
+
+def register_ui_session(session_id: str) -> int:
+    global UI_SESSION_EVER_CONNECTED, UI_SESSION_LAST_EMPTY_AT
+    normalized = str(session_id or "").strip()
+    if not normalized:
+        raise ValueError("session_id is required")
+    current_time = time.time()
+    prune_expired_ui_sessions(current_time)
+    with UI_SESSION_LOCK:
+        UI_SESSIONS[normalized] = current_time
+        UI_SESSION_EVER_CONNECTED = True
+        UI_SESSION_LAST_EMPTY_AT = None
+        return len(UI_SESSIONS)
+
+
+def disconnect_ui_session(session_id: str) -> int:
+    global UI_SESSION_LAST_EMPTY_AT
+    normalized = str(session_id or "").strip()
+    current_time = time.time()
+    with UI_SESSION_LOCK:
+        if normalized:
+            UI_SESSIONS.pop(normalized, None)
+        if UI_SESSIONS:
+            UI_SESSION_LAST_EMPTY_AT = None
+        elif UI_SESSION_EVER_CONNECTED:
+            UI_SESSION_LAST_EMPTY_AT = current_time
+        return len(UI_SESSIONS)
+
+
+def stop_all_jobs(*, reason: str = "") -> int:
+    with JOB_LOCK:
+        running_job_ids = [
+            job_id
+            for job_id, job in JOBS.items()
+            if job.process is not None and job.status in {"running", "stopping"}
+        ]
+    stopped = 0
+    for job_id in running_job_ids:
+        if stop_job(job_id, reason=reason):
+            stopped += 1
+    return stopped
+
+
+def request_server_shutdown(
+    server: ThreadingHTTPServer,
+    *,
+    stop_jobs: bool = False,
+    reason: str = "",
+) -> dict[str, Any]:
+    stop_reason_message = ""
+    if reason == "ui-session-disconnected":
+        stop_reason_message = (
+            f"前端界面断开超过 {int(UI_SESSION_SHUTDOWN_GRACE_SECONDS)} 秒，"
+            "控制台正在自动停止当前后台任务。"
+        )
+    elif reason == "manual-ui-shutdown":
+        stop_reason_message = "控制台正在按手动关闭请求停止当前后台任务。"
+    elif reason:
+        stop_reason_message = reason
+    stopped_jobs = stop_all_jobs(reason=stop_reason_message) if stop_jobs else 0
+    if stop_jobs and stopped_jobs > 0:
+        persist_system_notice(
+            system_notice_message(reason, stopped_jobs),
+            tone="warning" if reason == "ui-session-disconnected" else "info",
+            reason=reason,
+        )
+    with SERVER_SHUTDOWN_LOCK:
+        already_requested = bool(getattr(server, "_shutdown_requested", False))
+        if not already_requested:
+            setattr(server, "_shutdown_requested", True)
+            setattr(server, "_shutdown_reason", reason)
+            threading.Thread(target=server.shutdown, daemon=True).start()
+    return {
+        "accepted": not already_requested,
+        "stopped_jobs": stopped_jobs,
+        "reason": reason,
+    }
+
+
+def start_ui_session_watchdog(server: ThreadingHTTPServer) -> None:
+    if getattr(server, "_ui_session_watchdog_started", False):
+        return
+    setattr(server, "_ui_session_watchdog_started", True)
+
+    def worker() -> None:
+        while not getattr(server, "_shutdown_requested", False):
+            time.sleep(2.0)
+            prune_expired_ui_sessions()
+            with UI_SESSION_LOCK:
+                should_shutdown = (
+                    UI_SESSION_EVER_CONNECTED
+                    and not UI_SESSIONS
+                    and UI_SESSION_LAST_EMPTY_AT is not None
+                    and (time.time() - UI_SESSION_LAST_EMPTY_AT) >= UI_SESSION_SHUTDOWN_GRACE_SECONDS
+                )
+            if should_shutdown:
+                request_server_shutdown(server, stop_jobs=True, reason="ui-session-disconnected")
+                return
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def summarize_task(task_data: dict[str, Any]) -> dict[str, int]:
@@ -297,9 +617,36 @@ def collect_workspace_files(root: Path, extensions: set[str]) -> list[Path]:
     return sorted(files, key=safe_mtime, reverse=True)
 
 
+def workspace_cover_dir(workspace_dir: Path) -> Path:
+    return workspace_dir / "covers"
+
+
+def workspace_bgm_dir(workspace_dir: Path) -> Path:
+    return workspace_dir / "bgm"
+
+
+def resolve_workspace_optional_path(workspace_dir: Path, raw_path: str | None) -> Path | None:
+    normalized = str(raw_path or "").strip()
+    if not normalized:
+        return None
+    candidate = Path(normalized).expanduser()
+    if not candidate.is_absolute():
+        candidate = workspace_dir / candidate
+    return candidate.resolve()
+
+
+def safe_workspace_relative_path(workspace_dir: Path, target_path: Path) -> str:
+    try:
+        return target_path.resolve().relative_to(workspace_dir.resolve()).as_posix()
+    except ValueError:
+        return str(target_path.resolve())
+
+
 def summarize_workspace_assets(workspace_dir: Path) -> dict[str, Any]:
     source_root = workspace_dir / "downloads" / "baidu"
     reference_root = workspace_dir / "downloads" / "douyin"
+    cover_root = workspace_cover_dir(workspace_dir)
+    bgm_root = workspace_bgm_dir(workspace_dir)
     subtitle_root = workspace_dir / "subtitles"
     clip_root = workspace_dir / "clips"
 
@@ -337,11 +684,15 @@ def summarize_workspace_assets(workspace_dir: Path) -> dict[str, Any]:
 
     source_files = collect_workspace_files(source_root, SUPPORTED_VIDEO_EXTENSIONS)
     reference_files = collect_workspace_files(reference_root, SUPPORTED_VIDEO_EXTENSIONS)
+    cover_files = collect_workspace_files(cover_root, SUPPORTED_IMAGE_EXTENSIONS)
+    bgm_files = collect_workspace_files(bgm_root, SUPPORTED_AUDIO_EXTENSIONS)
     subtitle_files = collect_workspace_files(subtitle_root, SUPPORTED_SUBTITLE_EXTENSIONS)
     clip_files = collect_workspace_files(clip_root, SUPPORTED_VIDEO_EXTENSIONS)
     return {
         "source": pack(source_root, source_files),
         "reference": pack(reference_root, reference_files),
+        "cover": pack(cover_root, cover_files),
+        "bgm": pack(bgm_root, bgm_files),
         "subtitle": pack(subtitle_root, subtitle_files),
         "clip": pack(clip_root, clip_files),
     }
@@ -376,56 +727,22 @@ def get_workspace_task(workspace_name: str) -> dict[str, Any]:
     task_path = workspace_dir / "task.json"
     if not task_path.exists():
         return default_workspace_task(workspace_dir.name)
-    task = read_json(task_path, default_workspace_task(workspace_dir.name))
-    if not isinstance(task, dict):
+    raw_task = read_json(task_path, default_workspace_task(workspace_dir.name))
+    if not isinstance(raw_task, dict):
         return default_workspace_task(workspace_dir.name)
-    task = normalize_task_payload(task, workspace_dir.name)
-    task["workspace_name"] = workspace_dir.name
-    task.setdefault("concurrency", dict(DEFAULT_CONCURRENCY))
-    task.setdefault("settings", {})
-    task["settings"].setdefault("ai_fallback_models", [])
-    task["settings"].setdefault("prefer_funasr_audio_subtitles", True)
-    task["settings"].setdefault("disable_ai_subtitle_review", True)
-    task["settings"].setdefault("disable_ai_narration_rewrite", True)
-    task["settings"].setdefault("prefer_funasr_sentence_pauses", True)
-    task["settings"].setdefault("force_no_narration_mode", False)
-    task["settings"].setdefault("narration_background_percent", 15)
-    task["settings"].setdefault("enable_random_episode_flip", True)
-    task["settings"].setdefault("random_episode_flip_ratio", 0.4)
-    task["settings"].setdefault("enable_random_visual_filter", True)
-    task["settings"].setdefault("clip_output_root", "")
-    task.setdefault("baidu_share", [])
-    task.setdefault("douyin_download", [])
-    task.setdefault("subtitle_extract", [])
-    task.setdefault("auto_clip", [])
-    task["baidu_share"] = sanitize_baidu_share_entries(task.get("baidu_share") or [])
+    normalized_task = normalize_task_payload(raw_task, workspace_dir.name)
+    migrated_task, migrated = migrate_legacy_workspace_task(normalized_task)
+    task = apply_workspace_task_defaults(migrated_task, workspace_dir.name)
+    if migrated or task != raw_task:
+        task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
     return task
 
 
 def save_workspace_task(workspace_name: str, payload: dict[str, Any]) -> Path:
     workspace_dir = resolve_workspace_dir(workspace_name, create=True)
     task_path = workspace_dir / "task.json"
-    payload = dict(payload)
-    payload["workspace_name"] = workspace_dir.name
-    payload.setdefault("concurrency", dict(DEFAULT_CONCURRENCY))
-    payload.setdefault("settings", {})
-    payload["settings"].setdefault("ai_fallback_models", [])
-    payload["settings"].setdefault("prefer_funasr_audio_subtitles", True)
-    payload["settings"].setdefault("disable_ai_subtitle_review", True)
-    payload["settings"].setdefault("disable_ai_narration_rewrite", True)
-    payload["settings"].setdefault("prefer_funasr_sentence_pauses", True)
-    payload["settings"].setdefault("force_no_narration_mode", False)
-    payload["settings"].setdefault("narration_background_percent", 15)
-    payload["settings"].setdefault("enable_random_episode_flip", True)
-    payload["settings"].setdefault("random_episode_flip_ratio", 0.4)
-    payload["settings"].setdefault("enable_random_visual_filter", True)
-    payload["settings"].setdefault("clip_output_root", "")
-    payload.setdefault("baidu_share", [])
-    payload.setdefault("douyin_download", [])
-    payload.setdefault("subtitle_extract", [])
-    payload.setdefault("auto_clip", [])
-    payload = normalize_task_payload(payload, workspace_dir.name)
-    payload["baidu_share"] = sanitize_baidu_share_entries(payload.get("baidu_share") or [])
+    payload = normalize_task_payload(dict(payload), workspace_dir.name)
+    payload = apply_workspace_task_defaults(payload, workspace_dir.name)
     task_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return task_path
 
@@ -938,6 +1255,10 @@ def collect_local_video_files(raw_paths: list[str]) -> list[Path]:
     return collect_local_files(raw_paths, SUPPORTED_VIDEO_EXTENSIONS)
 
 
+def collect_local_audio_files(raw_paths: list[str]) -> list[Path]:
+    return collect_local_files(raw_paths, SUPPORTED_AUDIO_EXTENSIONS)
+
+
 def copy_local_files(target_dir: Path, source_files: list[Path]) -> dict[str, Any]:
     if not source_files:
         raise ValueError("提供的路径里没有找到可导入的有效文件")
@@ -955,9 +1276,11 @@ def target_dir_for_import_kind(workspace_dir: Path, kind: str) -> Path:
         return workspace_dir / "downloads" / "baidu"
     if kind in {"reference", "subtitle_video"}:
         return workspace_dir / "downloads" / "douyin"
+    if kind == "bgm":
+        return workspace_bgm_dir(workspace_dir)
     if kind == "subtitle_file":
         return workspace_dir / "subtitles"
-    raise ValueError("kind must be source, reference, subtitle_video, or subtitle_file")
+    raise ValueError("kind must be source, reference, subtitle_video, bgm, or subtitle_file")
 
 
 def import_local_files(workspace_name: str, kind: str, raw_paths: list[str]) -> dict[str, Any]:
@@ -966,10 +1289,13 @@ def import_local_files(workspace_name: str, kind: str, raw_paths: list[str]) -> 
     if kind in {"source", "reference", "subtitle_video"}:
         source_files = collect_local_video_files(raw_paths)
         return copy_local_files(target_dir, source_files)
+    if kind == "bgm":
+        source_files = collect_local_audio_files(raw_paths)
+        return copy_local_files(target_dir, source_files)
     if kind == "subtitle_file":
         source_files = collect_local_files(raw_paths, SUPPORTED_SUBTITLE_EXTENSIONS)
         return copy_local_files(target_dir, source_files)
-    raise ValueError("kind must be source, reference, subtitle_video, or subtitle_file")
+    raise ValueError("kind must be source, reference, subtitle_video, bgm, or subtitle_file")
 
 
 def sanitize_uploaded_filename(filename: str) -> str:
@@ -1000,6 +1326,8 @@ def upload_file_to_workspace(
 
     if kind in {"source", "reference", "subtitle_video"} and suffix not in SUPPORTED_VIDEO_EXTENSIONS:
         raise ValueError(f"unsupported video file type: {safe_name}")
+    if kind == "bgm" and suffix not in SUPPORTED_AUDIO_EXTENSIONS:
+        raise ValueError(f"unsupported audio file type: {safe_name}")
     if kind == "subtitle_file" and suffix not in SUPPORTED_SUBTITLE_EXTENSIONS:
         raise ValueError(f"unsupported subtitle file type: {safe_name}")
 
@@ -1021,6 +1349,236 @@ def upload_file_to_workspace(
         "saved_name": destination.name,
         "saved_path": str(destination),
         "bytes": int(content_length),
+    }
+
+
+def pick_local_folder(initial_path: str = "") -> dict[str, Any]:
+    if os.name != "nt":
+        raise RuntimeError("当前系统暂不支持原生文件夹选择器")
+
+    initial = str(initial_path or "").strip()
+    script = """
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = '选择文件夹'
+$dialog.ShowNewFolderButton = $true
+$initial = $args[0]
+if ($initial) {
+  try {
+    if (Test-Path -LiteralPath $initial) {
+      $dialog.SelectedPath = (Resolve-Path -LiteralPath $initial).Path
+    }
+  } catch {}
+}
+$result = $dialog.ShowDialog()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.SelectedPath
+  exit 0
+}
+exit 2
+"""
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-STA", "-Command", script, initial],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=180,
+        check=False,
+        creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+    )
+    if result.returncode == 2:
+        return {"selected_path": "", "cancelled": True}
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "文件夹选择失败")
+    selected_path = (result.stdout or "").strip().splitlines()
+    return {
+        "selected_path": selected_path[-1].strip() if selected_path else "",
+        "cancelled": False,
+    }
+
+
+def set_workspace_cover_from_baidu_share(
+    workspace_name: str,
+    *,
+    share_url: str,
+    target_fsid: str = "",
+    target_path: str = "",
+    target_filename: str = "",
+    share_key: str = "",
+) -> dict[str, Any]:
+    workspace_dir = resolve_workspace_dir(workspace_name, create=True)
+    covers_dir = workspace_cover_dir(workspace_dir)
+    temp_root = workspace_dir / "temp"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="cover_select_", dir=str(temp_root)) as temp_dir_text:
+        temp_dir = Path(temp_dir_text)
+        download_result = download_baidu_share_file_to_path(
+            share_url,
+            target_fsid=target_fsid,
+            target_path=target_path,
+            target_filename=target_filename,
+            output_dir=temp_dir,
+            download_threads=1,
+        )
+        downloaded_path = Path(str(download_result["downloaded_path"]))
+        original_name = downloaded_path.name
+        suffix = downloaded_path.suffix.lower()
+        if suffix not in SUPPORTED_IMAGE_EXTENSIONS:
+            raise RuntimeError(f"所选文件不是受支持的封面图片：{downloaded_path.name}")
+
+        final_cover_path = covers_dir / f"{COVER_ARTIFACT_STEM}{suffix}"
+        for candidate in covers_dir.glob(f"{COVER_ARTIFACT_STEM}.*"):
+            if candidate.resolve() != final_cover_path.resolve():
+                candidate.unlink(missing_ok=True)
+        if final_cover_path.exists():
+            final_cover_path.unlink(missing_ok=True)
+        shutil.move(str(downloaded_path), str(final_cover_path))
+
+    task = get_workspace_task(workspace_dir.name)
+    settings = dict(task.get("settings") or {})
+    settings["cover_image_path"] = safe_workspace_relative_path(workspace_dir, final_cover_path)
+    settings["cover_image_name"] = str(target_filename or original_name).strip() or original_name
+    settings["cover_image_share_key"] = str(share_key or target_fsid or target_path or target_filename).strip()
+    task["settings"] = settings
+    save_workspace_task(workspace_dir.name, task)
+    return {
+        "workspace": workspace_dir.name,
+        "cover_image_path": settings["cover_image_path"],
+        "cover_image_name": settings["cover_image_name"],
+        "cover_image_share_key": settings["cover_image_share_key"],
+    }
+
+
+def clear_workspace_cover(workspace_name: str) -> dict[str, Any]:
+    workspace_dir = resolve_workspace_dir(workspace_name, create=True)
+    task = get_workspace_task(workspace_dir.name)
+    settings = dict(task.get("settings") or {})
+    settings["cover_image_path"] = ""
+    settings["cover_image_name"] = ""
+    settings["cover_image_share_key"] = ""
+    task["settings"] = settings
+    save_workspace_task(workspace_dir.name, task)
+    return {"workspace": workspace_dir.name, "cleared": True}
+
+
+def resolve_workspace_cover_image(workspace_name: str, raw_path: str = "") -> Path:
+    workspace_dir = resolve_workspace_dir(workspace_name, create=False)
+    cover_path = resolve_workspace_optional_path(workspace_dir, raw_path)
+    if cover_path is None:
+        task = get_workspace_task(workspace_dir.name)
+        settings = task.get("settings") or {}
+        cover_path = resolve_workspace_optional_path(workspace_dir, str(settings.get("cover_image_path") or ""))
+    if cover_path is None or not cover_path.exists() or not cover_path.is_file():
+        raise FileNotFoundError("当前工作间还没有可预览的封面图片")
+    if cover_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
+        raise ValueError("当前封面文件不是受支持的图片格式")
+    return cover_path
+
+
+def test_ai_api_connection(
+    *,
+    ai_api_key: str,
+    ai_model: str,
+    ai_api_url: str,
+    ai_fallback_models: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    api_key = str(ai_api_key or "").strip()
+    model = str(ai_model or "").strip()
+    api_url = str(ai_api_url or "").strip()
+    if not api_key:
+        raise ValueError("AI API Key 不能为空")
+    if not model:
+        raise ValueError("AI 主模型不能为空")
+    if not api_url:
+        raise ValueError("AI API 地址不能为空")
+    python_path = resolve_python([
+        PROJECT_ROOT / "modules" / "auto_clip_engine" / ".venv" / "Scripts" / "python.exe",
+    ])
+
+    payload = {
+        "ai_api_key": api_key,
+        "ai_model": model,
+        "ai_api_url": api_url,
+        "ai_fallback_models": ai_fallback_models or [],
+    }
+    script = textwrap.dedent(
+        f"""
+        import json
+        from modules.auto_clip_engine.drama_clone_core import AINarrationGenerator
+
+        payload = {json.dumps(payload, ensure_ascii=False)}
+        tester = AINarrationGenerator(
+            api_key=payload["ai_api_key"],
+            model=payload["ai_model"],
+            api_url=payload["ai_api_url"],
+            fallback_models=payload["ai_fallback_models"],
+        )
+        response_text = tester.request_text_completion(
+            system_prompt={json.dumps("你是 API 连通性测试助手。请只返回简短结果，不要输出多余解释。", ensure_ascii=False)},
+            user_prompt={json.dumps("请只回复：连接成功", ensure_ascii=False)},
+            temperature=0.0,
+            label="AI API test",
+            max_tokens=32,
+            timeout=45,
+        )
+        if not response_text:
+            detail = (tester.last_rewrite_issue or tester.last_ai_issue or "AI 接口未返回有效内容").strip()
+            raise RuntimeError(detail)
+
+        active_index = int(getattr(tester, "_active_config_index", 0) or 0)
+        configs = list(getattr(tester, "_configs", []) or [])
+        active_config = configs[active_index] if 0 <= active_index < len(configs) else {{}}
+        preview = str(response_text or "").strip().replace("\\r", " ").replace("\\n", " ")
+        if len(preview) > 80:
+            preview = preview[:80] + "..."
+        result = {{
+            "active_model": str(tester.model or payload["ai_model"]),
+            "active_api_url": str(tester.api_url or payload["ai_api_url"]),
+            "active_label": str(active_config.get("label") or ""),
+            "used_fallback": active_index > 0,
+            "response_preview": preview,
+        }}
+        print("__AI_TEST_RESULT__" + json.dumps(result, ensure_ascii=False))
+        """
+    ).strip()
+
+    result = subprocess.run(
+        [python_path, "-c", script],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=False,
+        env=build_subprocess_env(),
+    )
+    output = (result.stdout or "").strip()
+    if result.returncode != 0:
+        detail = output.splitlines()[-1] if output else ""
+        raise RuntimeError(detail or "AI API test failed")
+
+    result_line = ""
+    for line in reversed(output.splitlines()):
+        if line.startswith("__AI_TEST_RESULT__"):
+            result_line = line.removeprefix("__AI_TEST_RESULT__")
+            break
+    if not result_line:
+        raise RuntimeError(output.splitlines()[-1] if output else "AI API test returned no result")
+
+    payload = json.loads(result_line)
+    return {
+        "active_model": str(payload.get("active_model") or model),
+        "active_api_url": str(payload.get("active_api_url") or api_url),
+        "active_label": str(payload.get("active_label") or ""),
+        "used_fallback": bool(payload.get("used_fallback")),
+        "response_preview": str(payload.get("response_preview") or ""),
     }
 
 
@@ -1402,9 +1960,14 @@ def list_baidu_share_files(share_url: str) -> dict[str, Any]:
     output = result.stdout or ""
     files: list[dict[str, Any]] = []
     for line in output.splitlines():
-        if not line.startswith("MP4_FILES "):
+        prefix = ""
+        if line.startswith("SHARE_FILES "):
+            prefix = "SHARE_FILES "
+        elif line.startswith("MP4_FILES "):
+            prefix = "MP4_FILES "
+        if not prefix:
             continue
-        payload = line[len("MP4_FILES ") :].strip()
+        payload = line[len(prefix) :].strip()
         parsed = json.loads(payload)
         if isinstance(parsed, list):
             files = [item for item in parsed if isinstance(item, dict)]
@@ -1414,11 +1977,83 @@ def list_baidu_share_files(share_url: str) -> dict[str, Any]:
         detail = output.strip().splitlines()[-1] if output.strip() else "baidu share listing failed"
         raise RuntimeError(detail)
     if not files:
-        raise RuntimeError("未能从网盘链接中提取到可下载视频")
+        raise RuntimeError("未能从网盘链接中提取到可下载文件")
 
     return {
         "share_url": share_url,
         "files": files,
+        "command": command,
+    }
+
+
+def download_baidu_share_file_to_path(
+    share_url: str,
+    *,
+    target_fsid: str = "",
+    target_path: str = "",
+    target_filename: str = "",
+    output_dir: Path,
+    download_threads: int = 1,
+) -> dict[str, Any]:
+    ensure_baidu_login_ready(auto_open_login=True)
+
+    script_path = PROJECT_ROOT / "modules" / "baidu_share_downloader" / "baidu_share_downloader.py"
+    python_path = ensure_baidu_share_python()
+    command = [
+        python_path,
+        str(script_path),
+        share_url,
+        "--output-dir",
+        str(output_dir),
+    ]
+    if target_fsid:
+        command.extend(["--target-fsid", target_fsid])
+    if target_path:
+        command.extend(["--target-path", target_path])
+    if target_filename:
+        command.extend(["--target-filename", target_filename])
+    command.extend(["--download-threads", str(max(1, int(download_threads or 1)))])
+
+    result = subprocess.run(
+        command,
+        cwd=str(script_path.parent),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=1800,
+        check=False,
+        env=build_subprocess_env(),
+    )
+
+    output = result.stdout or ""
+    downloaded_path: Path | None = None
+    downloaded_size = 0
+    for line in output.splitlines():
+        if not line.startswith("DOWNLOADED "):
+            continue
+        parts = line.split(" ")
+        if len(parts) < 3:
+            continue
+        candidate_path = " ".join(parts[1:-1]).strip()
+        size_text = parts[-1].strip()
+        candidate = Path(candidate_path)
+        if candidate.exists():
+            downloaded_path = candidate
+        try:
+            downloaded_size = int(size_text)
+        except ValueError:
+            downloaded_size = 0
+
+    if result.returncode != 0:
+        detail = output.strip().splitlines()[-1] if output.strip() else "baidu share download failed"
+        raise RuntimeError(detail)
+    if downloaded_path is None or not downloaded_path.exists():
+        raise RuntimeError("未能确认百度网盘文件下载结果")
+    return {
+        "downloaded_path": str(downloaded_path),
+        "downloaded_size": downloaded_size or downloaded_path.stat().st_size,
         "command": command,
     }
 
@@ -1624,7 +2259,7 @@ def start_workspace_job(workspace_name: str) -> JobState:
     return start_batch_job([workspace_name])
 
 
-def stop_job(job_id: str) -> bool:
+def stop_job(job_id: str, *, reason: str = "") -> bool:
     with JOB_LOCK:
         job = JOBS.get(job_id)
         if not job or not job.process:
@@ -1632,6 +2267,8 @@ def stop_job(job_id: str) -> bool:
         process = job.process
         pid = job.pid or process.pid
         job.status = "stopping"
+    if reason:
+        append_job_stop_notice(job, reason)
     if os.name == "nt" and pid:
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
@@ -1669,6 +2306,7 @@ def build_status_payload(server: ThreadingHTTPServer) -> dict[str, Any]:
             "workspace_root": str(WORKSPACE_ROOT),
             "pid_file": str(CONTROL_CENTER_PID_FILE),
         },
+        "system_notice": read_json(CONTROL_CENTER_NOTICE_FILE, None),
         "workspaces": list_workspaces(),
         "jobs": list_jobs(),
         "modules": load_module_views(),
@@ -2749,6 +3387,14 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_binary(self, status: int, data: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self._send_common_cache_headers()
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send_empty(self, status: int = HTTPStatus.NO_CONTENT) -> None:
         self.send_response(status)
         self.send_header("Content-Length", "0")
@@ -2782,7 +3428,16 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 return
 
             if parsed.path == "/favicon.ico":
-                self._send_empty()
+                if not CONTROL_CENTER_APP_LOGO_ICO.exists():
+                    self._send_empty()
+                    return
+                self._send_binary(HTTPStatus.OK, CONTROL_CENTER_APP_LOGO_ICO.read_bytes(), "image/x-icon")
+                return
+
+            if parsed.path == "/app-logo.png":
+                if not CONTROL_CENTER_APP_LOGO_PNG.exists():
+                    raise FileNotFoundError(f"logo file not found: {CONTROL_CENTER_APP_LOGO_PNG}")
+                self._send_binary(HTTPStatus.OK, CONTROL_CENTER_APP_LOGO_PNG.read_bytes(), "image/png")
                 return
 
             if parsed.path == "/api/status":
@@ -2796,6 +3451,15 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "task":
                 workspace_name = urllib.parse.unquote(parts[2])
                 self._send_json(HTTPStatus.OK, {"workspace": workspace_name, "task": get_workspace_task(workspace_name)})
+                return
+
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "cover-preview":
+                workspace_name = urllib.parse.unquote(parts[2])
+                query = urllib.parse.parse_qs(parsed.query)
+                raw_path = str((query.get("path") or [""])[0] or "")
+                cover_path = resolve_workspace_cover_image(workspace_name, raw_path)
+                mime_type = mimetypes.guess_type(cover_path.name)[0] or "application/octet-stream"
+                self._send_binary(HTTPStatus.OK, cover_path.read_bytes(), mime_type)
                 return
 
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "baidu-official-diagnosis":
@@ -2859,6 +3523,18 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {"ok": True})
                 return
 
+            if parsed.path == "/api/ui-session":
+                payload = self._read_json_body()
+                active_sessions = register_ui_session(str(payload.get("session_id", "")).strip())
+                self._send_json(HTTPStatus.OK, {"ok": True, "active_sessions": active_sessions})
+                return
+
+            if parsed.path == "/api/ui-session/disconnect":
+                payload = self._read_json_body()
+                active_sessions = disconnect_ui_session(str(payload.get("session_id", "")).strip())
+                self._send_json(HTTPStatus.OK, {"ok": True, "active_sessions": active_sessions})
+                return
+
             if parsed.path == "/api/baidu/list-share":
                 payload = self._read_json_body()
                 share_url = str(payload.get("share_url", "")).strip()
@@ -2872,8 +3548,20 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 return
 
             if parsed.path == "/api/shutdown":
-                self._send_json(HTTPStatus.OK, {"ok": True, "message": "control center shutting down"})
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                payload = self._read_json_body()
+                result = request_server_shutdown(
+                    self.server,
+                    stop_jobs=bool(payload.get("stop_jobs")),
+                    reason=str(payload.get("reason", "")).strip(),
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "message": "control center shutting down",
+                        **result,
+                    },
+                )
                 return
 
             if parsed.path == "/api/open-path":
@@ -2881,6 +3569,28 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 path_text = str(payload.get("path", "")).strip()
                 select_file = bool(payload.get("select_file"))
                 result = open_local_path_in_explorer(path_text, select_file=select_file)
+                self._send_json(HTTPStatus.OK, {"ok": True, **result})
+                return
+
+            if parsed.path == "/api/pick-folder":
+                payload = self._read_json_body()
+                initial_path = str(payload.get("initial_path", "")).strip()
+                result = pick_local_folder(initial_path)
+                self._send_json(HTTPStatus.OK, {"ok": True, **result})
+                return
+
+            if parsed.path == "/api/test-ai":
+                payload = self._read_json_body()
+                raw_fallback_models = payload.get("ai_fallback_models") or []
+                if not isinstance(raw_fallback_models, list):
+                    raise ValueError("ai_fallback_models must be a list")
+                fallback_models = [item for item in raw_fallback_models if isinstance(item, dict)]
+                result = test_ai_api_connection(
+                    ai_api_key=str(payload.get("ai_api_key", "")).strip(),
+                    ai_model=str(payload.get("ai_model", "")).strip(),
+                    ai_api_url=str(payload.get("ai_api_url", "")).strip(),
+                    ai_fallback_models=fallback_models,
+                )
                 self._send_json(HTTPStatus.OK, {"ok": True, **result})
                 return
 
@@ -2919,6 +3629,27 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {"ok": True, **result})
                 return
 
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "cover-from-share":
+                workspace_name = urllib.parse.unquote(parts[2])
+                payload = self._read_json_body()
+                share_url = str(payload.get("share_url", "")).strip()
+                result = set_workspace_cover_from_baidu_share(
+                    workspace_name,
+                    share_url=share_url,
+                    target_fsid=str(payload.get("target_fsid", "")).strip(),
+                    target_path=str(payload.get("target_path", "")).strip(),
+                    target_filename=str(payload.get("target_filename", "")).strip(),
+                    share_key=str(payload.get("share_key", "")).strip(),
+                )
+                self._send_json(HTTPStatus.OK, {"ok": True, **result})
+                return
+
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "clear-cover":
+                workspace_name = urllib.parse.unquote(parts[2])
+                result = clear_workspace_cover(workspace_name)
+                self._send_json(HTTPStatus.OK, {"ok": True, **result})
+                return
+
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "upload-file":
                 workspace_name = urllib.parse.unquote(parts[2])
                 kind = str(self.headers.get("X-Upload-Kind", "")).strip()
@@ -2944,6 +3675,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     ensure_workspace_root()
     server = ThreadingHTTPServer((args.host, args.port), ControlCenterHandler)
+    start_ui_session_watchdog(server)
     if args.open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(f"http://{args.host}:{args.port}")).start()
     print(f"CONTROL_CENTER http://{args.host}:{args.port}")
