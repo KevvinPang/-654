@@ -4,6 +4,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $scriptPath = Join-Path $root 'control_center.py'
 $uiPath = Join-Path $root 'control_center_ui.html'
 $batchRunnerPath = Join-Path $root 'batch_runner.py'
+$autoClipEngineDir = Join-Path $root 'modules\auto_clip_engine'
 $runtimeDir = Join-Path $root 'runtime\control_center'
 $pidFile = Join-Path $runtimeDir 'control_center.pid'
 $stdoutLogFile = Join-Path $runtimeDir 'control_center.out.log'
@@ -54,7 +55,16 @@ function Read-PidFile {
 
 $existingPid = Read-PidFile
 $existingProcess = Get-ControlCenterProcess -ProcessId $existingPid
-$watchedFiles = @($scriptPath, $uiPath, $batchRunnerPath) | Where-Object { Test-Path -LiteralPath $_ }
+$autoClipEngineFiles = @()
+if (Test-Path -LiteralPath $autoClipEngineDir) {
+    $autoClipEngineFiles = Get-ChildItem -LiteralPath $autoClipEngineDir -Filter '*.py' -File -Recurse | ForEach-Object { $_.FullName }
+}
+$watchedFileCandidates = @(
+    $scriptPath,
+    $uiPath,
+    $batchRunnerPath
+) + $autoClipEngineFiles
+$watchedFiles = $watchedFileCandidates | Where-Object { Test-Path -LiteralPath $_ }
 $latestCodeWriteTime = ($watchedFiles | ForEach-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } | Sort-Object -Descending | Select-Object -First 1)
 $pidWriteTime = if (Test-Path -LiteralPath $pidFile) { (Get-Item -LiteralPath $pidFile).LastWriteTimeUtc } else { $null }
 $needsRestart = $false
