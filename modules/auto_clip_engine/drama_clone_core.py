@@ -145,9 +145,11 @@ MAX_TTS_SYNTH_RATE_FACTOR = 1.75
 MIN_TTS_RATE_BOOST_MULTIPLIER = 1.04
 MAX_TTS_RESYNTH_PASSES = 3
 MAX_TTS_TIMELINE_OVERFLOW_SECONDS = 0.10
+STRICT_TTS_TIMELINE_OVERFLOW_SECONDS = 0.28
 MAX_UNIFORM_TTS_RATE_FACTOR = 1.20
 MAX_TTS_GROUP_REFINEMENT_PASSES = 12
 LOCAL_TTS_MICRO_SPEED_FACTOR = 1.10
+STRICT_TTS_MAX_LOCAL_SPEED_FACTOR = 1.22
 MIN_AUDIO_STRETCH_SPEED = 0.88
 TTS_ACTIVITY_RMS_WINDOW_SECONDS = 0.02
 TTS_ACTIVITY_RMS_HOP_SECONDS = 0.01
@@ -170,12 +172,28 @@ STRICT_NARRATION_DUCK_MERGE_GAP_SECONDS = 0.03
 STRICT_NARRATION_DUCK_MATCH_PADDING_SECONDS = 0.12
 STRICT_TTS_MIN_SENTENCE_GAP_SECONDS = 0.09
 STRICT_TTS_RENDER_TAIL_HOLD_SECONDS = 0.08
+STRICT_TTS_SOURCE_HANDOFF_GUARD_SECONDS = 0.08
+STRICT_TTS_SOURCE_HANDOFF_CORRIDOR_SECONDS = 4.00
+STRICT_TTS_SOURCE_HANDOFF_MAX_LOCAL_SPEED_FACTOR = 1.30
+STRICT_TTS_SOURCE_HANDOFF_MAX_SYNTH_RATE_FACTOR = 1.35
+STRICT_TTS_SOURCE_HANDOFF_RATE_RESYNTH_ENABLED = False
 STRICT_TTS_BOUNDARY_AUDIO_WINDOW_SECONDS = 0.24
 STRICT_TTS_BOUNDARY_AUDIO_CORRIDOR_PADDING_SECONDS = 0.08
 STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS = 0.05
+STRICT_TTS_BOUNDARY_AUDIO_VALLEY_PAUSE_SCORE = 0.72
+STRICT_TTS_BOUNDARY_AUDIO_LOCAL_VALLEY_PAUSE_SCORE = 0.68
+STRICT_TTS_BOUNDARY_AUDIO_VALLEY_SEARCH_SECONDS = 0.22
 STRICT_TTS_REFERENCE_BOUNDARY_TOLERANCE_SECONDS = 0.18
 STRICT_TTS_REFERENCE_BOUNDARY_PAUSE_MIN_SECONDS = 0.015
+STRICT_TTS_REFERENCE_TIMING_FALLBACK_PAUSE_SECONDS = 0.12
+STRICT_SOURCE_HANDOFF_AUDIO_WINDOW_SECONDS = 0.18
+STRICT_SOURCE_HANDOFF_AUDIO_HOP_SECONDS = 0.04
+STRICT_SOURCE_HANDOFF_MAX_ADVANCE_SECONDS = 0.42
+STRICT_SOURCE_HANDOFF_MIN_ADVANCE_SECONDS = 0.06
+STRICT_SOURCE_HANDOFF_LOOKAHEAD_SECONDS = 0.08
 NARRATION_REWRITE_SOFT_OVERFLOW_UNITS = 3
+AI_REWRITE_PAUSE_PUNCTUATION_CHARS = set("\u3001\u3002\uff0c\uff1b\uff1a\uff01\uff1f\u2026,;:!?")
+AI_REWRITE_TERMINAL_PUNCTUATION_CHARS = set("\u3002\uff01\uff1f!?")
 TTS_REQUEST_TIMEOUT_SECONDS = 45
 MAX_TTS_SEGMENT_SPLIT_DEPTH = 3
 TTS_MIN_VALID_DURATION_SECONDS = 0.18
@@ -250,12 +268,15 @@ AUDIO_CLASSIFICATION_DIALOGUE_MAX_NARRATOR_SIMILARITY = 0.79
 AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS = 0.58
 AUDIO_CLASSIFICATION_ANTI_NARRATOR_WEAK_ISLAND_SECONDS = 1.05
 AUDIO_CLASSIFICATION_DIALOGUE_RECOVERY_SECONDS = 1.65
-AUDIO_ANTI_NARRATOR_PROTECTION_MIN_CONFIDENCE = 0.90
+AUDIO_ANTI_NARRATOR_PROTECTION_MIN_CONFIDENCE = 0.82
 AUDIO_CLASSIFICATION_SHORT_WINDOW_NARRATION_SECONDS = 0.38
+AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_SECONDS = 0.72
+AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_GAP_SECONDS = 0.18
 AUDIO_TIMELINE_WINDOW_SECONDS = 0.78
 AUDIO_TIMELINE_HOP_SECONDS = 0.24
 AUDIO_TIMELINE_MIN_OVERLAP_SECONDS = 0.08
 SPEECHBRAIN_MODEL_SOURCE = "speechbrain/spkrec-ecapa-voxceleb"
+SPEAKERLAB_MODEL_SOURCE = "iic/speech_campplus_sv_zh-cn_16k-common"
 SPEECHBRAIN_MAX_SEEDS_PER_LABEL = 12
 SPEECHBRAIN_MIN_SEGMENT_SECONDS = 0.35
 SPEECHBRAIN_NARRATION_SIMILARITY_MIN = 0.74
@@ -264,6 +285,8 @@ SPEECHBRAIN_SIMILARITY_MARGIN = 0.08
 STRICT_TTS_DUCK_BRIDGE_GAP_SECONDS = 0.32
 SPEECHBRAIN_REQUEST_TIMEOUT_SECONDS = 1800
 SPEECHBRAIN_CACHE_VERSION = "20260417_voice_seed_v5"
+SPEAKERLAB_REQUEST_TIMEOUT_SECONDS = 1800
+SPEAKERLAB_CACHE_VERSION = "20260423_campp_v1"
 SPEECHBRAIN_NARRATOR_REJECT_MAX = 0.56
 SPEECHBRAIN_NARRATOR_STRONG_REJECT_MAX = 0.48
 SPEECHBRAIN_LOCAL_SEED_MIN_CONFIDENCE = 0.76
@@ -277,6 +300,7 @@ SPEECHBRAIN_DIALOGUE_RECOVERY_SIMILARITY_MIN = 0.50
 SPEECHBRAIN_DIALOGUE_RECOVERY_GAP_MIN = 0.00
 SPEECHBRAIN_DIALOGUE_RECOVERY_NARRATOR_MAX = 0.66
 FUNASR_MODEL_SOURCE = "iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+SENSEVOICE_MODEL_SOURCE = "iic/SenseVoiceSmall"
 FUNASR_VAD_MODEL_SOURCE = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 FUNASR_PUNC_MODEL_SOURCE = "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
 FUNASR_REQUEST_TIMEOUT_SECONDS = 1800
@@ -310,6 +334,9 @@ FUNASR_AUDIO_SPLIT_VALLEY_CENTER_WINDOW_SECONDS = 0.045
 FUNASR_AUDIO_SPLIT_VALLEY_MIN_LOW_SECONDS = 0.05
 FUNASR_AUDIO_SPLIT_CANDIDATE_CLUSTER_SECONDS = 0.12
 FUNASR_AUDIO_SPLIT_STRONG_CANDIDATE_SCORE = 0.52
+FUNASR_AUDIO_SPLIT_STRONG_VALLEY_SCORE = 0.40
+FUNASR_AUDIO_SPLIT_STRONG_AUXILIARY_VALLEY_SCORE = 0.44
+CROSS_ENTRY_BOUNDARY_TRAILING_FRAGMENT_MAX_VISIBLE_CHARS = 3
 REFERENCE_SUBTITLE_OCR_TIMEOUT_SECONDS = 1800
 REFERENCE_SUBTITLE_OCR_MIN_SCORE = 0.82
 REFERENCE_SUBTITLE_OCR_PREFIX_TRIM_MAX_CHARS = 3
@@ -367,6 +394,20 @@ MATCH_REFERENCE_SCENE_CUT_WINDOW = 0.28
 MATCH_BOUNDARY_RETIMING_MIN_GAIN = 0.08
 MATCH_LOW_STRUCTURAL_REPAIR_MAX = 0.18
 MATCH_LOW_STRUCTURAL_REPAIR_MIN_GAIN = 0.08
+MATCH_LOCAL_CONTINUITY_BRIDGE_MAX_GAP = 40
+MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS = 4
+MATCH_BOUNDARY_PHASE_LAG_MIN_CUT = 0.48
+MATCH_BOUNDARY_PHASE_LAG_MAX_RUN = 4
+MATCH_BOUNDARY_PHASE_LAG_MIN_GAIN = 0.01
+MATCH_BOUNDARY_PHASE_LAG_MIN_VISUAL_GAIN = 0.015
+MATCH_LOCAL_TIMING_WINDOW_RADIUS = 2
+MATCH_LOCAL_TIMING_LARGE_GAP = 3
+MATCH_LOCAL_TIMING_CORRIDOR_PADDING = 6
+MATCH_LOCAL_TIMING_MAX_BACKTRACK = 6
+MATCH_LOCAL_TIMING_MAX_CANDIDATES = 8
+MATCH_LOCAL_TIMING_MIN_GAIN = 0.18
+MATCH_LOCAL_TIMING_MIN_RUN = 4
+MATCH_MERGE_OVERLAP_NORMALIZE_FACTOR = 2.0
 TIME_RE = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
@@ -461,7 +502,7 @@ def run_subprocess_hidden(*popenargs, **kwargs):
     merged_kwargs.update(kwargs)
     return subprocess.run(*popenargs, **merged_kwargs)
 FRAGMENT_TAIL_RE = re.compile(
-    r"(?:[\u7684\u5730\u5f97\u4e86\u7740\u8fc7\u628a\u5c06\u7ed9\u8ddf\u5411\u5728\u4e8e\u548c\u4e0e\u5e76\u53ca\u800c\u5374\u5c31\u53c8\u8fd8\u4ece\u5bf9\u88ab\u8ba9\u66ff\u6bd4\u5f80\u671d\u62ff\u5230\u4e3a\u540c\u5417\u5462\u554a\u5427\u5440\u5566])+$"
+    r"(?:[\u7684\u5730\u5f97\u4e86\u7740\u8fc7\u628a\u5c06\u7ed9\u8ddf\u5411\u5728\u4e8e\u548c\u4e0e\u5e76\u53ca\u800c\u5374\u5c31\u53c8\u8fd8\u4ece\u5bf9\u88ab\u8ba9\u66ff\u6bd4\u5f80\u671d\u62ff\u5230\u4e3a\u540c\u4e5f\u5417\u5462\u554a\u5427\u5440\u5566])+$"
 )
 SPEECH_INTRO_TAIL_RE = re.compile(
     r"(?:问(?:她|他|道)?|告诉(?:她|他|众人)?|说道|答道|回道|喊道|怒道|直言|表示|表态|承诺|解释|告诫|安慰(?:她|他)?|提醒(?:她|他)?|忙问|反问|脱口而出|开口说(?:话|道)?|出声说道?|嘲笑(?:她|他)?|嘲讽(?:她|他)?|冷笑(?:着|道)?|讥讽(?:她|他)?|质问(?:她|他)?|怒斥(?:她|他)?|呵斥(?:她|他)?|回怼(?:她|他)?|回呛(?:她|他)?|回击(?:她|他)?|呛声(?:她|他)?|训斥(?:她|他)?|斥责(?:她|他)?|威胁(?:她|他)?|逼问(?:她|他)?|追问(?:她|他)?)$"
@@ -470,7 +511,7 @@ READABLE_BREAK_RE = re.compile(
     r"(此时|随后|随即|接着|然后|紧接着|下一秒|谁知|没想到|结果|原来|可偏偏|可谁知|可|却|而|于是|所以|便|直到|听完|说完|话音刚落|转眼间|这时|很快|终于|最终|并且|才发现|才得知)"
 )
 INCOMPLETE_TAIL_RE = re.compile(
-    r"(?:发现|看到|听到|得知|知道|意识到|想起|决定|告诉|问道|答道|回道|说道|承诺|表示|不|随后|这时|此时|很快|下一秒|紧接着|谁知|没想到|原来|结果|于是|所以|就这么)$"
+    r"(?:发现|看到|听到|得知|知道|意识到|想起|决定|告诉|问道|答道|回道|说道|承诺|表示|以后|之后|以前|之前|不|随后|这时|此时|很快|下一秒|紧接着|谁知|没想到|原来|结果|于是|所以|就这么)$"
 )
 TERMINAL_SENTENCE_PUNCT_RE = re.compile(r"[。！？!?]$")
 MINOR_SENTENCE_PUNCT_RE = re.compile(r"[，、；：,;:]$")
@@ -488,6 +529,53 @@ DANGLING_TTS_TAIL_RE = re.compile(
 SHORT_NOUN_TTS_TAIL_RE = re.compile(
     r"(?:\u5bf9\u65b9|\u81ea\u5df1|\u7537\u4eba|\u5973\u4eba|\u5c0f\u4f19|\u5973\u5b69|\u7537\u5b69|\u5b69\u5b50|\u8001\u4eba|\u6bcd\u4eb2|\u7236\u4eb2|\u7237\u7237|\u5976\u5976|\u533b\u751f|\u62a4\u58eb|\u8001\u677f|\u53f8\u673a|\u52a9\u7406|\u79d8\u4e66|\u670b\u53cb|\u95fa\u871c|\u6d88\u606f|\u7535\u8bdd|\u624b\u673a|\u5730\u5740|\u540d\u5b57|\u8eab\u4efd|\u4e1c\u897f|\u793c\u7269|\u6587\u4ef6|\u7167\u7247)$"
 )
+COMPOUND_TITLE_WORDS = frozenset(
+    (
+        "\u4e8c\u5c0f\u59d0",
+        "\u5927\u5c0f\u59d0",
+        "\u5927\u5c11\u7237",
+        "\u5c11\u7237",
+        "\u5c0f\u59d0",
+        "\u5148\u751f",
+        "\u592b\u4eba",
+        "\u5c0f\u59e8\u5b50",
+        "\u5927\u59e8\u5b50",
+        "\u59d0\u592b",
+        "\u59b9\u592b",
+        "\u8001\u516c",
+        "\u8001\u5a46",
+        "\u4e08\u592b",
+        "\u59bb\u5b50",
+        "\u5b59\u5973",
+        "\u7537\u4eba",
+        "\u5973\u4eba",
+        "\u5c0f\u4f19\u5b50",
+        "\u513f\u5b50",
+        "\u5973\u513f",
+        "\u8001\u7237\u5b50",
+        "\u4fdd\u9556",
+        "\u7237\u7237",
+        "\u5976\u5976",
+        "\u7238\u7238",
+        "\u5988\u5988",
+        "\u53d4\u53d4",
+        "\u4f2f\u4f2f",
+        "\u8205\u8205",
+        "\u59d1\u59d1",
+        "\u5a76\u5a76",
+        "\u5ac2\u5b50",
+        "\u5f1f\u59b9",
+        "\u5927\u5b59\u5973",
+        "\u5c0f\u5b59\u5973",
+        "\u5927\u5b59\u5b50",
+        "\u5c0f\u5b59\u5b50",
+        "\u5c41\u80a1",
+        "\u4e00\u5c41\u80a1",
+        "\u996d\u684c",
+        "\u51c6\u5907",
+        "\u81ea\u7136",
+    )
+)
 SENTENCE_END_HINT_RE = re.compile(
     r"(?:\u4e86|\u5566|\u5462|\u554a|\u5440|\u5427|\u5417|\u561b|\u8fc7|\u7740|\u6210\u4e86|\u4f4f\u4e86|\u5f00\u4e86|\u5230\u4e86|\u8d77\u6765|\u4e0b\u53bb|\u56de\u6765|\u56de\u53bb|\u51fa\u6765|\u8fdb\u53bb|\u7ed3\u675f|\u6210\u529f|\u5931\u8d25|\u79bb\u5f00|\u56de\u5bb6)$"
 )
@@ -503,6 +591,87 @@ CALL_ADDRESS_PHRASE_RE = re.compile(
     rf"{CALL_ADDRESS_VERB_PATTERN}{CALL_ADDRESS_OBJECT_PATTERN}"
 )
 CALL_ADDRESS_BOUNDARY_RE = re.compile(rf"{CALL_ADDRESS_VERB_PATTERN}$")
+CALL_ADDRESS_SHORT_VERB_BOUNDARY_RE = re.compile(
+    r"(?:\u53eb|\u558a|\u5524|\u79f0(?:\u547c|\u4f5c|\u4e3a)?|\u7ba1(?:\u4ed6|\u5979)?\u53eb)$"
+)
+SAFE_CALL_ADDRESS_TRANSITION_PREFIXES = (
+    "\u5f88\u5feb",
+    "\u968f\u540e",
+    "\u968f\u5373",
+    "\u8fd9\u65f6",
+    "\u6b64\u65f6",
+    "\u4e0b\u4e00\u79d2",
+    "\u7d27\u63a5\u7740",
+    "\u7ed3\u679c",
+    "\u539f\u6765",
+    "\u8f6c\u773c\u95f4",
+    "\u4fbf",
+    "\u5c31",
+    "\u624d",
+    "\u5374",
+)
+SAFE_NARRATIVE_TAIL_PREFIXES = (
+    "\u54ea\u6599",
+    "\u4e00\u756a",
+    "\u773c\u770b",
+    "\u5f88\u5feb",
+    "\u6700\u7ec8",
+    "\u968f\u5373",
+    "\u7d27\u63a5\u7740",
+    "\u63a5\u7740",
+    "\u7acb\u9a6c",
+    "\u7ed3\u679c",
+    "\u8fd9\u65f6",
+    "\u53ef\u8fd9\u65f6",
+    "\u5c31\u5728\u8fd9\u65f6",
+    "\u4e0b\u4e00\u79d2",
+)
+SAFE_SOFT_CONTINUATION_PREFIXES = (
+    "\u5e76\u4e14",
+    "\u800c\u4e14",
+    "\u4e8e\u662f",
+    "\u5c31\u662f",
+    "\u540c\u6837",
+    "\u751a\u81f3",
+)
+SAFE_STRUCTURAL_CONTINUATION_PREFIXES = (
+    "\u5e76\u4e14",
+    "\u800c\u4e14",
+    "\u4e8e\u662f",
+    "\u7ee7\u7eed",
+    "\u540c\u65f6",
+)
+PREDICATE_COMPLEMENT_START_PREFIXES = (
+    "\u4f1a",
+    "\u80fd",
+    "\u8981",
+    "\u5c06",
+    "\u88ab",
+    "\u8ba9",
+    "\u7ed9",
+    "\u66f4",
+)
+QUANTITY_OBJECT_START_RE = re.compile(
+    r"^(?:[0-9\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e24\u51e0]+(?:\u4e2a|\u4ef6|\u5957|\u8f86|\u5f20|\u672c|\u53ea|\u6761|\u53cc|\u4efd|\u6b21)?)"
+)
+SAFE_STRONG_TRANSITION_PREFIXES = (
+    "\u8fd9\u65f6",
+    "\u6b64\u65f6",
+    "\u968f\u540e",
+    "\u968f\u5373",
+    "\u63a5\u7740",
+    "\u7d27\u63a5\u7740",
+    "\u4e0b\u4e00\u79d2",
+    "\u5f88\u5feb",
+    "\u8f6c\u773c\u95f4",
+    "\u77ac\u95f4",
+    "\u7ec8\u4e8e",
+    "\u6700\u7ec8",
+    "\u7ed3\u679c",
+    "\u539f\u6765",
+    "\u8c01\u77e5",
+    "\u6ca1\u60f3\u5230",
+)
 NARRATION_ACTION_RE = re.compile(
     r"(?:\u53d1\u73b0|\u8ba4\u4e3a|\u770b\u5230|\u770b\u89c1|\u542c\u5230|\u62ff\u8d77|\u6253\u5f00|\u7b54\u5e94|\u58f0\u79f0|\u5632\u8bbd|\u7ef4\u62a4|\u8d76\u8d70|\u9690\u7792|\u642c\u4e86|\u6253\u62fc|\u5475\u62a4|\u6367\u6210|\u8c08\u4e0b|\u544a\u77e5|\u8bc1\u660e|\u649e\u89c1|\u5a01\u80c1|\u51b3\u5b9a|\u7b56\u5212|\u6536\u5230|\u53d8\u6210|\u6362\u6210|\u62ff\u4e0b|\u627e\u5230|\u7b49\u5230|\u5e2e|\u8ba9|\u7ed9)"
 )
@@ -627,6 +796,36 @@ def resolve_speechbrain_runtime() -> Tuple[Optional[Path], Optional[Path]]:
 
 
 @lru_cache(maxsize=1)
+def resolve_speakerlab_runtime() -> Tuple[Optional[Path], Optional[Path]]:
+    home = Path.home()
+    python_candidates: List[Path] = []
+    source_candidates: List[Path] = []
+
+    for env_key in ("SERVER_AUTO_CLIP_SPEAKERLAB_PYTHON", "SPEAKERLAB_PYTHON"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            python_candidates.append(Path(raw_value))
+    for env_key in ("SERVER_AUTO_CLIP_SPEAKERLAB_SOURCE", "SPEAKERLAB_SOURCE"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            source_candidates.append(Path(raw_value))
+
+    python_candidates.extend(
+        [
+            home / "Desktop" / "whisperX-main" / ".venv" / "Scripts" / "python.exe",
+            home / "Desktop" / "whisperx-main" / ".venv" / "Scripts" / "python.exe",
+        ]
+    )
+    source_candidates.extend(
+        [
+            home / "Desktop" / "3D-Speaker-main",
+            home / "Desktop" / "3D-speaker-main",
+        ]
+    )
+    return _first_existing_path(python_candidates), _first_existing_path(source_candidates)
+
+
+@lru_cache(maxsize=1)
 def resolve_funasr_runtime() -> Tuple[Optional[Path], Optional[Path]]:
     home = Path.home()
     python_candidates: List[Path] = []
@@ -651,6 +850,36 @@ def resolve_funasr_runtime() -> Tuple[Optional[Path], Optional[Path]]:
         [
             home / "Desktop" / "FunASR-main",
             home / "Desktop" / "funasr-main",
+        ]
+    )
+    return _first_existing_path(python_candidates), _first_existing_path(source_candidates)
+
+
+@lru_cache(maxsize=1)
+def resolve_sensevoice_runtime() -> Tuple[Optional[Path], Optional[Path]]:
+    home = Path.home()
+    python_candidates: List[Path] = []
+    source_candidates: List[Path] = []
+
+    for env_key in ("SERVER_AUTO_CLIP_SENSEVOICE_PYTHON", "SENSEVOICE_PYTHON"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            python_candidates.append(Path(raw_value))
+    for env_key in ("SERVER_AUTO_CLIP_SENSEVOICE_SOURCE", "SENSEVOICE_SOURCE"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            source_candidates.append(Path(raw_value))
+
+    python_candidates.extend(
+        [
+            home / "Desktop" / "whisperX-main" / ".venv" / "Scripts" / "python.exe",
+            home / "Desktop" / "whisperx-main" / ".venv" / "Scripts" / "python.exe",
+        ]
+    )
+    source_candidates.extend(
+        [
+            home / "Desktop" / "SenseVoice-main",
+            home / "Desktop" / "sensevoice-main",
         ]
     )
     return _first_existing_path(python_candidates), _first_existing_path(source_candidates)
@@ -1745,12 +1974,93 @@ def narration_rewrite_speech_budgets(entry: SubtitleEntry) -> Tuple[int, int]:
     return preferred_units, hard_units
 
 
+def count_ai_rewrite_pause_punctuation(text: str) -> Tuple[int, int]:
+    normalized = normalize_subtitle_text(text)
+    pause_count = sum(1 for ch in normalized if ch in AI_REWRITE_PAUSE_PUNCTUATION_CHARS)
+    terminal_count = sum(1 for ch in normalized if ch in AI_REWRITE_TERMINAL_PUNCTUATION_CHARS)
+    return pause_count, terminal_count
+
+
+def pause_safe_rewrite_rejection_reason(source_text: str, candidate_text: str) -> str:
+    source = normalize_spoken_narration_text(source_text)
+    candidate = normalize_spoken_narration_text(candidate_text)
+    if not source:
+        return "missing source"
+    if not candidate:
+        return "empty candidate"
+    if source == candidate:
+        return ""
+
+    source_units = subtitle_speech_units(source)
+    candidate_units = subtitle_speech_units(candidate)
+    if candidate_units <= 0:
+        return "empty speech"
+
+    max_extra_units = 1 if source_units <= 14 else 2
+    if candidate_units > source_units + max_extra_units:
+        return "speech expansion"
+
+    max_loss_units = max(2, int(math.ceil(source_units * 0.18)))
+    if source_units > 6 and candidate_units + max_loss_units < source_units:
+        return "speech loss"
+
+    source_pause_count, source_terminal_count = count_ai_rewrite_pause_punctuation(source_text)
+    candidate_pause_count, candidate_terminal_count = count_ai_rewrite_pause_punctuation(candidate_text)
+    if candidate_pause_count != source_pause_count:
+        return "pause punctuation changed"
+    if candidate_terminal_count != source_terminal_count:
+        return "terminal punctuation changed"
+
+    if probably_incomplete_text(candidate) and not probably_incomplete_text(source):
+        return "incomplete candidate"
+    if rewrite_loses_structural_content(source, candidate):
+        return "structural content loss"
+
+    min_similarity = 0.88 if source_units <= 8 else 0.82 if source_units <= 18 else 0.76
+    if rewrite_similarity(source, candidate) < min_similarity:
+        return "low similarity"
+
+    return ""
+
+
+def filter_pause_safe_rewrite_map(
+    source_entries: Sequence[SubtitleEntry],
+    rewrite_map: Dict[int, str],
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Dict[int, str]:
+    if not rewrite_map:
+        return {}
+    source_by_index = {entry.index: entry for entry in source_entries}
+    filtered: Dict[int, str] = {}
+    rejected_reasons: Dict[str, int] = {}
+    for index, candidate in rewrite_map.items():
+        source_entry = source_by_index.get(index)
+        if source_entry is None:
+            rejected_reasons["missing source entry"] = rejected_reasons.get("missing source entry", 0) + 1
+            continue
+        reason = pause_safe_rewrite_rejection_reason(source_entry.text, candidate)
+        if reason:
+            rejected_reasons[reason] = rejected_reasons.get(reason, 0) + 1
+            continue
+        filtered[index] = candidate
+    if log_func and rejected_reasons:
+        reason_summary = ", ".join(f"{reason}={count}" for reason, count in sorted(rejected_reasons.items()))
+        log_func(
+            "  AI rewrite pause guard: "
+            + f"kept {len(filtered)}/{len(rewrite_map)} candidate(s), "
+            + f"rejected {sum(rejected_reasons.values())} ({reason_summary})"
+        )
+    return filtered
+
+
 def fit_rewrite_candidate_to_timing(
     source_entry: SubtitleEntry,
     candidate: str,
     *,
     display_budget: int,
     speech_budget: int,
+    pause_safe: bool = False,
 ) -> str:
     def shortening_creates_dangling_fragment(original_text: str, shortened_text: str) -> bool:
         original_units = subtitle_speech_units(original_text)
@@ -1867,6 +2177,8 @@ def fit_rewrite_candidate_to_timing(
         )
         if speech_overflow > overflow_limit:
             return ""
+    if pause_safe and pause_safe_rewrite_rejection_reason(source_entry.text, fitted):
+        return ""
     return normalize_subtitle_text(fitted)
 
 
@@ -2568,17 +2880,21 @@ def ends_with_minor_sentence_pause(text: str) -> bool:
 
 def starts_with_soft_continuation(text: str) -> bool:
     normalized = normalize_subtitle_text(text)
-    return bool(normalized) and bool(SOFT_CONTINUATION_RE.search(normalized))
+    return bool(normalized) and normalized.startswith(SAFE_SOFT_CONTINUATION_PREFIXES)
 
 
 def starts_with_structural_continuation(text: str) -> bool:
     normalized = normalize_subtitle_text(text)
+    return bool(normalized) and (
+        normalized.startswith(SAFE_STRUCTURAL_CONTINUATION_PREFIXES)
+        or bool(re.search(r"^(?:的|地|得|之|并|并且|而且|们|前|后|里|外)", normalized))
+    )
     return bool(normalized) and bool(re.search(r"^(?:的|地|得|之|并|并且|而且|们|前|后|里|外)", normalized))
 
 
 def starts_with_strong_transition(text: str) -> bool:
     normalized = normalize_subtitle_text(text)
-    return bool(normalized) and bool(STRONG_TRANSITION_RE.search(normalized))
+    return bool(normalized) and normalized.startswith(SAFE_STRONG_TRANSITION_PREFIXES)
 
 
 def looks_like_dangling_tts_tail(text: str) -> bool:
@@ -2677,7 +2993,120 @@ def looks_like_split_address_transition_start(text: str) -> bool:
         return False
     if starts_with_strong_transition(normalized) or starts_with_soft_continuation(normalized):
         return True
+    return normalized.startswith(SAFE_CALL_ADDRESS_TRANSITION_PREFIXES)
     return bool(re.match(r"^(?:很快|随后|随即|这时|此时|下一秒|紧接着|结果|原来|转眼间|便|就|才|却)", normalized))
+
+
+def starts_with_narrative_transition_tail(text: str) -> bool:
+    normalized = strip_leading_subtitle_punctuation(text)
+    if not normalized:
+        return False
+    if starts_with_strong_transition(normalized) or starts_with_soft_continuation(normalized):
+        return True
+    return normalized.startswith(SAFE_NARRATIVE_TAIL_PREFIXES)
+    ascii_transition_prefixes = (
+        "\u773c\u770b",
+        "\u5f88\u5feb",
+        "\u6700\u7ec8",
+        "\u968f\u5373",
+        "\u7d27\u63a5\u7740",
+        "\u63a5\u7740",
+        "\u7acb\u9a6c",
+        "\u7ed3\u679c",
+        "\u8fd9\u65f6",
+        "\u53ef\u8fd9\u65f6",
+        "\u5c31\u5728\u8fd9\u65f6",
+        "\u4e0b\u4e00\u79d2",
+    )
+    if normalized.startswith(ascii_transition_prefixes):
+        return True
+    return bool(
+        re.match(
+            r"^(?:鐪肩湅|寰堝揩|鏈€缁?闅忓嵆|绱ф帴鐫€|鎺ョ潃|绔嬮┈|缁撴灉|杩欐椂|鍙繖鏃?|灏卞湪杩欐椂|涓嬩竴绉?)",
+            normalized,
+        )
+    )
+
+
+def split_leading_short_transition_fragment(text: str) -> Tuple[str, str]:
+    normalized = strip_leading_subtitle_punctuation(text)
+    if not normalized:
+        return "", ""
+
+    total_visible = funasr_visible_char_count(normalized)
+    if total_visible < 4:
+        return "", ""
+
+    max_visible = min(4, total_visible - 2)
+    for visible_count in range(2, max_visible + 1):
+        head = normalize_subtitle_text(funasr_slice_visible_range(normalized, 0, visible_count))
+        tail = strip_leading_subtitle_punctuation(
+            funasr_slice_visible_range(normalized, visible_count, total_visible)
+        )
+        if not head or not tail:
+            continue
+        if starts_with_strong_transition(head) or starts_with_soft_continuation(head):
+            continue
+        if starts_with_structural_continuation(head) or looks_like_short_funasr_audio_bridge(head):
+            continue
+        if not starts_with_narrative_transition_tail(tail):
+            continue
+        return head, tail
+    return "", ""
+
+
+def split_trailing_short_boundary_fragment(text: str) -> Tuple[str, str]:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return "", ""
+
+    core, _ = split_terminal_subtitle_punctuation(normalized)
+    total_visible = funasr_visible_char_count(core)
+    if total_visible < 6:
+        return "", ""
+
+    best_head = ""
+    best_tail = ""
+    best_score = -999.0
+    max_tail_visible = min(
+        CROSS_ENTRY_BOUNDARY_TRAILING_FRAGMENT_MAX_VISIBLE_CHARS,
+        total_visible - 3,
+    )
+    if max_tail_visible < 2:
+        return "", ""
+    for tail_visible in range(2, max_tail_visible + 1):
+        split_pos = total_visible - tail_visible
+        head = normalize_subtitle_text(funasr_slice_visible_range(core, 0, split_pos))
+        tail = strip_leading_subtitle_punctuation(
+            funasr_slice_visible_range(core, split_pos, total_visible)
+        )
+        if not head or not tail:
+            continue
+        if starts_with_strong_transition(tail) or starts_with_soft_continuation(tail):
+            continue
+        if starts_with_structural_continuation(tail) or looks_like_short_funasr_audio_bridge(tail):
+            continue
+
+        head_core = strip_terminal_sentence_punctuation(head) or head
+        if probably_incomplete_text(head_core) or looks_like_dangling_tts_tail(head_core):
+            continue
+
+        split_quality = score_funasr_split_text_quality(
+            core,
+            split_pos,
+            total_visible,
+            ignore_compact_midword_penalty=True,
+        )
+        if split_quality < 0.10:
+            continue
+
+        score = split_quality - tail_visible * 0.03
+        if score > best_score:
+            best_head = head
+            best_tail = tail
+            best_score = score
+
+    return best_head, best_tail
 
 
 def repair_cross_entry_boundary_phrases(entries: Sequence[SubtitleEntry]) -> Tuple[List[SubtitleEntry], int]:
@@ -2702,11 +3131,57 @@ def repair_cross_entry_boundary_phrases(entries: Sequence[SubtitleEntry]) -> Tup
         updated_current = current_text
         updated_upcoming = upcoming_text
 
-        if CALL_ADDRESS_BOUNDARY_RE.search(current_core):
+        if CALL_ADDRESS_BOUNDARY_RE.search(current_core) and looks_like_call_address_phrase(current_core):
             address_object, remainder = split_leading_call_address_object(upcoming_plain)
             if address_object and remainder:
                 updated_current = normalize_subtitle_text(current_core + address_object + current_punct)
                 updated_upcoming = remainder
+
+        if updated_current == current_text and updated_upcoming == upcoming_text:
+            gap = max(0.0, float(upcoming.start) - float(current.end))
+            fragment, remainder = split_leading_short_transition_fragment(upcoming_plain)
+            if (
+                fragment
+                and remainder
+                and gap <= 0.03
+                and not starts_with_strong_transition(upcoming_plain)
+                and not starts_with_soft_continuation(upcoming_plain)
+                and not starts_with_structural_continuation(upcoming_plain)
+                and not looks_like_explicit_sentence_end(current_core)
+                and not starts_with_strong_transition(current_core)
+                and not starts_with_soft_continuation(current_core)
+                and not looks_like_short_funasr_audio_bridge(current_core)
+            ):
+                updated_current = normalize_subtitle_text(current_core + fragment + current_punct)
+                updated_upcoming = remainder
+
+        if updated_current == current_text and updated_upcoming == upcoming_text:
+            gap = max(0.0, float(upcoming.start) - float(current.end))
+            trimmed_current, moved_fragment = split_trailing_short_boundary_fragment(current_text)
+            combined_upcoming = normalize_subtitle_text(moved_fragment + upcoming_plain) if moved_fragment else ""
+            if (
+                trimmed_current
+                and moved_fragment
+                and combined_upcoming
+                and gap <= 0.12
+                and (
+                    looks_like_explicit_sentence_end(trimmed_current)
+                    or moved_fragment.startswith("\u4e00")
+                )
+                and not starts_with_strong_transition(upcoming_plain)
+                and not starts_with_soft_continuation(upcoming_plain)
+                and not starts_with_structural_continuation(upcoming_plain)
+                and not starts_with_strong_transition(moved_fragment)
+                and not starts_with_soft_continuation(moved_fragment)
+                and not starts_with_structural_continuation(moved_fragment)
+                and not looks_like_short_funasr_audio_bridge(moved_fragment)
+                and not (
+                    dialogue_like_text(trimmed_current) != dialogue_like_text(combined_upcoming)
+                    and (dialogue_like_text(trimmed_current) or dialogue_like_text(combined_upcoming))
+                )
+            ):
+                updated_current = normalize_subtitle_text(trimmed_current + current_punct)
+                updated_upcoming = combined_upcoming
 
         if updated_current == current_text and updated_upcoming == upcoming_text:
             continue
@@ -2716,6 +3191,116 @@ def repair_cross_entry_boundary_phrases(entries: Sequence[SubtitleEntry]) -> Tup
         fix_count += 1
 
     return repaired, fix_count
+
+
+def repair_isolated_short_bridge_entries(entries: Sequence[SubtitleEntry]) -> Tuple[List[SubtitleEntry], int]:
+    if len(entries) < 3:
+        return list(entries), 0
+
+    repaired: List[SubtitleEntry] = []
+    fix_count = 0
+    index = 0
+    while index < len(entries):
+        if index + 2 < len(entries):
+            current = entries[index]
+            upcoming = entries[index + 1]
+            following = entries[index + 2]
+            current_text = normalize_subtitle_text(current.text)
+            upcoming_text = normalize_subtitle_text(upcoming.text)
+            following_text = normalize_subtitle_text(following.text)
+            current_core, current_punct = split_terminal_subtitle_punctuation(current_text)
+            upcoming_core, _upcoming_punct = split_terminal_subtitle_punctuation(upcoming_text)
+            upcoming_plain = strip_leading_subtitle_punctuation(upcoming_core)
+            gap_before = max(0.0, float(upcoming.start) - float(current.end))
+            gap_after = max(0.0, float(following.start) - float(upcoming.end))
+            upcoming_visible = funasr_visible_char_count(upcoming_plain)
+
+            if (
+                current_core
+                and upcoming_plain
+                and following_text
+                and 1 <= upcoming_visible <= 3
+                and gap_before <= 0.03
+                and gap_after <= 0.12
+                and starts_with_narrative_transition_tail(following_text)
+                and not starts_with_strong_transition(upcoming_plain)
+                and not starts_with_soft_continuation(upcoming_plain)
+                and not starts_with_structural_continuation(upcoming_plain)
+                and not looks_like_explicit_sentence_end(current_core)
+                and not looks_like_explicit_sentence_end(upcoming_plain)
+                and not looks_like_short_funasr_audio_bridge(current_core)
+                and not looks_like_short_funasr_audio_bridge(upcoming_plain)
+            ):
+                repaired.append(
+                    clone_subtitle_entry(
+                        current,
+                        index=0,
+                        end=max(float(current.end), float(upcoming.end)),
+                        text=normalize_subtitle_text(current_core + upcoming_plain + current_punct),
+                    )
+                )
+                repaired.append(clone_subtitle_entry(following, index=0, text=following_text))
+                fix_count += 1
+                index += 3
+                continue
+
+        repaired.append(clone_subtitle_entry(entries[index], index=0))
+        index += 1
+
+    return repaired, fix_count
+
+
+def repair_adjacent_incomplete_dialogue_entries(
+    entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    if len(entries) < 2:
+        return list(entries), 0
+
+    repaired: List[SubtitleEntry] = []
+    fix_count = 0
+    index = 0
+    while index < len(entries):
+        if index + 1 < len(entries):
+            current = entries[index]
+            upcoming = entries[index + 1]
+            current_text = normalize_subtitle_text(current.text)
+            upcoming_text = normalize_subtitle_text(upcoming.text)
+            current_core = strip_terminal_sentence_punctuation(current_text) or current_text
+            gap = max(0.0, float(upcoming.start) - float(current.end))
+            same_dialogue_stream = (
+                current.entry_type in {"dialogue", "original_subtitle"}
+                and upcoming.entry_type == current.entry_type
+            )
+            current_incomplete = (
+                probably_incomplete_text(current_core)
+                or looks_like_dangling_tts_tail(current_core)
+                or bool(CALL_ADDRESS_SHORT_VERB_BOUNDARY_RE.search(current_core))
+            )
+            if (
+                same_dialogue_stream
+                and current_text
+                and upcoming_text
+                and current_incomplete
+                and gap <= 0.12
+                and not starts_with_strong_transition(upcoming_text)
+            ):
+                repaired.append(
+                    SubtitleEntry(
+                        index=0,
+                        start=float(current.start),
+                        end=max(float(current.end), float(upcoming.end)),
+                        text=join_narration_text(current_text, upcoming_text, gap, allow_gap_pause=False),
+                        entry_type=current.entry_type,
+                    )
+                )
+                fix_count += 1
+                index += 2
+                continue
+
+        repaired.append(clone_subtitle_entry(entries[index], index=0))
+        index += 1
+
+    return reindex_subtitle_entries(repaired), fix_count
 
 
 def rewrite_similarity(source: str, candidate: str) -> float:
@@ -2808,7 +3393,11 @@ def diversify_narration_locally(source: str, budget: int) -> str:
     return best_candidate
 
 
-def build_local_rewrite_map(entries: Sequence[SubtitleEntry]) -> Dict[int, str]:
+def build_local_rewrite_map(
+    entries: Sequence[SubtitleEntry],
+    *,
+    pause_safe: bool = False,
+) -> Dict[int, str]:
     rewrite_map: Dict[int, str] = {}
     for entry in entries:
         budget = subtitle_char_budget(max(0.1, entry.end - entry.start))
@@ -2822,6 +3411,7 @@ def build_local_rewrite_map(entries: Sequence[SubtitleEntry]) -> Dict[int, str]:
             candidate,
             display_budget=budget,
             speech_budget=speech_budget,
+            pause_safe=pause_safe,
         )
         if not candidate or rewrite_needs_more_variation(entry.text, candidate):
             continue
@@ -2898,6 +3488,14 @@ def request_rewrite_batch(
         heartbeat_seconds=REWRITE_REQUEST_HEARTBEAT_SECONDS,
         heartbeat_label=heartbeat_label,
     )
+    if False and parsed is None and transcription_audio_path != audio_path:
+        if log_func:
+            log_func("  Audio-first transcription: UVR denoised reference audio unavailable, retrying raw reference audio")
+        parsed = run_audio_first_transcription(
+            audio_path,
+            log_func=log_func,
+            log_name="闊抽琛ユ紡",
+        )
     if parsed is None:
         return []
     if isinstance(parsed, dict) and isinstance(parsed.get("entries"), list):
@@ -3014,7 +3612,54 @@ def probably_incomplete_text(text: str) -> bool:
         return False
     if FRAGMENT_TAIL_RE.search(normalized):
         return True
-    if INCOMPLETE_TAIL_RE.search(normalized) and subtitle_display_units(normalized) >= 6:
+    if INCOMPLETE_TAIL_RE.search(normalized):
+        return True
+    if normalized.endswith((
+        "\u5dee\u70b9",
+        "\u4e00\u8109",
+        "\u8fd9\u4e00\u8109",
+        "\u5bb6\u91cc",
+        "\u5bb6\u4e2d",
+        "\u9001\u7ed9",
+        "\u8981\u9001\u7ed9",
+        "\u7ed9",
+        "\u4e70",
+        "\u8d2d\u4e70",
+    )):
+        return True
+    return False
+
+
+def looks_like_predicate_complement_bridge(left_text: str, right_text: str) -> bool:
+    left = normalize_subtitle_text(left_text)
+    right = strip_leading_subtitle_punctuation(right_text)
+    if not left or not right:
+        return False
+    if starts_with_strong_transition(right):
+        return False
+
+    if left.endswith("\u5dee\u70b9") and right.startswith(("\u72af", "\u51fa", "\u88ab")):
+        return True
+    if left.endswith(("\u4e00\u8109", "\u8fd9\u4e00\u8109")) and right.startswith(
+        ("\u4f1a", "\u80fd", "\u88ab", "\u5c06")
+    ):
+        return True
+    if left.endswith(("\u5bb6\u91cc", "\u5bb6\u4e2d")) and right.startswith(
+        ("\u66f4", "\u66f4\u4e0a", "\u80fd")
+    ):
+        return True
+    if left.endswith(("\u9001\u7ed9", "\u8981\u9001\u7ed9", "\u7ed9")):
+        return not starts_with_narrative_transition_tail(right)
+    if left.endswith(("\u4e70", "\u8d2d\u4e70")):
+        return bool(QUANTITY_OBJECT_START_RE.match(right))
+    if QUANTITY_OBJECT_START_RE.match(right) and re.search(
+        r"(?:\u9001\u7ed9|\u7ed9|\u7559\u7ed9|\u4ea4\u7ed9)(?:\u4ed6\u4eec|\u5979\u4eec|\u4ed6|\u5979|\u81ea\u5df1|\u5bf9\u65b9)?$",
+        left,
+    ):
+        return True
+    if right.startswith(PREDICATE_COMPLEMENT_START_PREFIXES) and (
+        looks_like_dangling_tts_tail(left) or probably_incomplete_text(left)
+    ):
         return True
     return False
 
@@ -3029,11 +3674,31 @@ def collect_minimal_sentence_continuation_flags(
     normalized_current = normalize_subtitle_text(current_text)
     normalized_upcoming = normalize_subtitle_text(upcoming_text)
     normalized_sentence = normalize_subtitle_text(current_sentence or normalized_current)
+    compound_word_bridge = (
+        looks_like_funasr_subject_word_break(
+            normalized_current,
+            normalized_upcoming,
+        )
+        or looks_like_compact_cross_entry_word_bridge(
+            normalized_current,
+            normalized_upcoming,
+        )
+    )
+    predicate_complement_bridge = looks_like_predicate_complement_bridge(
+        normalized_current,
+        normalized_upcoming,
+    ) or (
+        bool(normalized_sentence)
+        and normalized_sentence.endswith(normalized_current)
+        and looks_like_predicate_complement_bridge(normalized_sentence, normalized_upcoming)
+    )
     continuation_start = starts_with_soft_continuation(normalized_upcoming) or starts_with_structural_continuation(
         normalized_upcoming
-    )
-    current_incomplete = probably_incomplete_text(normalized_current)
-    sentence_incomplete = probably_incomplete_text(normalized_sentence)
+    ) or predicate_complement_bridge
+    current_incomplete = probably_incomplete_text(normalized_current) or compound_word_bridge or predicate_complement_bridge
+    sentence_incomplete = probably_incomplete_text(normalized_sentence) or (
+        compound_word_bridge and normalized_sentence.endswith(normalized_current)
+    ) or predicate_complement_bridge
     dangling_tail = looks_like_dangling_tts_tail(normalized_current) or (
         bool(normalized_sentence)
         and subtitle_speech_units(normalized_sentence) <= 20
@@ -3048,6 +3713,8 @@ def collect_minimal_sentence_continuation_flags(
         "current_incomplete": current_incomplete,
         "sentence_incomplete": sentence_incomplete,
         "dangling_tail": dangling_tail,
+        "compound_word_bridge": compound_word_bridge,
+        "predicate_complement_bridge": predicate_complement_bridge,
         "audio_bridge": audio_bridge,
     }
 
@@ -4509,8 +5176,12 @@ def should_merge_tts_narration_group(
     if dialogue_score(current.text) >= 3 or dialogue_score(upcoming.text) >= 3:
         return False
 
+    current_text = normalize_subtitle_text(current.text)
+    upcoming_text = normalize_subtitle_text(upcoming.text)
     next_group_size = len(current_group) + 1
-    if next_group_size > MAX_TTS_GROUP_ENTRIES:
+    if next_group_size > MAX_TTS_GROUP_ENTRIES and not (
+        forced_join is True and next_group_size <= MAX_TTS_GROUP_ENTRIES + 1
+    ):
         return False
 
     gap = upcoming.start - current.end
@@ -4530,8 +5201,6 @@ def should_merge_tts_narration_group(
     if forced_join is False:
         return False
 
-    current_text = normalize_subtitle_text(current.text)
-    upcoming_text = normalize_subtitle_text(upcoming.text)
     current_units = max(1, subtitle_speech_units(current_text))
     upcoming_units = max(1, subtitle_speech_units(upcoming_text))
     if ends_with_terminal_sentence_pause(current_text):
@@ -4589,6 +5258,10 @@ def plan_tts_sentence_links_locally(
             prefer_sentence_pauses
             and boundary_audio_pause >= STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
         )
+        weak_boundary_audio_pause = (
+            prefer_sentence_pauses
+            and boundary_audio_pause >= max(0.018, STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS * 0.42)
+        )
         has_boundary_audio_evidence = (
             prefer_sentence_pauses
             and boundary_audio_pause_map is not None
@@ -4616,22 +5289,46 @@ def plan_tts_sentence_links_locally(
         current_sentence = normalize_subtitle_text(sentence_buffer or current_text)
         current_units = max(1, subtitle_speech_units(current_text))
         upcoming_units = max(1, subtitle_speech_units(upcoming_text))
-        if has_boundary_audio_evidence:
-            if strong_boundary_audio_pause:
-                join_map[current.index] = False
-                sentence_buffer = upcoming_text
-                continue
-            join_map[current.index] = True
-            sentence_buffer = join_narration_text(current_sentence, upcoming_text, gap)
-            continue
+        bridge_like = looks_like_short_funasr_audio_bridge(current_text) or looks_like_short_funasr_audio_bridge(
+            upcoming_text
+        )
+        compact_fragment_bridge = bridge_like or current_units <= 4 or upcoming_units <= 4
         continuation_flags = collect_minimal_sentence_continuation_flags(
             current_text,
             upcoming_text,
             current_sentence,
         )
+        weak_audio_continuation_prefix = strip_leading_subtitle_punctuation(upcoming_text).startswith(
+            ("\u624d", "\u5c31", "\u4fbf", "\u5374")
+        )
+        audio_prefixed_continuation = (
+            has_boundary_audio_evidence
+            and weak_audio_continuation_prefix
+            and boundary_audio_pause <= max(0.015, min(0.032, reference_gap * 0.30 + 0.006))
+            and not looks_like_explicit_sentence_end(current_sentence)
+            and not ends_with_terminal_sentence_pause(current_sentence)
+        )
+        audio_continuation_join = any(
+            continuation_flags[key]
+            for key in (
+                "continuation_start",
+                "current_incomplete",
+                "sentence_incomplete",
+                "dangling_tail",
+                "compound_word_bridge",
+                "predicate_complement_bridge",
+            )
+        ) or audio_prefixed_continuation
         strong_join_signal = any(
             continuation_flags[key]
-            for key in ("continuation_start", "current_incomplete", "sentence_incomplete", "dangling_tail")
+            for key in (
+                "continuation_start",
+                "current_incomplete",
+                "sentence_incomplete",
+                "dangling_tail",
+                "compound_word_bridge",
+                "predicate_complement_bridge",
+            )
         )
         micro_gap_bridge = (
             has_micro_sentence_bridge_gap(gap, reference_gap, strict=prefer_sentence_pauses)
@@ -4639,6 +5336,82 @@ def plan_tts_sentence_links_locally(
             and upcoming_units <= 14
             and not starts_with_strong_transition(upcoming_text)
             and not strong_boundary_audio_pause
+        )
+        audio_join_gap_limit = max(0.04, min(0.08, reference_gap * 0.65 + 0.02))
+        if continuation_flags["continuation_start"]:
+            audio_join_gap_limit = max(
+                audio_join_gap_limit,
+                max(0.05, min(0.09, reference_gap * 0.85 + 0.02)),
+            )
+        if (
+            continuation_flags["current_incomplete"]
+            or continuation_flags["sentence_incomplete"]
+            or continuation_flags["dangling_tail"]
+        ):
+            audio_join_gap_limit = max(
+                audio_join_gap_limit,
+                max(0.06, min(0.10, reference_gap * 0.95 + 0.03)),
+            )
+        if continuation_flags["compound_word_bridge"]:
+            audio_join_gap_limit = max(
+                audio_join_gap_limit,
+                max(0.08, min(0.10, reference_gap * 1.05 + 0.03)),
+            )
+        explicit_audio_join = (
+            has_boundary_audio_evidence
+            and boundary_audio_pause <= max(0.015, min(0.032, reference_gap * 0.30 + 0.006))
+            and gap <= audio_join_gap_limit
+        )
+        protected_compound_word_bridge = (
+            continuation_flags["compound_word_bridge"]
+            and has_boundary_audio_evidence
+            and gap <= max(0.08, min(0.12, reference_gap * 1.25 + 0.04))
+            and boundary_audio_pause <= max(0.08, min(0.12, reference_gap * 1.20 + 0.04))
+        )
+        protected_predicate_complement_bridge = (
+            continuation_flags["predicate_complement_bridge"]
+            and has_boundary_audio_evidence
+            and gap <= max(0.08, min(0.14, reference_gap * 1.50 + 0.05))
+            and boundary_audio_pause <= max(0.08, min(0.12, reference_gap * 1.20 + 0.04))
+        )
+        protected_continuation_bridge = protected_compound_word_bridge or protected_predicate_complement_bridge
+        standalone_subject_bridge = (
+            has_boundary_audio_evidence
+            and current_units <= 4
+            and bool(NARRATION_SUBJECT_RE.fullmatch(current_text))
+            and gap <= max(0.08, min(0.12, reference_gap * 1.25 + 0.04))
+            and boundary_audio_pause <= max(0.08, min(0.12, reference_gap * 1.20 + 0.04))
+            and not starts_with_strong_transition(upcoming_text)
+            and not ends_with_terminal_sentence_pause(current_text)
+            and not looks_like_explicit_sentence_end(current_text)
+        )
+        zero_pause_micro_join = (
+            has_boundary_audio_evidence
+            and boundary_audio_pause <= max(0.008, min(0.020, reference_gap * 0.28 + 0.004))
+            and micro_gap_bridge
+            and gap <= max(audio_join_gap_limit, max(0.06, min(0.09, reference_gap * 1.05 + 0.01)))
+        )
+        zero_pause_reference_gap_limit = max(0.08, min(0.14, reference_gap * 1.50 + 0.04))
+        narrative_transition_tail = starts_with_narrative_transition_tail(upcoming_text)
+        narrative_break_tail = narrative_transition_tail and not (
+            starts_with_soft_continuation(upcoming_text)
+            or starts_with_structural_continuation(upcoming_text)
+        )
+        zero_pause_reference_join = (
+            has_boundary_audio_evidence
+            and boundary_audio_pause <= max(0.010, min(0.022, reference_gap * 0.30 + 0.005))
+            and gap <= zero_pause_reference_gap_limit
+            and not starts_with_strong_transition(upcoming_text)
+            and not narrative_break_tail
+            and (
+                audio_continuation_join
+                or (compact_fragment_bridge and not narrative_transition_tail)
+                or (
+                    not narrative_transition_tail
+                    and not ends_with_terminal_sentence_pause(current_sentence)
+                    and not looks_like_explicit_sentence_end(current_sentence)
+                )
+            )
         )
         hard_break_signal = starts_with_strong_transition(upcoming_text) or (
             (
@@ -4650,6 +5423,64 @@ def plan_tts_sentence_links_locally(
             and not micro_gap_bridge
             and not seamless_boundary_audio
         )
+
+        if has_boundary_audio_evidence:
+            if zero_pause_reference_join and not strong_boundary_audio_pause:
+                join_map[current.index] = True
+                sentence_buffer = join_narration_text(current_sentence, upcoming_text, gap)
+                continue
+            if standalone_subject_bridge:
+                join_map[current.index] = True
+                sentence_buffer = join_narration_text(current_sentence, upcoming_text, gap)
+                continue
+            if narrative_break_tail and not protected_continuation_bridge:
+                join_map[current.index] = False
+                sentence_buffer = upcoming_text
+                continue
+            strict_audio_break_gap = max(0.028, min(0.06, reference_gap * 0.55 + 0.01))
+            weak_audio_break = (
+                weak_boundary_audio_pause
+                and not audio_continuation_join
+                and not micro_gap_bridge
+                and gap >= strict_audio_break_gap
+            )
+            wide_gap_without_join_signal = (
+                gap >= max(strict_audio_break_gap, audio_join_gap_limit + 0.02)
+                and not audio_continuation_join
+                and not micro_gap_bridge
+            )
+            if (
+                strong_boundary_audio_pause
+                or weak_audio_break
+                or wide_gap_without_join_signal
+            ) and not protected_continuation_bridge:
+                join_map[current.index] = False
+                sentence_buffer = upcoming_text
+                continue
+            if protected_continuation_bridge or (explicit_audio_join or zero_pause_micro_join) and (
+                audio_continuation_join
+                or (
+                    compact_fragment_bridge
+                    and (
+                        continuation_flags["current_incomplete"]
+                        or continuation_flags["sentence_incomplete"]
+                        or continuation_flags["dangling_tail"]
+                    )
+                )
+                or (
+                    micro_gap_bridge
+                    and compact_fragment_bridge
+                    and not ends_with_minor_sentence_pause(current_text)
+                    and not ends_with_minor_sentence_pause(current_sentence)
+                    and not looks_like_explicit_sentence_end(current_sentence)
+                )
+            ):
+                join_map[current.index] = True
+                sentence_buffer = join_narration_text(current_sentence, upcoming_text, gap)
+            else:
+                join_map[current.index] = False
+                sentence_buffer = upcoming_text
+            continue
 
         if prefer_sentence_pauses and (
             has_clear_audio_sentence_pause(gap, reference_gap, strict=True)
@@ -4793,11 +5624,17 @@ def tts_group_split_overflow_limit(window_duration: float) -> float:
     )
 
 
-def tts_group_soft_window_end(start: float, end: float, total_duration: float) -> float:
+def tts_group_soft_window_end(
+    start: float,
+    end: float,
+    total_duration: float,
+    *,
+    overflow_seconds: float = MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
+) -> float:
     strict_start = max(0.0, float(start))
     strict_end = max(strict_start + 0.05, float(end))
     return clamp(
-        strict_end + MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
+        strict_end + max(0.0, float(overflow_seconds)),
         strict_start + 0.05,
         total_duration,
     )
@@ -4807,6 +5644,8 @@ def build_prepared_tts_groups(
     tts_groups: Sequence[Sequence[SubtitleEntry]],
     raw_dir: Path,
     total_duration: float,
+    *,
+    overflow_seconds: float = MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
 ) -> List[Dict[str, object]]:
     prepared_groups: List[Dict[str, object]] = []
     for idx, group_entries in enumerate(tts_groups, start=1):
@@ -4821,9 +5660,14 @@ def build_prepared_tts_groups(
 
         strict_start = max(0.0, float(first_entry.start))
         strict_end = max(strict_start + 0.05, float(last_entry.end))
-        soft_end = tts_group_soft_window_end(strict_start, strict_end, total_duration)
+        soft_end = tts_group_soft_window_end(
+            strict_start,
+            strict_end,
+            total_duration,
+            overflow_seconds=overflow_seconds,
+        )
         latest_start = clamp(
-            strict_start + MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
+            strict_start + max(0.0, float(overflow_seconds)),
             strict_start,
             total_duration,
         )
@@ -4841,6 +5685,7 @@ def build_prepared_tts_groups(
                 "window_start": strict_start,
                 "window_end": soft_end,
                 "latest_start": latest_start,
+                "overflow_seconds": max(0.0, float(overflow_seconds)),
                 "text": group_text,
                 "raw_path": raw_dir / f"{idx:03d}.mp3",
                 "prepared_path": raw_dir / f"{idx:03d}_prepared.wav",
@@ -4860,7 +5705,41 @@ def prepared_tts_group_signature(prepared_groups: Sequence[Dict[str, object]]) -
     return tuple(signature)
 
 
-def choose_tts_group_split_index(entries: Sequence[SubtitleEntry]) -> Optional[int]:
+def annotate_prepared_tts_group_join_guards(
+    prepared_groups: Sequence[Dict[str, object]],
+    join_map: Optional[Dict[int, bool]],
+) -> None:
+    if not join_map:
+        return
+    for group_state in prepared_groups:
+        group_entries = [
+            entry
+            for entry in list(group_state.get("entries", []))
+            if isinstance(entry, SubtitleEntry)
+        ]
+        protected = {
+            entry.index: True
+            for entry in group_entries[:-1]
+            if join_map.get(entry.index) is True
+        }
+        if protected:
+            group_state["protected_join_indices"] = protected
+
+
+def apply_strict_reference_tts_targets(prepared_groups: Sequence[Dict[str, object]]) -> None:
+    for group_state in prepared_groups:
+        strict_start = max(0.0, float(group_state.get("strict_start", 0.0) or 0.0))
+        strict_end = max(
+            strict_start + 0.05,
+            float(group_state.get("strict_end", strict_start + 0.05) or (strict_start + 0.05)),
+        )
+        group_state["target_duration"] = max(0.05, strict_end - strict_start)
+
+
+def choose_tts_group_split_index(
+    entries: Sequence[SubtitleEntry],
+    protected_join_indices: Optional[Dict[int, bool]] = None,
+) -> Optional[int]:
     if len(entries) <= 1:
         return None
 
@@ -4868,6 +5747,8 @@ def choose_tts_group_split_index(entries: Sequence[SubtitleEntry]) -> Optional[i
     best_index: Optional[int] = None
     best_score: Optional[float] = None
     for idx in range(1, len(entries)):
+        if protected_join_indices and protected_join_indices.get(entries[idx - 1].index) is True:
+            continue
         left_entries = list(entries[:idx])
         right_entries = list(entries[idx:])
         left_text = join_narration_group_text(left_entries)
@@ -4889,6 +5770,8 @@ def choose_tts_group_split_index(entries: Sequence[SubtitleEntry]) -> Optional[i
             score += 2.0
         if starts_with_soft_continuation(right_text) or starts_with_structural_continuation(right_text):
             score -= 2.4
+        if looks_like_predicate_complement_bridge(left_text, right_text):
+            score -= 4.2
         if probably_incomplete_text(left_text):
             score -= 2.2
         if looks_like_dangling_tts_tail(left_text):
@@ -4907,6 +5790,7 @@ def split_overflowing_tts_group_entries(
     base_rate: str,
     *,
     depth: int = 0,
+    protected_join_indices: Optional[Dict[int, bool]] = None,
 ) -> List[List[SubtitleEntry]]:
     group_entries = list(entries)
     if len(group_entries) <= 1 or depth >= MAX_TTS_SEGMENT_SPLIT_DEPTH + 1:
@@ -4921,25 +5805,48 @@ def split_overflowing_tts_group_entries(
     if estimated_duration <= tts_group_split_overflow_limit(window_duration):
         return [group_entries]
 
-    split_index = choose_tts_group_split_index(group_entries)
+    split_index = choose_tts_group_split_index(
+        group_entries,
+        protected_join_indices=protected_join_indices,
+    )
     if split_index is None:
+        if protected_join_indices and any(
+            protected_join_indices.get(entry.index) is True
+            for entry in group_entries[:-1]
+        ):
+            return [group_entries]
         split_index = len(group_entries) // 2
     if split_index <= 0 or split_index >= len(group_entries):
         return [group_entries]
 
-    left_parts = split_overflowing_tts_group_entries(group_entries[:split_index], base_rate, depth=depth + 1)
-    right_parts = split_overflowing_tts_group_entries(group_entries[split_index:], base_rate, depth=depth + 1)
+    left_parts = split_overflowing_tts_group_entries(
+        group_entries[:split_index],
+        base_rate,
+        depth=depth + 1,
+        protected_join_indices=protected_join_indices,
+    )
+    right_parts = split_overflowing_tts_group_entries(
+        group_entries[split_index:],
+        base_rate,
+        depth=depth + 1,
+        protected_join_indices=protected_join_indices,
+    )
     return left_parts + right_parts
 
 
 def refine_tts_groups_for_timing(
     groups: Sequence[Sequence[SubtitleEntry]],
     base_rate: str,
+    protected_join_indices: Optional[Dict[int, bool]] = None,
 ) -> Tuple[List[List[SubtitleEntry]], int]:
     refined_groups: List[List[SubtitleEntry]] = []
     added_groups = 0
     for group_entries in groups:
-        split_groups = split_overflowing_tts_group_entries(group_entries, base_rate)
+        split_groups = split_overflowing_tts_group_entries(
+            group_entries,
+            base_rate,
+            protected_join_indices=protected_join_indices,
+        )
         if len(split_groups) > 1:
             added_groups += len(split_groups) - 1
         refined_groups.extend(split_groups)
@@ -4951,6 +5858,10 @@ def split_rendered_tts_groups_for_timing(
     raw_dir: Path,
     total_duration: float,
     render_rate: str,
+    *,
+    overflow_seconds: float = MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
+    max_fit_speed_factor: float = MAX_TTS_SPEED_FACTOR,
+    protected_join_indices: Optional[Dict[int, bool]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     rebuilt_groups: List[List[SubtitleEntry]] = []
     split_count = 0
@@ -4962,10 +5873,25 @@ def split_rendered_tts_groups_for_timing(
             strict_start + 0.05,
             float(group_state.get("strict_end", strict_start + 0.05) or (strict_start + 0.05)),
         )
-        soft_duration = max(0.05, tts_group_soft_window_end(strict_start, strict_end, total_duration) - strict_start)
-        min_render_duration = raw_duration / max(MAX_TTS_SPEED_FACTOR, 1.0)
+        soft_duration = max(
+            0.05,
+            tts_group_soft_window_end(
+                strict_start,
+                strict_end,
+                total_duration,
+                overflow_seconds=overflow_seconds,
+            )
+            - strict_start,
+        )
+        min_render_duration = raw_duration / max(1.0, float(max_fit_speed_factor))
         if len(group_entries) > 1 and min_render_duration > soft_duration + 0.03:
-            split_index = choose_tts_group_split_index(group_entries)
+            group_protected_join_indices = group_state.get("protected_join_indices")
+            if not isinstance(group_protected_join_indices, dict):
+                group_protected_join_indices = protected_join_indices
+            split_index = choose_tts_group_split_index(
+                group_entries,
+                protected_join_indices=cast(Optional[Dict[int, bool]], group_protected_join_indices),
+            )
             if split_index is not None and 0 < split_index < len(group_entries):
                 rebuilt_groups.append(group_entries[:split_index])
                 rebuilt_groups.append(group_entries[split_index:])
@@ -4975,7 +5901,14 @@ def split_rendered_tts_groups_for_timing(
 
     if split_count <= 0:
         return list(prepared_groups), 0
-    return build_prepared_tts_groups(rebuilt_groups, raw_dir, total_duration), split_count
+    rebuilt_prepared_groups = build_prepared_tts_groups(
+        rebuilt_groups,
+        raw_dir,
+        total_duration,
+        overflow_seconds=overflow_seconds,
+    )
+    annotate_prepared_tts_group_join_guards(rebuilt_prepared_groups, protected_join_indices)
+    return (rebuilt_prepared_groups, split_count)
 
 
 def should_merge_underfilled_tts_groups(
@@ -4983,6 +5916,8 @@ def should_merge_underfilled_tts_groups(
     next_state: Dict[str, object],
     render_rate: str,
     total_duration: float,
+    *,
+    max_fit_speed_factor: float = MAX_TTS_SPEED_FACTOR,
 ) -> bool:
     current_entries = list(current_state.get("entries", []))
     next_entries = list(next_state.get("entries", []))
@@ -5019,10 +5954,10 @@ def should_merge_underfilled_tts_groups(
 
     current_raw = max(0.05, tts_group_schedulable_duration(current_state))
     next_raw = max(0.05, tts_group_schedulable_duration(next_state))
-    current_min = current_raw / max(MAX_TTS_SPEED_FACTOR, 1.0)
-    next_min = next_raw / max(MAX_TTS_SPEED_FACTOR, 1.0)
+    current_min = current_raw / max(1.0, float(max_fit_speed_factor))
+    next_min = next_raw / max(1.0, float(max_fit_speed_factor))
     combined_estimated = estimate_tts_render_duration(combined_text, render_rate)
-    combined_min = combined_estimated / max(MAX_TTS_SPEED_FACTOR, 1.0)
+    combined_min = combined_estimated / max(1.0, float(max_fit_speed_factor))
 
     separate_excess = max(0.0, current_min - current_soft) + max(0.0, next_min - next_soft)
     combined_excess = max(0.0, combined_min - combined_soft)
@@ -5045,6 +5980,9 @@ def merge_underfilled_tts_groups_for_timing(
     raw_dir: Path,
     total_duration: float,
     render_rate: str,
+    *,
+    overflow_seconds: float = MAX_TTS_TIMELINE_OVERFLOW_SECONDS,
+    max_fit_speed_factor: float = MAX_TTS_SPEED_FACTOR,
 ) -> Tuple[List[Dict[str, object]], int]:
     merged_groups: List[List[SubtitleEntry]] = []
     merge_count = 0
@@ -5054,7 +5992,13 @@ def merge_underfilled_tts_groups_for_timing(
         current_state = states[index]
         if index + 1 < len(states):
             next_state = states[index + 1]
-            if should_merge_underfilled_tts_groups(current_state, next_state, render_rate, total_duration):
+            if should_merge_underfilled_tts_groups(
+                current_state,
+                next_state,
+                render_rate,
+                total_duration,
+                max_fit_speed_factor=max_fit_speed_factor,
+            ):
                 merged_groups.append(list(current_state.get("entries", [])) + list(next_state.get("entries", [])))
                 merge_count += 1
                 index += 2
@@ -5064,12 +6008,23 @@ def merge_underfilled_tts_groups_for_timing(
 
     if merge_count <= 0:
         return list(prepared_groups), 0
-    return build_prepared_tts_groups(merged_groups, raw_dir, total_duration), merge_count
+    return (
+        build_prepared_tts_groups(
+            merged_groups,
+            raw_dir,
+            total_duration,
+            overflow_seconds=overflow_seconds,
+        ),
+        merge_count,
+    )
 
 
 def schedule_prepared_tts_groups(
     prepared_groups: Sequence[Dict[str, object]],
     total_duration: float,
+    *,
+    max_fit_speed_factor: float = MAX_TTS_SPEED_FACTOR,
+    prefer_strict_windows: bool = False,
 ) -> Dict[str, float]:
     cursor = 0.0
     hard_trim_count = 0
@@ -5110,7 +6065,7 @@ def schedule_prepared_tts_groups(
             scheduled_start = latest_start
 
         raw_duration = max(0.05, tts_group_schedulable_duration(group_state))
-        min_render_duration = raw_duration / max(MAX_TTS_SPEED_FACTOR, 1.0)
+        min_render_duration = raw_duration / max(1.0, float(max_fit_speed_factor))
 
         preferred_end = strict_end
         if index + 1 < len(prepared_groups):
@@ -5126,7 +6081,10 @@ def schedule_prepared_tts_groups(
             available_duration = max(0.05, scheduled_end - scheduled_start)
 
         target_duration = min(raw_duration, available_duration)
-        hard_trim = min_render_duration > available_duration + 0.03
+        if prefer_strict_windows:
+            target_duration = min(target_duration, preferred_available_duration)
+        hard_trim_limit = preferred_available_duration if prefer_strict_windows else available_duration
+        hard_trim = min_render_duration > hard_trim_limit + 0.03
 
         group_state["scheduled_start"] = scheduled_start
         group_state["scheduled_end"] = scheduled_end
@@ -7766,6 +8724,87 @@ def _collect_waveform_rms_frames(
     return frames
 
 
+def detect_waveform_activity_window(
+    samples: Optional["np.ndarray"],
+    sample_rate: int,
+    start: float,
+    end: float,
+    *,
+    head_pad_seconds: float = 0.0,
+    tail_pad_seconds: float = 0.0,
+) -> Optional[Tuple[float, float]]:
+    frames = _collect_waveform_rms_frames(samples, sample_rate, start, end)
+    if len(frames) < 6 or not NUMPY_AVAILABLE:
+        return None
+
+    rms_values = [value for _, value in frames]
+    positive = [value for value in rms_values if value > 1e-6]
+    if not positive:
+        return None
+
+    positive_array = np.asarray(positive, dtype=np.float32)
+    quiet_floor = float(np.percentile(positive_array, 20))
+    body_floor = float(np.percentile(positive_array, 55))
+    peak_floor = float(np.percentile(positive_array, 92))
+    activity_threshold = max(
+        TTS_ACTIVITY_MIN_RMS,
+        quiet_floor * 1.45,
+        min(body_floor * 0.26, peak_floor * 0.12),
+    )
+    activity_threshold = min(activity_threshold, max(TTS_ACTIVITY_MIN_RMS, peak_floor * 0.45))
+
+    active_mask = np.asarray(rms_values, dtype=np.float32) >= activity_threshold
+    if active_mask.size >= 3:
+        active_mask = np.convolve(active_mask.astype(np.int16), np.ones(3, dtype=np.int16), mode="same") > 0
+    active_indices = np.flatnonzero(active_mask)
+    if active_indices.size <= 0:
+        return None
+
+    first_index = int(active_indices[0])
+    last_index = int(active_indices[-1])
+    frame_hop_seconds = max(0.01, TTS_ACTIVITY_RMS_HOP_SECONDS)
+    head_extension_threshold = max(TTS_ACTIVITY_MIN_RMS, activity_threshold * TTS_ACTIVITY_HEAD_EXTENSION_RATIO)
+    max_head_extension_frames = max(1, int(round(TTS_ACTIVITY_HEAD_MAX_EXTENSION_SECONDS / frame_hop_seconds)))
+    head_probe = first_index - 1
+    head_quiet_frames = 0
+    head_extension_frames = 0
+    while head_probe >= 0 and head_extension_frames < max_head_extension_frames:
+        probe_value = float(rms_values[head_probe])
+        if probe_value >= head_extension_threshold:
+            first_index = head_probe
+            head_quiet_frames = 0
+        else:
+            head_quiet_frames += 1
+            if head_quiet_frames >= 2:
+                break
+        head_probe -= 1
+        head_extension_frames += 1
+
+    tail_extension_threshold = max(TTS_ACTIVITY_MIN_RMS, activity_threshold * TTS_ACTIVITY_TAIL_EXTENSION_RATIO)
+    max_tail_extension_frames = max(1, int(round(TTS_ACTIVITY_TAIL_MAX_EXTENSION_SECONDS / frame_hop_seconds)))
+    tail_probe = last_index + 1
+    tail_quiet_frames = 0
+    tail_extension_frames = 0
+    while tail_probe < len(rms_values) and tail_extension_frames < max_tail_extension_frames:
+        probe_value = float(rms_values[tail_probe])
+        if probe_value >= tail_extension_threshold:
+            last_index = tail_probe
+            tail_quiet_frames = 0
+        else:
+            tail_quiet_frames += 1
+            if tail_quiet_frames >= 2:
+                break
+        tail_probe += 1
+        tail_extension_frames += 1
+
+    half_window = max(0.01, TTS_ACTIVITY_RMS_WINDOW_SECONDS * 0.5)
+    speech_start = max(start, float(frames[first_index][0]) - half_window - max(0.0, head_pad_seconds))
+    speech_end = min(end, float(frames[last_index][0]) + half_window + max(0.0, tail_pad_seconds))
+    if speech_end <= speech_start + 0.03:
+        return None
+    return speech_start, speech_end
+
+
 def measure_funasr_boundary_audio_valley_score(
     samples: Optional["np.ndarray"],
     sample_rate: int,
@@ -7839,7 +8878,13 @@ def measure_funasr_boundary_audio_valley_score(
     return max(0.0, best_score - distance_penalty)
 
 
-def score_funasr_split_text_quality(text: str, visible_pos: int, total_visible: int) -> float:
+def score_funasr_split_text_quality(
+    text: str,
+    visible_pos: int,
+    total_visible: int,
+    *,
+    ignore_compact_midword_penalty: bool = False,
+) -> float:
     left_text = funasr_slice_visible_range(text, 0, total_visible if visible_pos >= total_visible else visible_pos)
     right_text = funasr_slice_visible_range(text, visible_pos, total_visible)
     if not left_text or not right_text:
@@ -7848,6 +8893,8 @@ def score_funasr_split_text_quality(text: str, visible_pos: int, total_visible: 
     left_core = strip_terminal_sentence_punctuation(left_text) or left_text
     right_plain = strip_leading_subtitle_punctuation(right_text)
     score = 0.0
+    if looks_like_funasr_subject_word_break(left_core, right_plain):
+        score -= 0.40
     if probably_incomplete_text(left_core) or looks_like_dangling_tts_tail(left_core):
         score -= 0.24
     else:
@@ -7856,6 +8903,13 @@ def score_funasr_split_text_quality(text: str, visible_pos: int, total_visible: 
         score -= 0.28
     if right_plain and re.match(r"^[的地得了着过把将给跟向在于和与并及而却就又还从对被让替比往朝拿到为同吗呢啊吧呀啦]", right_plain):
         score -= 0.18
+    if right_plain.startswith("\u4e3a") and subtitle_display_units(right_plain) >= 4:
+        score += 0.18
+    if (
+        not ignore_compact_midword_penalty
+        and looks_like_compact_funasr_midword_split(text, visible_pos, total_visible)
+    ):
+        score -= 0.32
     left_visible = max(0, int(visible_pos))
     right_visible = max(0, int(total_visible) - int(visible_pos))
     shorter_visible = min(left_visible, right_visible)
@@ -7864,6 +8918,157 @@ def score_funasr_split_text_quality(text: str, visible_pos: int, total_visible: 
     if abs(left_visible - right_visible) <= max(3, int(round(total_visible * 0.22))):
         score += 0.05
     return score
+
+
+def has_readable_break_at_funasr_visible_pos(text: str, visible_pos: int) -> bool:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return False
+    total_visible = funasr_visible_char_count(normalized)
+    visible_pos = max(0, min(int(visible_pos), total_visible))
+    if visible_pos <= 0 or visible_pos >= total_visible:
+        return False
+    for split_index in break_positions(normalized):
+        if funasr_visible_count_from_text_index(normalized, split_index) == visible_pos:
+            return True
+    return False
+
+
+def looks_like_compact_funasr_midword_split(text: str, visible_pos: int, total_visible: int) -> bool:
+    left_visible = max(0, int(visible_pos))
+    right_visible = max(0, int(total_visible) - int(visible_pos))
+    shorter_visible = min(left_visible, right_visible)
+    if shorter_visible <= 0 or shorter_visible > 5:
+        return False
+    if has_readable_break_at_funasr_visible_pos(text, visible_pos):
+        return False
+
+    left_text = funasr_slice_visible_range(text, 0, left_visible)
+    right_text = strip_leading_subtitle_punctuation(
+        funasr_slice_visible_range(text, visible_pos, total_visible)
+    )
+    if not left_text or not right_text:
+        return False
+    if (
+        starts_with_strong_transition(right_text)
+        or starts_with_soft_continuation(right_text)
+        or starts_with_structural_continuation(right_text)
+    ):
+        return False
+    if re.match(
+        r"^[\u7684\u5730\u5f97\u4e86\u7740\u8fc7\u628a\u5c06\u7ed9\u8ddf\u5411\u5728\u4e8e\u548c\u4e0e\u5e76\u53ca\u800c\u5374\u5c31\u53c8\u8fd8\u4ece\u5bf9\u88ab\u8ba9\u66ff\u6bd4\u5f80\u671d\u62ff\u5230\u540c\u5417\u4e48\u554a\u5427\u5462\u5440]",
+        right_text,
+    ):
+        return False
+
+    left_core = strip_terminal_sentence_punctuation(left_text) or left_text
+    if looks_like_explicit_sentence_end(left_core):
+        return False
+    if speech_intro_score(left_core) >= 2 and not dialogue_like_text(right_text):
+        return False
+    return True
+
+
+def looks_like_compact_cross_entry_word_bridge(left_text: str, right_text: str) -> bool:
+    left_plain = normalize_subtitle_text(left_text)
+    right_plain = strip_leading_subtitle_punctuation(right_text)
+    if not left_plain or not right_plain:
+        return False
+    if NARRATION_SUBJECT_RE.match(right_plain):
+        return False
+    left_visible = funasr_visible_char_count(left_plain)
+    right_visible = funasr_visible_char_count(right_plain)
+    if left_visible <= 0 or right_visible <= 0:
+        return False
+    for left_count in range(1, min(3, left_visible) + 1):
+        left_tail = normalize_subtitle_text(
+            funasr_slice_visible_range(left_plain, left_visible - left_count, left_visible)
+        )
+        if not left_tail:
+            continue
+        for right_count in range(1, min(3, right_visible) + 1):
+            right_head = strip_leading_subtitle_punctuation(
+                funasr_slice_visible_range(right_plain, 0, right_count)
+            )
+            if not right_head:
+                continue
+            combined = normalize_subtitle_text(left_tail + right_head)
+            if combined in COMPOUND_TITLE_WORDS:
+                return True
+            if len(combined) == 2 and (
+                bool(NARRATION_SUBJECT_RE.fullmatch(combined))
+                or bool(SHORT_NOUN_TTS_TAIL_RE.fullmatch(combined))
+            ):
+                return True
+    return False
+
+
+def looks_like_funasr_subject_word_break(left_text: str, right_text: str) -> bool:
+    left_plain = normalize_subtitle_text(left_text)
+    right_plain = strip_leading_subtitle_punctuation(right_text)
+    if not left_plain or not right_plain:
+        return False
+    combined = normalize_subtitle_text(left_plain[-1:] + right_plain[:1])
+    if len(combined) != 2:
+        combined = ""
+    if bool(NARRATION_SUBJECT_RE.fullmatch(combined)) or bool(SHORT_NOUN_TTS_TAIL_RE.fullmatch(combined)):
+        return True
+
+    left_visible = funasr_visible_char_count(left_plain)
+    right_visible = funasr_visible_char_count(right_plain)
+    if left_visible <= 0 or right_visible <= 0:
+        return False
+    max_left_visible = min(3, left_visible)
+    max_right_visible = min(2, right_visible)
+    for left_count in range(1, max_left_visible + 1):
+        left_tail = normalize_subtitle_text(
+            funasr_slice_visible_range(left_plain, left_visible - left_count, left_visible)
+        )
+        if not left_tail:
+            continue
+        for right_count in range(1, max_right_visible + 1):
+            right_head = strip_leading_subtitle_punctuation(
+                funasr_slice_visible_range(right_plain, 0, right_count)
+            )
+            if not right_head:
+                continue
+            if normalize_subtitle_text(left_tail + right_head) in COMPOUND_TITLE_WORDS:
+                return True
+    return False
+
+
+def allows_funasr_strong_audio_valley_split(text: str, visible_pos: int, total_visible: int) -> bool:
+    left_visible = max(0, int(visible_pos))
+    right_visible = max(0, int(total_visible) - int(visible_pos))
+    if min(left_visible, right_visible) < 3:
+        return False
+
+    left_text = funasr_slice_visible_range(text, 0, left_visible)
+    right_text = strip_leading_subtitle_punctuation(
+        funasr_slice_visible_range(text, visible_pos, total_visible)
+    )
+    if not left_text or not right_text:
+        return False
+    if starts_with_soft_continuation(right_text) or starts_with_structural_continuation(right_text):
+        return False
+    if looks_like_funasr_subject_word_break(left_text, right_text):
+        return False
+    if re.match(
+        r"^[\u7684\u5730\u5f97\u4e86\u7740\u8fc7\u628a\u5c06\u7ed9\u8ddf\u5411\u5728\u4e8e\u548c\u4e0e\u5e76\u53ca\u800c\u5374\u5c31\u53c8\u8fd8\u4ece\u5bf9\u88ab\u8ba9\u66ff\u6bd4\u5f80\u671d\u62ff\u5230\u540c\u5417\u4e48\u554a\u5427\u5462\u5440]",
+        right_text,
+    ):
+        return False
+
+    left_core = strip_terminal_sentence_punctuation(left_text) or left_text
+    if probably_incomplete_text(left_core) or looks_like_dangling_tts_tail(left_core):
+        return False
+    if speech_intro_score(left_core) >= 2 and not dialogue_like_text(right_text):
+        return False
+    if dialogue_like_text(left_core) != dialogue_like_text(right_text) and (
+        dialogue_like_text(left_core) or dialogue_like_text(right_text)
+    ):
+        return False
+    return True
 
 
 def collapse_funasr_audio_split_candidates(
@@ -7935,6 +9140,48 @@ def measure_strict_tts_boundary_audio_pause(
     return strongest_pause
 
 
+def measure_strict_tts_boundary_audio_valley_pause(
+    samples: Optional["np.ndarray"],
+    sample_rate: int,
+    left_boundary_time: float,
+    right_boundary_time: float,
+    total_duration: float,
+) -> float:
+    if not NUMPY_AVAILABLE or samples is None or sample_rate <= 0 or total_duration <= 0.0:
+        return 0.0
+    boundary_time = clamp((float(left_boundary_time) + float(right_boundary_time)) * 0.5, 0.0, total_duration)
+    best_score = 0.0
+    best_distance = 999.0
+    search_steps = int(round(STRICT_TTS_BOUNDARY_AUDIO_VALLEY_SEARCH_SECONDS * 100.0))
+    for offset_step in range(-search_steps, search_steps + 1):
+        candidate_time = clamp(boundary_time + offset_step * 0.01, 0.02, max(0.02, total_duration - 0.02))
+        start = max(0.0, candidate_time - STRICT_TTS_BOUNDARY_AUDIO_WINDOW_SECONDS)
+        end = min(total_duration, candidate_time + STRICT_TTS_BOUNDARY_AUDIO_WINDOW_SECONDS)
+        if end <= start + 0.08:
+            continue
+        valley_score = measure_funasr_boundary_audio_valley_score(
+            samples,
+            sample_rate,
+            candidate_time,
+            start,
+            end,
+        )
+        distance = abs(candidate_time - boundary_time)
+        if valley_score > best_score or (
+            abs(valley_score - best_score) <= 1e-6 and distance < best_distance
+        ):
+            best_score = valley_score
+            best_distance = distance
+    if best_score >= STRICT_TTS_BOUNDARY_AUDIO_VALLEY_PAUSE_SCORE:
+        return STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+    if (
+        best_score >= STRICT_TTS_BOUNDARY_AUDIO_LOCAL_VALLEY_PAUSE_SCORE
+        and best_distance <= max(0.10, STRICT_TTS_BOUNDARY_AUDIO_VALLEY_SEARCH_SECONDS * 0.55)
+    ):
+        return STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+    return 0.0
+
+
 def build_strict_tts_boundary_audio_pause_map(
     entries: Sequence[SubtitleEntry],
     samples: Optional["np.ndarray"],
@@ -7955,13 +9202,216 @@ def build_strict_tts_boundary_audio_pause_map(
             continue
         current_end = clamp(float(current.end), 0.0, total_duration)
         upcoming_start = clamp(float(upcoming.start), 0.0, total_duration)
-        pause_map[current.index] = measure_strict_tts_boundary_audio_pause(
+        pause_duration = measure_strict_tts_boundary_audio_pause(
             samples,
             sample_rate,
             min(current_end, upcoming_start),
             max(current_end, upcoming_start),
             total_duration,
         )
+        if (
+            pause_duration < STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+            and not looks_like_compact_cross_entry_word_bridge(current.text, upcoming.text)
+        ):
+            pause_duration = max(
+                pause_duration,
+                measure_strict_tts_boundary_audio_valley_pause(
+                    samples,
+                    sample_rate,
+                    min(current_end, upcoming_start),
+                    max(current_end, upcoming_start),
+                    total_duration,
+                ),
+            )
+        pause_map[current.index] = pause_duration
+    return pause_map
+
+
+def tts_boundary_text_keys(left_text: str, right_text: str) -> List[Tuple[str, str, str]]:
+    left = normalize_tts_boundary_alignment_text(left_text)
+    right = normalize_tts_boundary_alignment_text(right_text)
+    if not left or not right:
+        return []
+    keys: List[Tuple[str, str, str]] = [("exact", left, right)]
+    for window in (12, 8):
+        keys.append((f"edge{window}", left[-window:], right[:window]))
+    return keys
+
+
+def collect_tts_boundary_text_offsets(
+    entries: Sequence[SubtitleEntry],
+) -> Dict[int, Tuple[int, int, str]]:
+    offsets: Dict[int, Tuple[int, int, str]] = {}
+    cursor = 0
+    for position, entry in enumerate(entries):
+        if entry.entry_type != "narration":
+            continue
+        text = normalize_tts_boundary_alignment_text(entry.text)
+        if not text:
+            continue
+        start = cursor
+        cursor += len(text)
+        offsets[position] = (start, cursor, text)
+    return offsets
+
+
+def measure_reference_boundary_pause_duration(
+    current: SubtitleEntry,
+    upcoming: SubtitleEntry,
+    samples: Optional["np.ndarray"],
+    sample_rate: int,
+) -> float:
+    gap = max(0.0, float(upcoming.start) - float(current.end))
+    if not NUMPY_AVAILABLE or samples is None or sample_rate <= 0:
+        return (
+            STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+            if gap >= STRICT_TTS_REFERENCE_BOUNDARY_PAUSE_MIN_SECONDS
+            else 0.0
+        )
+
+    total_duration = float(getattr(samples, "size", 0) or 0) / float(sample_rate)
+    if total_duration <= 0.0:
+        return (
+            STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+            if gap >= STRICT_TTS_REFERENCE_BOUNDARY_PAUSE_MIN_SECONDS
+            else 0.0
+        )
+    pause_duration = (
+        STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+        if gap >= STRICT_TTS_REFERENCE_TIMING_FALLBACK_PAUSE_SECONDS
+        else 0.0
+    )
+    current_end = clamp(float(current.end), 0.0, total_duration)
+    upcoming_start = clamp(float(upcoming.start), 0.0, total_duration)
+    audio_pause = measure_strict_tts_boundary_audio_pause(
+        samples,
+        sample_rate,
+        min(current_end, upcoming_start),
+        max(current_end, upcoming_start),
+        total_duration,
+    )
+    if (
+        audio_pause < STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+        and not looks_like_compact_cross_entry_word_bridge(current.text, upcoming.text)
+    ):
+        audio_pause = max(
+            audio_pause,
+            measure_strict_tts_boundary_audio_valley_pause(
+                samples,
+                sample_rate,
+                min(current_end, upcoming_start),
+                max(current_end, upcoming_start),
+                total_duration,
+            ),
+        )
+    return max(pause_duration, audio_pause)
+
+
+def build_text_aligned_reference_boundary_pause_map(
+    entries: Sequence[SubtitleEntry],
+    reference_entries: Sequence[SubtitleEntry],
+    samples: Optional["np.ndarray"] = None,
+    sample_rate: int = 0,
+) -> Dict[int, float]:
+    if len(entries) < 2 or len(reference_entries) < 2:
+        return {}
+
+    reference_offsets = collect_tts_boundary_text_offsets(reference_entries)
+    if not reference_offsets:
+        return {}
+
+    pause_by_offset: Dict[int, float] = {}
+    pause_by_key: Dict[Tuple[str, str, str], float] = {}
+    key_counts: Dict[Tuple[str, str, str], int] = {}
+    reference_spans: List[Tuple[int, int, SubtitleEntry]] = []
+    for position in range(len(reference_entries)):
+        if position not in reference_offsets:
+            continue
+        start_offset, end_offset, _text = reference_offsets[position]
+        reference_spans.append((start_offset, end_offset, reference_entries[position]))
+    for position in range(len(reference_entries) - 1):
+        if position not in reference_offsets or position + 1 not in reference_offsets:
+            continue
+        current = reference_entries[position]
+        upcoming = reference_entries[position + 1]
+        if current.entry_type != "narration" or upcoming.entry_type != "narration":
+            continue
+        boundary_offset = reference_offsets[position][1]
+        pause_duration = measure_reference_boundary_pause_duration(
+            current,
+            upcoming,
+            samples,
+            sample_rate,
+        )
+        pause_by_offset[boundary_offset] = max(
+            float(pause_by_offset.get(boundary_offset, 0.0) or 0.0),
+            float(pause_duration or 0.0),
+        )
+        for key in tts_boundary_text_keys(current.text, upcoming.text):
+            key_counts[key] = key_counts.get(key, 0) + 1
+            pause_by_key[key] = max(
+                float(pause_by_key.get(key, 0.0) or 0.0),
+                float(pause_duration or 0.0),
+            )
+
+    if not pause_by_offset and not pause_by_key:
+        return {}
+
+    current_offsets = collect_tts_boundary_text_offsets(entries)
+    pause_map: Dict[int, float] = {}
+    for position in range(len(entries) - 1):
+        if position not in current_offsets or position + 1 not in current_offsets:
+            continue
+        current = entries[position]
+        upcoming = entries[position + 1]
+        if current.entry_type != "narration" or upcoming.entry_type != "narration":
+            continue
+        boundary_offset = current_offsets[position][1]
+        if boundary_offset in pause_by_offset:
+            pause_map[current.index] = pause_by_offset[boundary_offset]
+            continue
+        for key in tts_boundary_text_keys(current.text, upcoming.text):
+            if key_counts.get(key, 0) == 1 and key in pause_by_key:
+                pause_map[current.index] = pause_by_key[key]
+                break
+        if current.index in pause_map:
+            continue
+        for start_offset, end_offset, reference_entry in reference_spans:
+            if not (start_offset < boundary_offset < end_offset):
+                continue
+            reference_duration = max(0.0, float(reference_entry.end) - float(reference_entry.start))
+            if reference_duration <= 0.0:
+                pause_map[current.index] = 0.0
+                break
+            relative = (boundary_offset - start_offset) / max(1.0, float(end_offset - start_offset))
+            approximate_time = float(reference_entry.start) + reference_duration * relative
+            pause_duration = 0.0
+            if NUMPY_AVAILABLE and samples is not None and sample_rate > 0:
+                total_duration = float(getattr(samples, "size", 0) or 0) / float(sample_rate)
+                if total_duration > 0.0:
+                    pause_duration = measure_strict_tts_boundary_audio_pause(
+                        samples,
+                        sample_rate,
+                        approximate_time,
+                        approximate_time,
+                        total_duration,
+                    )
+                    if (
+                        pause_duration < STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+                        and not looks_like_compact_cross_entry_word_bridge(current.text, upcoming.text)
+                    ):
+                        pause_duration = max(
+                            pause_duration,
+                            measure_strict_tts_boundary_audio_valley_pause(
+                                samples,
+                                sample_rate,
+                                approximate_time,
+                                approximate_time,
+                                total_duration,
+                            ),
+                        )
+            pause_map[current.index] = pause_duration
+            break
     return pause_map
 
 
@@ -7971,6 +9421,13 @@ def build_strict_tts_reference_boundary_pause_map(
 ) -> Dict[int, float]:
     if len(entries) < 2 or len(reference_entries) < 2:
         return {}
+
+    text_aligned_pause_map = build_text_aligned_reference_boundary_pause_map(
+        entries,
+        reference_entries,
+    )
+    if text_aligned_pause_map:
+        return text_aligned_pause_map
 
     reference_boundaries: List[Tuple[float, float]] = []
     for index in range(len(reference_entries) - 1):
@@ -8007,6 +9464,121 @@ def build_strict_tts_reference_boundary_pause_map(
                 else 0.0
             )
     return pause_map
+
+
+def split_narration_entries_by_reference_audio_valleys(
+    entries: Sequence[SubtitleEntry],
+    samples: Optional["np.ndarray"],
+    sample_rate: int,
+    auxiliary_samples: Optional["np.ndarray"] = None,
+    auxiliary_sample_rate: int = 0,
+) -> List[SubtitleEntry]:
+    if not entries or not NUMPY_AVAILABLE or samples is None or sample_rate <= 0:
+        return list(entries)
+
+    def best_valley_near(
+        center_time: float,
+        entry_start: float,
+        entry_end: float,
+    ) -> Tuple[float, float]:
+        best_score = 0.0
+        best_time = center_time
+        for offset_step in range(-14, 15):
+            candidate_time = clamp(center_time + offset_step * 0.01, entry_start + 0.08, entry_end - 0.08)
+            start = max(entry_start, candidate_time - STRICT_TTS_BOUNDARY_AUDIO_WINDOW_SECONDS)
+            end = min(entry_end, candidate_time + STRICT_TTS_BOUNDARY_AUDIO_WINDOW_SECONDS)
+            score = measure_funasr_boundary_audio_valley_score(samples, sample_rate, candidate_time, start, end)
+            if auxiliary_samples is not None and auxiliary_sample_rate > 0:
+                score = max(
+                    score,
+                    measure_funasr_boundary_audio_valley_score(
+                        auxiliary_samples,
+                        auxiliary_sample_rate,
+                        candidate_time,
+                        start,
+                        end,
+                    ),
+                )
+            if score > best_score:
+                best_score = score
+                best_time = candidate_time
+        return best_score, best_time
+
+    updated: List[SubtitleEntry] = []
+    split_count = 0
+    for entry in entries:
+        normalized = normalize_subtitle_text(entry.text)
+        duration = max(0.0, float(entry.end) - float(entry.start))
+        total_visible = funasr_visible_char_count(normalized)
+        if entry.entry_type != "narration" or duration < 0.72 or total_visible < 8:
+            updated.append(entry)
+            continue
+
+        best_choice: Optional[Tuple[int, float, float]] = None
+        for visible_pos in range(2, total_visible - 1):
+            left_text = normalize_subtitle_text(funasr_slice_visible_range(normalized, 0, visible_pos))
+            right_text = strip_leading_subtitle_punctuation(
+                funasr_slice_visible_range(normalized, visible_pos, total_visible)
+            )
+            if not left_text or not right_text:
+                continue
+            right_subject_start = bool(NARRATION_SUBJECT_RE.fullmatch(right_text))
+            short_subject_boundary = right_subject_start and subtitle_speech_units(right_text) <= 4
+            text_quality = score_funasr_split_text_quality(normalized, visible_pos, total_visible)
+            if not short_subject_boundary:
+                continue
+            compact_midword = looks_like_compact_funasr_midword_split(normalized, visible_pos, total_visible)
+            if compact_midword and not short_subject_boundary:
+                continue
+            left_visible = visible_pos
+            right_visible = total_visible - visible_pos
+            if min(left_visible, right_visible) < 2:
+                continue
+
+            approximate_time = float(entry.start) + duration * visible_pos / max(1, total_visible)
+            valley_score, valley_time = best_valley_near(approximate_time, float(entry.start), float(entry.end))
+            required_score = 0.68
+            if valley_score < required_score:
+                continue
+            balance_penalty = abs(left_visible - right_visible) / max(1.0, float(total_visible)) * 0.10
+            priority = valley_score + text_quality * 0.18 - balance_penalty
+            if best_choice is None or priority > best_choice[2]:
+                best_choice = (visible_pos, valley_time, priority)
+
+        if best_choice is None:
+            updated.append(entry)
+            continue
+
+        split_visible, split_time, _priority = best_choice
+        split_time = clamp(split_time, float(entry.start) + 0.08, float(entry.end) - 0.08)
+        left_text = normalize_subtitle_text(funasr_slice_visible_range(normalized, 0, split_visible))
+        right_text = strip_leading_subtitle_punctuation(
+            funasr_slice_visible_range(normalized, split_visible, total_visible)
+        )
+        if not left_text or not right_text:
+            updated.append(entry)
+            continue
+        updated.append(
+            SubtitleEntry(
+                index=entry.index,
+                start=float(entry.start),
+                end=max(float(entry.start) + 0.05, split_time),
+                text=left_text,
+                entry_type=entry.entry_type,
+            )
+        )
+        updated.append(
+            SubtitleEntry(
+                index=entry.index,
+                start=min(float(entry.end) - 0.05, split_time),
+                end=float(entry.end),
+                text=right_text,
+                entry_type=entry.entry_type,
+            )
+        )
+        split_count += 1
+
+    return reindex_subtitle_entries(updated) if split_count > 0 else list(entries)
 
 
 def allows_funasr_short_side_split(text: str, visible_pos: int, total_visible: int) -> bool:
@@ -8118,8 +9690,6 @@ def _collect_funasr_audio_split_candidates(
             ),
         )
         token_gap = max(0.0, boundary_end - boundary_start)
-        if token_gap < FUNASR_AUDIO_SPLIT_MIN_TOKEN_GAP_SECONDS:
-            continue
         base_score = score
         text_quality = score_funasr_split_text_quality(text, visible_pos, total_visible)
         valley_score = measure_funasr_boundary_audio_valley_score(samples, sample_rate, boundary_time, start, end)
@@ -8131,11 +9701,32 @@ def _collect_funasr_audio_split_candidates(
             end,
         )
         clear_timing_support = has_token_timing_support(visible_pos, clear=True)
+        strong_valley_override = allows_funasr_strong_audio_valley_split(text, visible_pos, total_visible)
+        if token_gap < FUNASR_AUDIO_SPLIT_MIN_TOKEN_GAP_SECONDS and strong_valley_override:
+            strong_boundary_evidence = (
+                valley_score >= FUNASR_AUDIO_SPLIT_STRONG_VALLEY_SCORE
+                or auxiliary_valley_score >= FUNASR_AUDIO_SPLIT_STRONG_AUXILIARY_VALLEY_SCORE
+            )
+            if strong_boundary_evidence:
+                synthetic_half_gap = 0.04 if max(valley_score, auxiliary_valley_score) >= 0.46 else 0.03
+                boundary_start = clamp(boundary_time - synthetic_half_gap, start + 0.02, boundary_time)
+                boundary_end = clamp(boundary_time + synthetic_half_gap, boundary_time, end - 0.02)
+                token_gap = max(0.0, boundary_end - boundary_start)
+        if token_gap < FUNASR_AUDIO_SPLIT_MIN_TOKEN_GAP_SECONDS:
+            continue
         if base_score <= 0.0:
             if valley_score >= 0.36 and text_quality >= 0.18:
                 score = valley_score
+            elif valley_score >= FUNASR_AUDIO_SPLIT_STRONG_VALLEY_SCORE and strong_valley_override:
+                score = valley_score * 0.92
             elif auxiliary_valley_score >= 0.40 and clear_timing_support and text_quality >= 0.18:
                 score = auxiliary_valley_score * 0.62
+            elif (
+                auxiliary_valley_score >= FUNASR_AUDIO_SPLIT_STRONG_AUXILIARY_VALLEY_SCORE
+                and clear_timing_support
+                and strong_valley_override
+            ):
+                score = auxiliary_valley_score * 0.56
             else:
                 continue
         elif valley_score > 0.0:
@@ -8168,7 +9759,21 @@ def _collect_funasr_audio_split_candidates(
             pause_duration = pause_end - pause_start
             nearest_index = -1
             nearest_distance = 999.0
+            containing_index = -1
             for idx in range(len(usable_pairs) - 1):
+                token_start = float(usable_pairs[idx][0])
+                token_end = float(usable_pairs[idx][1])
+                if token_start <= pause_mid <= token_end:
+                    containing_index = idx
+                    nearest_distance = abs(token_end - pause_mid)
+                    break
+            if containing_index >= 0:
+                nearest_index = containing_index
+            else:
+                nearest_distance = 999.0
+            for idx in range(len(usable_pairs) - 1):
+                if containing_index >= 0:
+                    break
                 boundary_time = (usable_pairs[idx][1] + usable_pairs[idx + 1][0]) * 0.5
                 distance = abs(boundary_time - pause_mid)
                 if distance < nearest_distance:
@@ -8177,14 +9782,20 @@ def _collect_funasr_audio_split_candidates(
             if nearest_index < 0 or nearest_distance > FUNASR_AUDIO_SPLIT_WAVEFORM_BOUNDARY_TOLERANCE:
                 continue
             visible_pos = nearest_index + 1
-            if not allows_funasr_short_side_split(text, visible_pos, total_visible):
+            right_text = strip_leading_subtitle_punctuation(
+                funasr_slice_visible_range(text, visible_pos, total_visible)
+            )
+            left_text = funasr_slice_visible_range(text, 0, visible_pos)
+            short_subject_boundary = (
+                min(visible_pos, total_visible - visible_pos) >= 2
+                and pause_duration >= FUNASR_AUDIO_SPLIT_WAVEFORM_SILENCE_MIN_SECONDS
+                and bool(NARRATION_SUBJECT_RE.match(right_text))
+                and not probably_incomplete_text(strip_terminal_sentence_punctuation(left_text) or left_text)
+                and not looks_like_dangling_tts_tail(strip_terminal_sentence_punctuation(left_text) or left_text)
+            )
+            if not allows_funasr_short_side_split(text, visible_pos, total_visible) and not short_subject_boundary:
                 continue
             existing = candidates.get(visible_pos)
-            if auxiliary and existing is None and not has_token_timing_support(visible_pos, clear=True):
-                continue
-            boost = 0.28 + min(0.30, max(0.0, pause_duration - FUNASR_AUDIO_SPLIT_WAVEFORM_BOOST_MIN_SECONDS) * 2.8)
-            if auxiliary:
-                boost *= 0.58 if existing is not None else 0.38
             gap_left = max(
                 start + 0.08,
                 min(
@@ -8199,6 +9810,31 @@ def _collect_funasr_audio_split_candidates(
                     max(float(usable_pairs[nearest_index + 1][0]), gap_left),
                 ),
             )
+            pair_boundary_time = max(
+                start + 0.08,
+                min(
+                    end - 0.08,
+                    (gap_left + gap_right) * 0.5,
+                ),
+            )
+            boundary_proximity = min(
+                nearest_distance,
+                abs(gap_left - pause_end),
+                abs(gap_right - pause_start),
+            )
+            strong_auxiliary_boundary = (
+                auxiliary
+                and existing is None
+                and pause_duration >= max(FUNASR_AUDIO_SPLIT_WAVEFORM_SILENCE_MIN_SECONDS, 0.085)
+                and boundary_proximity <= max(0.09, FUNASR_AUDIO_SPLIT_WAVEFORM_BOUNDARY_TOLERANCE * 0.50)
+            )
+            if auxiliary and existing is None and not (
+                has_token_timing_support(visible_pos, clear=True) or strong_auxiliary_boundary
+            ):
+                continue
+            boost = 0.28 + min(0.30, max(0.0, pause_duration - FUNASR_AUDIO_SPLIT_WAVEFORM_BOOST_MIN_SECONDS) * 2.8)
+            if auxiliary:
+                boost *= 0.58 if existing is not None else (1.08 if strong_auxiliary_boundary else 0.38)
             boundary_time = max(
                 start + 0.08,
                 min(
@@ -8210,7 +9846,15 @@ def _collect_funasr_audio_split_candidates(
             boundary_end = gap_right
             token_gap = max(0.0, boundary_end - boundary_start)
             if token_gap < FUNASR_AUDIO_SPLIT_MIN_TOKEN_GAP_SECONDS:
-                continue
+                synthetic_half_gap = min(0.06, max(0.02, pause_duration * 0.45))
+                boundary_center = clamp(pair_boundary_time, start + 0.02, end - 0.02)
+                boundary_start = clamp(boundary_center - synthetic_half_gap, start + 0.02, boundary_center)
+                boundary_end = clamp(boundary_center + synthetic_half_gap, boundary_center, end - 0.02)
+                boundary_time = (boundary_start + boundary_end) * 0.5
+                token_gap = max(0.0, boundary_end - boundary_start)
+                if token_gap < FUNASR_AUDIO_SPLIT_MIN_TOKEN_GAP_SECONDS:
+                    continue
+                boost += 0.06
             if existing is None:
                 candidates[visible_pos] = {
                     "visible_pos": float(visible_pos),
@@ -8219,9 +9863,12 @@ def _collect_funasr_audio_split_candidates(
                     "boundary_time": boundary_time,
                     "token_gap": token_gap,
                     "score": boost,
+                    "allow_short_side": 1.0 if short_subject_boundary else 0.0,
                 }
                 continue
             existing["score"] = float(existing.get("score", 0.0) or 0.0) + boost
+            if short_subject_boundary:
+                existing["allow_short_side"] = 1.0
             existing["boundary_start"] = min(float(existing.get("boundary_start", boundary_start) or boundary_start), boundary_start)
             existing["boundary_end"] = max(float(existing.get("boundary_end", boundary_end) or boundary_end), boundary_end)
             existing["boundary_time"] = boundary_time
@@ -8281,10 +9928,17 @@ def split_funasr_sentence_item_by_large_audio_gap(
         left_is_bridge = looks_like_short_funasr_audio_bridge(left_text)
         right_is_bridge = looks_like_short_funasr_audio_bridge(right_text)
         is_bridge_split = left_is_bridge or right_is_bridge
+        transition_anchor_split = (
+            2 <= left_visible <= 4
+            and right_visible >= 3
+            and not left_is_bridge
+            and starts_with_narrative_transition_tail(right_text)
+        )
         gap = max(0.0, usable_pairs[idx + 1][0] - usable_pairs[idx][1])
         shorter_visible = min(left_visible, right_visible)
         huge_gap_short_split = (
             not is_bridge_split
+            and not transition_anchor_split
             and total_visible <= 6
             and shorter_visible >= 2
             and gap >= max(
@@ -8294,19 +9948,20 @@ def split_funasr_sentence_item_by_large_audio_gap(
         )
         min_required_gap = (
             max(0.32, average_token_duration * 1.35)
-            if is_bridge_split
+            if is_bridge_split or transition_anchor_split
             else max(0.55, average_token_duration * 3.8)
         )
         if gap < min_required_gap and not huge_gap_short_split:
             continue
-        if not is_bridge_split and not huge_gap_short_split and max(left_visible, right_visible) < 6:
+        if not is_bridge_split and not huge_gap_short_split and not transition_anchor_split and max(left_visible, right_visible) < 6:
             continue
-        if shorter_visible > 3 and not is_bridge_split and not huge_gap_short_split:
+        if shorter_visible > 3 and not is_bridge_split and not huge_gap_short_split and not transition_anchor_split:
             continue
         if (
             shorter_visible <= 3
             and not is_bridge_split
             and not huge_gap_short_split
+            and not transition_anchor_split
             and gap < max(1.10, average_token_duration * 6.0)
         ):
             continue
@@ -8319,8 +9974,16 @@ def split_funasr_sentence_item_by_large_audio_gap(
                 continue
             if gap < max(0.38, average_token_duration * 1.45):
                 continue
+        if transition_anchor_split and gap < max(0.20, average_token_duration * 0.85):
+            continue
 
-        score = gap + (0.32 if is_bridge_split else 0.0) + (0.18 if huge_gap_short_split else 0.0) - shorter_visible * 0.04
+        score = (
+            gap
+            + (0.32 if is_bridge_split else 0.0)
+            + (0.24 if transition_anchor_split else 0.0)
+            + (0.18 if huge_gap_short_split else 0.0)
+            - shorter_visible * 0.04
+        )
         if best_choice is None or score > best_choice[1]:
             best_choice = (idx, score)
 
@@ -8465,11 +10128,24 @@ def split_funasr_sentence_item_by_audio_timing(
                 continue
             for candidate in candidates:
                 visible_pos = int(candidate["visible_pos"])
-                if not allows_funasr_short_side_split(text, visible_pos, total_visible):
+                allow_short_side = bool(candidate.get("allow_short_side", 0.0))
+                if not allows_funasr_short_side_split(text, visible_pos, total_visible) and not allow_short_side:
+                    continue
+                compact_midword_split = looks_like_compact_funasr_midword_split(
+                    text,
+                    visible_pos,
+                    total_visible,
+                )
+                if compact_midword_split and not allow_short_side and float(candidate.get("score", 0.0) or 0.0) < max(
+                    0.82,
+                    FUNASR_AUDIO_SPLIT_STRONG_CANDIDATE_SCORE + 0.18,
+                ):
                     continue
                 left_visible = visible_pos - seg_start_visible
                 right_visible = seg_end_visible - visible_pos
-                if min(left_visible, right_visible) < 2:
+                if min(left_visible, right_visible) < 3 and not (
+                    allow_short_side and min(left_visible, right_visible) >= 2
+                ):
                     continue
                 boundary_start = clamp(
                     float(candidate.get("boundary_start", candidate["boundary_time"])),
@@ -8491,6 +10167,8 @@ def split_funasr_sentence_item_by_audio_timing(
                 balance_penalty = abs(left_visible - right_visible) / max(1, seg_visible)
                 priority = float(candidate["score"]) - balance_penalty * 0.18
                 priority += score_funasr_split_text_quality(text, visible_pos, total_visible) * 0.24
+                if compact_midword_split and not allow_short_side:
+                    priority -= 0.22
                 if left_visible >= 8 and right_visible >= 8:
                     priority += 0.04
                 if priority > best_priority:
@@ -8626,6 +10304,10 @@ def should_merge_funasr_sentence_entries(
         return False
     if dialogue_score(current_text) >= 2 or dialogue_score(upcoming_text) >= 2:
         return False
+    if ends_with_terminal_sentence_pause(current_text):
+        return False
+    if ends_with_minor_sentence_pause(current_text) and looks_like_explicit_sentence_end(current_text):
+        return False
     if starts_with_strong_transition(upcoming_text) and gap >= 0.02:
         return False
     if (
@@ -8644,11 +10326,19 @@ def should_merge_funasr_sentence_entries(
     upcoming_units = max(1, subtitle_speech_units(upcoming_text))
     current_display_units = max(1, subtitle_display_units(current_core))
     upcoming_display_units = max(1, subtitle_display_units(upcoming_text))
+    continuation_like = starts_with_soft_continuation(upcoming_text) or starts_with_structural_continuation(
+        upcoming_text
+    )
+    bridge_like = looks_like_short_funasr_audio_bridge(current_text) or looks_like_short_funasr_audio_bridge(
+        upcoming_text
+    )
+    seamless_gap = gap <= max(0.018, min(0.035, reference_gap * 0.42 + 0.008))
     if (
         current_narration_like
         and 4 <= current_display_units <= 10
-        and not starts_with_soft_continuation(upcoming_text)
-        and not starts_with_structural_continuation(upcoming_text)
+        and not continuation_like
+        and not seamless_gap
+        and not looks_like_funasr_subject_word_break(current_core, upcoming_text)
     ):
         return False
     merged_text = join_funasr_sentence_entries_text(current_text, upcoming_text, gap)
@@ -8658,9 +10348,13 @@ def should_merge_funasr_sentence_entries(
 
     if current_dialogue_like and upcoming_dialogue_like:
         return gap <= max(0.03, min(0.06, reference_gap * 0.70 + 0.01))
-    if starts_with_soft_continuation(upcoming_text) or starts_with_structural_continuation(upcoming_text):
+    if continuation_like:
         return True
-    if probably_incomplete_text(current_core) or looks_like_dangling_tts_tail(current_core):
+    if (probably_incomplete_text(current_core) or looks_like_dangling_tts_tail(current_core)) and (
+        bridge_like
+        or current_display_units <= 4
+        or upcoming_display_units <= 4
+    ):
         return True
     if (
         gap <= max(0.02, min(0.04, reference_gap * 0.45 + 0.01))
@@ -8668,24 +10362,10 @@ def should_merge_funasr_sentence_entries(
         and not starts_with_strong_transition(upcoming_text)
         and not (current_narration_like and current_display_units >= 4)
         and (
-            looks_like_short_funasr_audio_bridge(current_text)
-            or looks_like_short_funasr_audio_bridge(upcoming_text)
+            bridge_like
             or current_display_units <= 4
             or upcoming_display_units <= 4
         )
-    ):
-        return True
-    if (
-        gap <= max(0.02, min(0.05, reference_gap * 0.55 + 0.01))
-        and not current_dialogue_like
-        and not upcoming_dialogue_like
-        and not current_narration_like
-        and not upcoming_narration_like
-        and current_display_units >= 4
-        and upcoming_display_units >= 4
-        and current_display_units <= 8
-        and not looks_like_explicit_sentence_end(current_core)
-        and not starts_with_strong_transition(upcoming_text)
     ):
         return True
     return False
@@ -9713,12 +11393,168 @@ def build_primary_entries_from_funasr_and_visual(
     merged_entries, boundary_fix_count = repair_cross_entry_boundary_phrases(merged_entries)
     if boundary_fix_count:
         visual_fix_count += boundary_fix_count
+    merged_entries, short_bridge_fix_count = repair_isolated_short_bridge_entries(merged_entries)
+    if short_bridge_fix_count:
+        visual_fix_count += short_bridge_fix_count
     merged_entries = merge_funasr_sentence_entries_by_audio_timing(merged_entries)
     repaired_entries, _ = lightly_repair_subtitle_timeline(merged_entries, max_shift=0.35)
     return reindex_subtitle_entries(repaired_entries), visual_fix_count
 
 
-def run_funasr_reference_transcription(
+def _load_audio_transcription_payload(
+    request_payload: Dict[str, object],
+    *,
+    python_exe: Optional[Path],
+    helper_path: Path,
+    cache_family: str,
+    timeout_seconds: int,
+    log_func: Optional[Callable[[str], None]] = None,
+    failure_prefix: str = "",
+) -> Optional[Dict[str, object]]:
+    if python_exe is None or not helper_path.exists():
+        return None
+
+    cache_dir = Path(__file__).parent / "audio_cache" / cache_family
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fingerprint = hashlib.sha1(
+        json.dumps(request_payload, ensure_ascii=False, sort_keys=True).encode("utf-8", errors="ignore")
+    ).hexdigest()[:20]
+    request_path = cache_dir / f"request_{fingerprint}.json"
+    output_path = cache_dir / f"output_{fingerprint}.json"
+    if not output_path.exists():
+        request_path.write_text(json.dumps(request_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        result = run_subprocess_hidden(
+            [
+                str(python_exe),
+                str(helper_path),
+                "--request",
+                str(request_path),
+                "--output",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+        )
+        safe_unlink_file(request_path)
+        if result.returncode != 0 or not output_path.exists():
+            safe_unlink_file(output_path)
+            if log_func and failure_prefix:
+                detail = summarize_for_log((result.stderr or result.stdout or "").strip(), limit=220) or "helper failed"
+                log_func(f"{failure_prefix}{detail}")
+            return None
+
+    try:
+        parsed = json.loads(output_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _has_usable_audio_transcription(parsed: Optional[Dict[str, object]]) -> bool:
+    if not isinstance(parsed, dict):
+        return False
+    sentence_info = parsed.get("sentence_info")
+    return isinstance(sentence_info, list) and any(isinstance(item, dict) for item in sentence_info)
+
+
+def _audio_transcription_label(engine_name: str) -> str:
+    if str(engine_name).strip().lower() == "sensevoice":
+        return "SenseVoice"
+    return "FunASR"
+
+
+def repair_audio_first_sentence_entries(
+    entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    if not entries:
+        return [], 0
+
+    repaired = reindex_subtitle_entries(entries)
+    repaired, boundary_fix_count = repair_cross_entry_boundary_phrases(repaired)
+    repaired, short_bridge_fix_count = repair_isolated_short_bridge_entries(repaired)
+    return reindex_subtitle_entries(repaired), boundary_fix_count + short_bridge_fix_count
+
+
+def run_audio_first_transcription(
+    audio_path: Path,
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+    log_name: str = "音频补漏",
+) -> Optional[Dict[str, object]]:
+    helper_path = Path(__file__).with_name("funasr_transcribe_helper.py")
+    if not helper_path.exists():
+        if log_func:
+            log_func(f"  {log_name}不可用：helper 缺失")
+        return None
+
+    funasr_python, funasr_source = resolve_funasr_runtime()
+    sensevoice_python, sensevoice_source = resolve_sensevoice_runtime()
+    attempts: List[Tuple[str, Optional[Path], Dict[str, object]]] = []
+    if sensevoice_python is not None and sensevoice_source is not None:
+        attempts.append(
+            (
+                "sensevoice",
+                sensevoice_python,
+                {
+                    "audio_path": str(audio_path),
+                    "engine": "sensevoice",
+                    "funasr_source": str(funasr_source) if funasr_source is not None else "",
+                    "sensevoice_source": str(sensevoice_source),
+                    "model": SENSEVOICE_MODEL_SOURCE,
+                    "vad_model": FUNASR_VAD_MODEL_SOURCE,
+                    "punc_model": FUNASR_PUNC_MODEL_SOURCE,
+                    "batch_size_s": FUNASR_BATCH_SIZE_SECONDS,
+                    "max_single_segment_time": 60000,
+                    "language": "auto",
+                    "merge_length_s": 15,
+                },
+            )
+        )
+    if funasr_python is not None:
+        attempts.append(
+            (
+                "funasr",
+                funasr_python,
+                {
+                    "audio_path": str(audio_path),
+                    "engine": "funasr",
+                    "funasr_source": str(funasr_source) if funasr_source is not None else "",
+                    "model": FUNASR_MODEL_SOURCE,
+                    "vad_model": FUNASR_VAD_MODEL_SOURCE,
+                    "punc_model": FUNASR_PUNC_MODEL_SOURCE,
+                    "batch_size_s": FUNASR_BATCH_SIZE_SECONDS,
+                    "max_single_segment_time": 60000,
+                },
+            )
+        )
+
+    if not attempts:
+        if log_func:
+            log_func(f"  {log_name}不可用：运行时未就绪")
+        return None
+
+    for engine_name, python_exe, payload in attempts:
+        parsed = _load_audio_transcription_payload(
+            payload,
+            python_exe=python_exe,
+            helper_path=helper_path,
+            cache_family="funasr",
+            timeout_seconds=FUNASR_REQUEST_TIMEOUT_SECONDS,
+            log_func=log_func,
+            failure_prefix=f"  {_audio_transcription_label(engine_name)} {log_name}不可用：",
+        )
+        if _has_usable_audio_transcription(parsed):
+            return parsed
+        if parsed is not None and log_func and engine_name == "sensevoice":
+            log_func("  SenseVoice 已接入，但这次没有返回可用句级时间戳，自动回退 Paraformer large")
+    return None
+
+
+def _deprecated_run_funasr_reference_transcription(
     reference_video: Path,
     video_processor: VideoProcessor,
     log_func: Optional[Callable[[str], None]] = None,
@@ -9803,12 +11639,15 @@ def run_funasr_reference_transcription(
         auxiliary_samples=analysis_audio_samples,
         auxiliary_sample_rate=analysis_audio_sample_rate,
     )
+    sentence_entries, repair_count = repair_audio_first_sentence_entries(sentence_entries)
+    if log_func and repair_count:
+        log_func(f"  Audio-first boundary repair: {repair_count} fragment(s) corrected")
     if log_func and sentence_entries:
         log_func(f"  FunASR 音频补漏：识别 {len(sentence_entries)} 句")
     return sentence_entries
 
 
-def run_funasr_media_transcription(
+def _deprecated_run_funasr_media_transcription(
     media_path: Path,
     video_processor: VideoProcessor,
     *,
@@ -9881,6 +11720,104 @@ def run_funasr_media_transcription(
     )
     if log_func and sentence_entries:
         log_func(f"  {log_name}: recognized {len(sentence_entries)} sentence(s)")
+    return sentence_entries
+
+
+def run_funasr_reference_transcription(
+    reference_video: Path,
+    video_processor: VideoProcessor,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> List[SubtitleEntry]:
+    audio_path = extract_reference_audio_for_classification(reference_video, video_processor)
+    if audio_path is None or not audio_path.exists():
+        return []
+
+    transcription_audio_path = audio_path
+    analysis_audio_samples: Optional["np.ndarray"] = None
+    analysis_audio_sample_rate = 0
+    analysis_audio_path = extract_reference_audio_for_uvr_pause_analysis(
+        reference_video,
+        video_processor,
+        log_func=log_func,
+    )
+    if analysis_audio_path is not None:
+        enhanced_samples, enhanced_sample_rate = load_wav_mono_samples(analysis_audio_path)
+        if enhanced_samples is not None and enhanced_sample_rate > 0:
+            analysis_audio_samples = enhanced_samples
+            analysis_audio_sample_rate = enhanced_sample_rate
+            transcription_audio_path = analysis_audio_path
+            if log_func:
+                log_func("  UVR pause-analysis denoise: loaded as auxiliary pause evidence")
+                log_func("  Audio-first transcription: using UVR denoised reference audio")
+
+    parsed = run_audio_first_transcription(
+        transcription_audio_path,
+        log_func=log_func,
+        log_name="音频补漏",
+    )
+    if parsed is None and transcription_audio_path != audio_path:
+        if log_func:
+            log_func("  Audio-first transcription: UVR denoised reference audio unavailable, retrying raw reference audio")
+        parsed = run_audio_first_transcription(
+            audio_path,
+            log_func=log_func,
+            log_name="闊抽琛ユ紡",
+        )
+    if parsed is None:
+        return []
+
+    audio_samples, sample_rate = load_wav_mono_samples(audio_path)
+
+    sentence_entries = build_funasr_sentence_entries_from_sentence_info(
+        parsed.get("sentence_info") or [],
+        samples=audio_samples,
+        sample_rate=sample_rate,
+        auxiliary_samples=analysis_audio_samples,
+        auxiliary_sample_rate=analysis_audio_sample_rate,
+    )
+    sentence_entries, repair_count = repair_audio_first_sentence_entries(sentence_entries)
+    if log_func and repair_count:
+        log_func(f"  Audio-first boundary repair: {repair_count} fragment(s) corrected")
+    if log_func and sentence_entries:
+        log_func(
+            f"  {_audio_transcription_label(str(parsed.get('engine') or 'funasr'))} 音频补漏：识别 {len(sentence_entries)} 句"
+        )
+    return sentence_entries
+
+
+def run_funasr_media_transcription(
+    media_path: Path,
+    video_processor: VideoProcessor,
+    *,
+    log_func: Optional[Callable[[str], None]] = None,
+    log_name: str = "Rendered audio subtitle lock",
+) -> List[SubtitleEntry]:
+    audio_path = extract_reference_audio_for_classification(media_path, video_processor, log_func=None)
+    if audio_path is None or not audio_path.exists():
+        return []
+
+    parsed = run_audio_first_transcription(
+        audio_path,
+        log_func=log_func,
+        log_name=log_name,
+    )
+    if parsed is None:
+        return []
+
+    audio_samples, sample_rate = load_wav_mono_samples(audio_path)
+    sentence_entries = build_funasr_sentence_entries_from_sentence_info(
+        parsed.get("sentence_info") or [],
+        samples=audio_samples,
+        sample_rate=sample_rate,
+    )
+    sentence_entries, repair_count = repair_audio_first_sentence_entries(sentence_entries)
+    if log_func and repair_count:
+        log_func(f"  {log_name}: repaired {repair_count} audio boundary fragment(s)")
+    if log_func and sentence_entries:
+        log_func(
+            f"  {log_name}: {_audio_transcription_label(str(parsed.get('engine') or 'funasr'))} recognized "
+            f"{len(sentence_entries)} sentence(s)"
+        )
     return sentence_entries
 
 
@@ -10433,6 +12370,117 @@ def refine_duck_intervals_with_waveform(
     return refined
 
 
+def build_speakerlab_similarity_map(
+    audio_path: Path,
+    entries: Sequence[SubtitleEntry],
+    ai_seed_map: Dict[int, Dict[str, object]],
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Dict[int, Dict[str, float]]:
+    if not audio_path.exists() or not entries or not ai_seed_map:
+        return {}
+
+    python_exe, source_dir = resolve_speakerlab_runtime()
+    helper_path = Path(__file__).with_name("speakerlab_similarity_helper.py")
+    if python_exe is None or source_dir is None or not helper_path.exists():
+        return {}
+
+    def seed_entries_for_label(label: str) -> List[Dict[str, float]]:
+        ranked: List[Tuple[float, float, SubtitleEntry]] = []
+        for entry in entries:
+            item = ai_seed_map.get(entry.index, {})
+            if str(item.get("label") or "") != label:
+                continue
+            duration = max(0.0, float(entry.end) - float(entry.start))
+            if duration < SPEECHBRAIN_MIN_SEGMENT_SECONDS:
+                continue
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+            ranked.append((confidence, duration, entry))
+        return [
+            {
+                "index": entry.index,
+                "start": round(entry.start, 4),
+                "end": round(entry.end, 4),
+            }
+            for _confidence, _duration, entry in sorted(ranked, key=lambda item: (item[0], item[1]), reverse=True)[
+                :SPEECHBRAIN_MAX_SEEDS_PER_LABEL
+            ]
+        ]
+
+    narration_seeds = seed_entries_for_label("narration_seed")
+    dialogue_seeds = seed_entries_for_label("dialogue_seed")
+    if not narration_seeds:
+        return {}
+
+    cache_dir = Path(__file__).parent / "audio_cache" / "speakerlab"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    request_payload = {
+        "cache_version": SPEAKERLAB_CACHE_VERSION,
+        "audio_path": str(audio_path),
+        "speakerlab_source": str(source_dir),
+        "model_source": SPEAKERLAB_MODEL_SOURCE,
+        "model_cache_dir": str(cache_dir / "model_cache"),
+        "seed_groups": {
+            "narration": narration_seeds,
+            "dialogue": dialogue_seeds,
+        },
+        "entries": [
+            {
+                "index": entry.index,
+                "start": round(entry.start, 4),
+                "end": round(entry.end, 4),
+            }
+            for entry in entries
+            if (entry.end - entry.start) >= SPEECHBRAIN_MIN_SEGMENT_SECONDS
+        ],
+    }
+    parsed = _load_audio_transcription_payload(
+        request_payload,
+        python_exe=python_exe,
+        helper_path=helper_path,
+        cache_family="speakerlab",
+        timeout_seconds=SPEAKERLAB_REQUEST_TIMEOUT_SECONDS,
+        log_func=log_func,
+        failure_prefix="  3D-Speaker CAM++ 声纹复核不可用：",
+    )
+    if not isinstance(parsed, dict):
+        return {}
+
+    similarity_map: Dict[int, Dict[str, float]] = {}
+    for item in parsed.get("entries", []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index", 0))
+        except (TypeError, ValueError):
+            continue
+        similarity_map[index] = {
+            "narration_similarity": float(item.get("narration_similarity", 0.0) or 0.0),
+            "dialogue_similarity": float(item.get("dialogue_similarity", 0.0) or 0.0),
+        }
+
+    if log_func and similarity_map:
+        strong_narration = sum(
+            1
+            for item in similarity_map.values()
+            if item.get("narration_similarity", 0.0) >= SPEECHBRAIN_NARRATION_SIMILARITY_MIN
+            and item.get("narration_similarity", 0.0) - item.get("dialogue_similarity", 0.0) >= SPEECHBRAIN_SIMILARITY_MARGIN
+        )
+        strong_dialogue = sum(
+            1
+            for item in similarity_map.values()
+            if item.get("dialogue_similarity", 0.0) >= SPEECHBRAIN_DIALOGUE_SIMILARITY_MIN
+            and item.get("dialogue_similarity", 0.0) - item.get("narration_similarity", 0.0) >= SPEECHBRAIN_SIMILARITY_MARGIN
+        )
+        seed_stats = parsed.get("seed_stats", {}) if isinstance(parsed, dict) else {}
+        log_func(
+            "  "
+            + f"3D-Speaker CAM++ 声纹复核：解说种子 {int(seed_stats.get('narration', len(narration_seeds)) or 0)} 个，"
+            + f"对白种子 {int(seed_stats.get('dialogue', len(dialogue_seeds)) or 0)} 个，"
+            + f"高相似解说 {strong_narration} 条，高相似对白 {strong_dialogue} 条"
+        )
+    return similarity_map
+
+
 def build_speechbrain_similarity_map(
     audio_path: Path,
     entries: Sequence[SubtitleEntry],
@@ -10441,6 +12489,15 @@ def build_speechbrain_similarity_map(
 ) -> Dict[int, Dict[str, float]]:
     if not audio_path.exists() or not entries or not ai_seed_map:
         return {}
+
+    speakerlab_similarity_map = build_speakerlab_similarity_map(
+        audio_path,
+        entries,
+        ai_seed_map,
+        log_func=log_func,
+    )
+    if speakerlab_similarity_map:
+        return speakerlab_similarity_map
 
     python_exe, source_dir = resolve_speechbrain_runtime()
     helper_path = Path(__file__).with_name("speechbrain_similarity_helper.py")
@@ -11311,6 +13368,145 @@ def retime_narration_runs_by_clean_audio_tail(
     return updated_entries
 
 
+def build_clean_source_handoff_start_map(
+    entries: Sequence[SubtitleEntry],
+    clean_video: Optional[Path],
+    video_processor: Optional[VideoProcessor] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Dict[int, float]:
+    if not entries or clean_video is None or not NUMPY_AVAILABLE or not clean_video.exists():
+        return {}
+
+    processor = video_processor or VideoProcessor()
+    audio_path = extract_reference_audio_for_classification(clean_video, processor, log_func=None)
+    if audio_path is None:
+        return {}
+
+    samples, sample_rate = load_wav_mono_samples(audio_path)
+    if samples is None or sample_rate <= 0 or samples.size <= 0:
+        return {}
+
+    total_duration = float(samples.size) / float(sample_rate)
+    handoff_map: Dict[int, float] = {}
+    advanced_boundaries = 0
+    total_advance = 0.0
+    max_advance = 0.0
+
+    def is_source_handoff_speech_like(profile: AudioSegmentProfile) -> bool:
+        return (
+            (
+                profile.confidence >= 0.48
+                and profile.speech_ratio >= 0.22
+                and profile.voiced_ratio >= 0.36
+            )
+            or (
+                profile.confidence >= 0.34
+                and profile.rms_db >= -25.5
+                and profile.spectral_flatness <= 0.64
+                and (
+                    profile.voiced_ratio >= 0.56
+                    or (profile.speech_ratio >= 0.16 and profile.voiced_ratio >= 0.28)
+                )
+            )
+        )
+
+    window_seconds = STRICT_SOURCE_HANDOFF_AUDIO_WINDOW_SECONDS
+    hop_seconds = STRICT_SOURCE_HANDOFF_AUDIO_HOP_SECONDS
+    continuity_gap = hop_seconds * 1.35
+
+    for index in range(1, len(entries)):
+        previous_entry = entries[index - 1]
+        current_entry = entries[index]
+        if previous_entry.entry_type != "narration" or current_entry.entry_type not in {"dialogue", "original_subtitle"}:
+            continue
+
+        current_start = max(0.0, float(current_entry.start))
+        search_start = max(0.0, current_start - STRICT_SOURCE_HANDOFF_MAX_ADVANCE_SECONDS)
+        search_end = min(
+            max(0.0, total_duration - window_seconds),
+            current_start + STRICT_SOURCE_HANDOFF_LOOKAHEAD_SECONDS,
+        )
+        if search_end <= search_start + hop_seconds:
+            continue
+
+        windows: List[Tuple[float, float, bool]] = []
+        cursor = search_start
+        while cursor <= search_end + 1e-6:
+            profile = build_audio_profile_for_range(
+                samples,
+                sample_rate,
+                cursor,
+                min(total_duration, cursor + window_seconds),
+                profile_index=int(round(cursor * 1000.0)),
+                edge_trim_seconds=0.02,
+                edge_trim_ratio=0.05,
+                min_duration=0.14,
+            )
+            cursor += hop_seconds
+            if profile is None:
+                continue
+            windows.append(
+                (
+                    max(0.0, float(profile.start)),
+                    min(total_duration, float(profile.end)),
+                    is_source_handoff_speech_like(profile),
+                )
+            )
+        if len(windows) < 3:
+            continue
+
+        overlap_index: Optional[int] = None
+        for window_index, (window_start, window_end, is_speech_like) in enumerate(windows):
+            if not is_speech_like:
+                continue
+            if window_start <= current_start + hop_seconds and window_end >= current_start - hop_seconds:
+                overlap_index = window_index
+                break
+        if overlap_index is None:
+            continue
+
+        block_start_index = overlap_index
+        while block_start_index > 0:
+            previous_window = windows[block_start_index - 1]
+            current_window = windows[block_start_index]
+            if (
+                not previous_window[2]
+                or previous_window[1] + continuity_gap < current_window[0]
+            ):
+                break
+            block_start_index -= 1
+        if not any(not is_speech_like for *_timing, is_speech_like in windows[:block_start_index]):
+            continue
+
+        detected_start = max(search_start, windows[block_start_index][0])
+        advance_seconds = current_start - detected_start
+        if advance_seconds < STRICT_SOURCE_HANDOFF_MIN_ADVANCE_SECONDS:
+            continue
+
+        protected_start = max(
+            0.0,
+            current_start - min(advance_seconds, STRICT_SOURCE_HANDOFF_MAX_ADVANCE_SECONDS),
+        )
+        # The reference narration window is still the ground truth. An audio-only
+        # handoff probe may start muting the source slightly earlier, but it must
+        # not pull the boundary back into the preceding narration entry itself.
+        protected_start = max(float(previous_entry.end), protected_start)
+        if protected_start >= current_start - 0.01:
+            continue
+        handoff_map[current_entry.index] = protected_start
+        advanced_boundaries += 1
+        total_advance += current_start - protected_start
+        max_advance = max(max_advance, current_start - protected_start)
+
+    if log_func and advanced_boundaries > 0:
+        log_func(
+            "  Clean source handoff probe: "
+            f"advanced {advanced_boundaries} narration->source boundary(s), "
+            f"avg -{total_advance / advanced_boundaries:.2f}s / max -{max_advance:.2f}s"
+        )
+    return handoff_map
+
+
 def collect_timeline_audio_profiles(
     samples: "np.ndarray",
     sample_rate: int,
@@ -11810,6 +14006,16 @@ def build_audio_classification_overrides(
     audio_path = extract_reference_audio_for_classification(reference_video, processor, log_func=log_func)
     if audio_path is None:
         return {}
+    speaker_audio_path = audio_path
+    analysis_audio_path = extract_reference_audio_for_uvr_pause_analysis(
+        reference_video,
+        processor,
+        log_func=log_func,
+    )
+    if analysis_audio_path is not None:
+        speaker_audio_path = analysis_audio_path
+        if log_func:
+            log_func("  Speaker verification audio: using UVR denoised reference")
 
     samples, sample_rate = load_wav_mono_samples(audio_path)
     if samples is None or sample_rate <= 0:
@@ -11846,7 +14052,12 @@ def build_audio_classification_overrides(
         ai_seed_map,
         log_func=log_func,
     )
-    speechbrain_similarity_map = build_speechbrain_similarity_map(audio_path, entries, ai_seed_map, log_func=log_func)
+    speechbrain_similarity_map = build_speechbrain_similarity_map(
+        speaker_audio_path,
+        entries,
+        ai_seed_map,
+        log_func=log_func,
+    )
     narrator_seed_centroid: Optional[Tuple[float, ...]] = None
     narrator_seed_vectors = [
         np.asarray(subtitle_profiles[index].feature_vector, dtype=np.float32)
@@ -12097,6 +14308,18 @@ def build_audio_classification_overrides(
             and next_entry is not None
             and next_entry.entry_type == "narration"
         )
+        narration_bridge_guard = (
+            entry.entry_type == "narration"
+            and entry_duration <= AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_SECONDS
+            and previous_entry is not None
+            and next_entry is not None
+            and previous_entry.entry_type == "narration"
+            and next_entry.entry_type == "narration"
+            and -0.05 <= previous_gap <= AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_GAP_SECONDS
+            and -0.05 <= next_gap <= AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_GAP_SECONDS
+            and not dialogue_like_text(entry_text)
+            and not speech_intro_context
+        )
         ai_label = str(ai_seed.get("label") or "")
         ai_confidence = float(ai_seed.get("confidence", 0.0) or 0.0)
         hint_narration_score = float(hint.get("narration", 0.0))
@@ -12125,6 +14348,14 @@ def build_audio_classification_overrides(
 
         strong_dialogue = hint_dialogue_score >= 2.0 or (ai_dialogue_hint and ai_confidence >= 0.86)
         strong_narration = hint_narration_score >= 1.7 or (ai_narration_hint and ai_confidence >= 0.86)
+        bridge_guarded_dialogue_evidence = (
+            not narration_bridge_guard
+            or (
+                speechbrain_dialogue_similarity >= 0.88
+                and speechbrain_dialogue_gap >= 0.12
+                and (speech_intro_context or text_dialogue_hint or ai_dialogue_hint or strong_dialogue)
+            )
+        )
         neighbor_dialogue = bool(hint.get("neighbor_dialogue"))
         neighbor_narration = bool(hint.get("neighbor_narration"))
         speechbrain_narrator_reject = (
@@ -12156,7 +14387,7 @@ def build_audio_classification_overrides(
                 and speechbrain_dialogue_similarity >= 0.35
             )
             or speechbrain_narrator_reject
-        )
+        ) and bridge_guarded_dialogue_evidence
         voice_locked_narration = (
             effective_narrator_similarity >= 0.91
             and speechbrain_narration_similarity >= 0.66
@@ -12172,6 +14403,7 @@ def build_audio_classification_overrides(
             not strong_narration
             and not narrator_voice_guard
             and not voice_locked_narration
+            and bridge_guarded_dialogue_evidence
             and speechbrain_dialogue_similarity >= SPEECHBRAIN_DIALOGUE_LOCK_SIMILARITY_MIN
             and speechbrain_dialogue_gap >= SPEECHBRAIN_DIALOGUE_LOCK_GAP_MIN
             and speechbrain_narration_similarity <= SPEECHBRAIN_DIALOGUE_LOCK_NARRATOR_MAX
@@ -12214,6 +14446,7 @@ def build_audio_classification_overrides(
             (not strong_narration or audio_can_overrule_text_narration)
             and not voice_locked_narration
             and not voice_locked_dialogue
+            and bridge_guarded_dialogue_evidence
             and speechbrain_narration_similarity > 0.0
             and speechbrain_narration_similarity <= SPEECHBRAIN_DIALOGUE_RECOVERY_NARRATOR_MAX
             and speechbrain_dialogue_similarity >= SPEECHBRAIN_DIALOGUE_RECOVERY_SIMILARITY_MIN
@@ -12435,6 +14668,7 @@ def build_audio_classification_overrides(
 
         if (
             not transition_narration_guard
+            and bridge_guarded_dialogue_evidence
             and (
             dominant_cluster_id >= 0
             and not dominant_cluster_in_narrator_family
@@ -12510,6 +14744,7 @@ def build_audio_classification_overrides(
 
         if (
             not transition_narration_guard
+            and bridge_guarded_dialogue_evidence
             and (
             speechbrain_dialogue_similarity >= SPEECHBRAIN_DIALOGUE_SIMILARITY_MIN
             and speechbrain_dialogue_gap >= SPEECHBRAIN_SIMILARITY_MARGIN
@@ -12732,11 +14967,23 @@ def stabilize_audio_classification_runs(
             audio_override_is_protected((override_meta or {}).get(entry.index), "dialogue")
             for entry in run_entries
         )
+        short_dialogue_island_limit = AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS
+        if (
+            left_type == "narration"
+            and right_type == "narration"
+            and not protected_dialogue
+            and not has_dialogue_text
+            and not has_original_text
+        ):
+            short_dialogue_island_limit = max(
+                short_dialogue_island_limit,
+                AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_SECONDS,
+            )
 
         if (
             run_type in {"dialogue", "original_subtitle"}
             and (
-                run_duration <= AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS
+                run_duration <= short_dialogue_island_limit
                 or (
                     weak_anti_narrator_only_dialogue_run
                     and run_duration <= AUDIO_CLASSIFICATION_ANTI_NARRATOR_WEAK_ISLAND_SECONDS
@@ -12745,7 +14992,6 @@ def stabilize_audio_classification_runs(
             and left_type == "narration"
             and right_type == "narration"
             and not protected_dialogue
-            and not has_dialogue_text
             and not has_original_text
         ):
             for run_index in range(run_start, run_end):
@@ -12768,7 +15014,7 @@ def stabilize_audio_classification_runs(
                 stabilized[run_index] = clone_subtitle_entry(stabilized[run_index], entry_type=recovered_type)
                 if recovered_type == "dialogue":
                     changed_to_dialogue += 1
-            continue
+                continue
 
         if (
             run_type == "narration"
@@ -12795,6 +15041,25 @@ def stabilize_audio_classification_runs(
                 for run_index in range(run_start, run_end):
                     stabilized[run_index] = clone_subtitle_entry(stabilized[run_index], entry_type="dialogue")
                     changed_to_dialogue += 1
+                continue
+
+        if (
+            run_type == "narration"
+            and run_duration <= max(AUDIO_CLASSIFICATION_DIALOGUE_RECOVERY_SECONDS, 0.95)
+            and left_entry is not None
+            and left_type in {"dialogue", "original_subtitle"}
+            and subtitle_entry_gap(left_entry, run_entries[0]) <= 0.20
+            and not protected_narration
+            and not has_strong_narration
+            and not has_original_text
+        ):
+            short_tail_fragment = all(subtitle_display_units(text) <= 6 for text in texts)
+            if short_tail_fragment:
+                recovered_type = "dialogue" if left_type == "dialogue" else "original_subtitle"
+                for run_index in range(run_start, run_end):
+                    stabilized[run_index] = clone_subtitle_entry(stabilized[run_index], entry_type=recovered_type)
+                    if recovered_type == "dialogue":
+                        changed_to_dialogue += 1
                 continue
 
     if log_func and (changed_to_narration or changed_to_dialogue):
@@ -12842,6 +15107,44 @@ def apply_audio_classification_overrides(
             + f"对白 {dialogue_changed} 条"
         )
     return stabilize_audio_classification_runs(updated_entries, override_meta=overrides, log_func=log_func)
+
+
+def repair_final_classification_boundaries(
+    entries: Sequence[SubtitleEntry],
+) -> List[SubtitleEntry]:
+    if not entries:
+        return []
+
+    repaired = list(entries)
+    for index, entry in enumerate(repaired):
+        duration = max(0.0, float(entry.end) - float(entry.start))
+        previous_entry = repaired[index - 1] if index > 0 else None
+        next_entry = repaired[index + 1] if index + 1 < len(repaired) else None
+        previous_type = previous_entry.entry_type if previous_entry is not None else ""
+        next_type = next_entry.entry_type if next_entry is not None else ""
+
+        if (
+            entry.entry_type == "dialogue"
+            and duration <= AUDIO_CLASSIFICATION_NARRATION_BRIDGE_GUARD_SECONDS
+            and previous_type == "narration"
+            and next_type == "narration"
+            and subtitle_entry_gap(previous_entry, entry) <= 0.20
+            and subtitle_entry_gap(entry, next_entry) <= 0.20
+        ):
+            repaired[index] = clone_subtitle_entry(entry, entry_type="narration")
+            continue
+
+        if (
+            entry.entry_type == "narration"
+            and duration <= 0.60
+            and previous_type in {"dialogue", "original_subtitle"}
+            and next_type == "narration"
+            and subtitle_entry_gap(previous_entry, entry) <= 0.20
+            and subtitle_display_units(entry.text) <= 6
+        ):
+            repaired[index] = clone_subtitle_entry(entry, entry_type=previous_type)
+
+    return repaired
 
 
 class AINarrationGenerator:
@@ -13443,6 +15746,7 @@ def rewrite_narration_entries(
     entries: Sequence[SubtitleEntry],
     chunk_size: int = REWRITE_BATCH_SIZE,
     log_func: Optional[Callable[[str], None]] = None,
+    pause_safe: bool = False,
 ) -> Dict[int, str]:
     if not entries or not ai_generator.api_key:
         return {}
@@ -13481,7 +15785,7 @@ def rewrite_narration_entries(
                 + f"\uff08#{start_index}-#{end_index}\uff09"
             )
         if not remote_rewrite_enabled:
-            local_chunk_map = build_local_rewrite_map(chunk)
+            local_chunk_map = build_local_rewrite_map(chunk, pause_safe=pause_safe)
             rewrite_map.update(local_chunk_map)
             local_diversified += len(local_chunk_map)
             if log_func:
@@ -13540,7 +15844,7 @@ def rewrite_narration_entries(
         )
         if not items:
             empty_response_chunks += 1
-            local_chunk_map = build_local_rewrite_map(chunk)
+            local_chunk_map = build_local_rewrite_map(chunk, pause_safe=pause_safe)
             if local_chunk_map:
                 rewrite_map.update(local_chunk_map)
                 local_diversified += len(local_chunk_map)
@@ -13592,6 +15896,7 @@ def rewrite_narration_entries(
                     candidate,
                     display_budget=char_budget,
                     speech_budget=speech_budget_pair[1],
+                    pause_safe=pause_safe,
                 )
             if not candidate:
                 continue
@@ -13665,6 +15970,7 @@ def rewrite_narration_entries(
                     candidate,
                     display_budget=char_budget,
                     speech_budget=speech_budget_pair[1],
+                    pause_safe=pause_safe,
                 )
                 if not candidate:
                     continue
@@ -13692,6 +15998,7 @@ def rewrite_narration_entries(
                 local_candidate,
                 display_budget=char_budget,
                 speech_budget=speech_budget_pair[1],
+                pause_safe=pause_safe,
             )
             if local_candidate and not rewrite_needs_more_variation(source_entry.text, local_candidate):
                 accepted_chunk[index] = local_candidate
@@ -14082,6 +16389,7 @@ def build_processed_subtitles(
     settings: Optional[CloneSettings] = None,
 ) -> ProcessedSubtitleBundle:
     prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
+    audio_first_text_preserve_mode = prefer_funasr_audio_subtitles
     precomputed_funasr_input = bool(prefer_funasr_audio_subtitles and original_entries)
     visual_entries = preserve_reference_timeline_entries([] if precomputed_funasr_input else original_entries)
     working_entries: List[SubtitleEntry] = list(visual_entries)
@@ -14089,11 +16397,14 @@ def build_processed_subtitles(
     funasr_primary_mode = False
     disable_ai_subtitle_review = bool(settings.disable_ai_subtitle_review) if settings else False
     disable_ai_narration_rewrite = bool(settings.disable_ai_narration_rewrite) if settings else False
+    if audio_first_text_preserve_mode:
+        disable_ai_subtitle_review = True
     strict_audio_narration_preserve_mode = bool(
         settings
         and settings.prefer_funasr_audio_subtitles
         and settings.prefer_funasr_sentence_pauses
     )
+    strict_audio_rewrite_guard = strict_audio_narration_preserve_mode
     if strict_audio_narration_preserve_mode:
         disable_ai_narration_rewrite = True
     force_no_narration_mode = bool(settings.force_no_narration_mode) if settings else False
@@ -14174,7 +16485,8 @@ def build_processed_subtitles(
     reviewed_correction_map: Dict[int, str] = {}
     if disable_ai_subtitle_review:
         if log_func:
-            log_func("  AI subtitle review disabled: keeping raw subtitle text")
+            reason = "audio-first mode" if audio_first_text_preserve_mode else "manual setting"
+            log_func(f"  AI subtitle review disabled ({reason}): keeping raw subtitle text")
     else:
         reviewed_correction_map = ai_generator.review_subtitle_ocr(working_entries, log_func=log_func)
     correction_count = 0
@@ -14295,12 +16607,16 @@ def build_processed_subtitles(
         video_processor=video_processor,
         log_func=log_func,
     )
-    cleaned_entries, _ = apply_reference_subtitle_ocr_corrections(
-        cleaned_entries,
-        reference_video,
-        video_processor,
-        log_func=log_func,
-    )
+    if prefer_funasr_audio_subtitles:
+        if log_func:
+            log_func("  Reference hard-subtitle OCR correction skipped in audio-first mode")
+    else:
+        cleaned_entries, _ = apply_reference_subtitle_ocr_corrections(
+            cleaned_entries,
+            reference_video,
+            video_processor,
+            log_func=log_func,
+        )
     counts = {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": watermark_count}
     narration_seed: List[SubtitleEntry] = []
     for entry in cleaned_entries:
@@ -14317,9 +16633,17 @@ def build_processed_subtitles(
                     if strict_audio_narration_preserve_mode
                     else "manual setting"
                 )
-                log_func(f"  AI narration rewrite disabled ({reason}): keeping corrected narration text")
+                log_func(
+                    f"  AI narration rewrite disabled ({reason}): "
+                    + "keeping corrected narration text and reference-audio pause groups"
+                )
         else:
-            rewrite_map = rewrite_narration_entries(ai_generator, narration_seed, log_func=log_func)
+            rewrite_map = rewrite_narration_entries(
+                ai_generator,
+                narration_seed,
+                log_func=log_func,
+                pause_safe=strict_audio_rewrite_guard,
+            )
             if rewrite_map and log_func:
                 log_func(f"  Rewrite applied: {len(rewrite_map)} entries")
             if not rewrite_map:
@@ -14359,6 +16683,7 @@ def build_processed_subtitles(
                                 candidate,
                                 display_budget=budget,
                                 speech_budget=speech_budget,
+                                pause_safe=strict_audio_rewrite_guard,
                             )
                             if not candidate:
                                 candidate = diversify_narration_locally(source_entry.text, budget)
@@ -14367,6 +16692,7 @@ def build_processed_subtitles(
                                     candidate,
                                     display_budget=budget,
                                     speech_budget=speech_budget,
+                                    pause_safe=strict_audio_rewrite_guard,
                                 )
                                 if candidate:
                                     local_full_fallback += 1
@@ -14380,7 +16706,10 @@ def build_processed_subtitles(
                     elif log_func:
                         log_func("  AI full rewrite result count mismatch; fallback to corrected source text.")
                 if not rewrite_map:
-                    local_rewrite_map = build_local_rewrite_map(narration_seed)
+                    local_rewrite_map = build_local_rewrite_map(
+                        narration_seed,
+                        pause_safe=strict_audio_rewrite_guard,
+                    )
                     if local_rewrite_map:
                         rewrite_map.update(local_rewrite_map)
                         if log_func:
@@ -14391,6 +16720,12 @@ def build_processed_subtitles(
                             log_func(f"  AI rewrite kept original narration; last issue: {last_issue}")
                         else:
                             log_func("  AI rewrite kept original narration; no acceptable changes were produced.")
+        if strict_audio_rewrite_guard and rewrite_map:
+            rewrite_map = filter_pause_safe_rewrite_map(
+                narration_seed,
+                rewrite_map,
+                log_func=log_func,
+            )
     elif log_func:
         log_func("  No narration lines detected; rewrite step skipped.")
     final_entries: List[SubtitleEntry] = []
@@ -14424,9 +16759,16 @@ def build_processed_subtitles(
     final_entries, final_context_fix_count = repair_contextual_ocr_phrases(final_entries)
     if log_func and final_context_fix_count:
         log_func(f"  Final subtitle contextual repair: {final_context_fix_count} entries corrected")
+    final_entries = repair_final_classification_boundaries(final_entries)
+    final_entries, dialogue_boundary_fix_count = repair_adjacent_incomplete_dialogue_entries(final_entries)
+    if log_func and dialogue_boundary_fix_count:
+        log_func(f"  Final dialogue boundary repair: {dialogue_boundary_fix_count} boundaries merged")
     narration_entries = [entry for entry in final_entries if entry.entry_type == "narration"]
+    final_counts = {"narration": 0, "dialogue": 0, "original_subtitle": 0, "watermark": watermark_count}
+    for entry in final_entries:
+        final_counts[entry.entry_type] = final_counts.get(entry.entry_type, 0) + 1
 
-    return ProcessedSubtitleBundle(final_entries, narration_entries, counts)
+    return ProcessedSubtitleBundle(final_entries, narration_entries, final_counts)
 
 
 def extract_source_frames(
@@ -14936,93 +17278,15 @@ def collect_global_match_candidates(
 
     candidates: List[Dict[str, object]] = []
     for pos in sorted(candidate_positions):
-        sample = source_frames[pos]
-        base_visual, base_flipped, _, _ = sample_signature_similarity(
-            hasher,
-            ref.signature,
-            sample,
-        )
-        refined_visual = 0.0
-        final_flipped = base_flipped
-        if ref.frame_path and sample.frame_path:
-            refined_visual, refined_flipped, _, _ = sample_refined_similarity(
-                hasher,
-                ref,
-                sample,
-                preferred_flip=base_flipped,
-            )
-            if refined_visual > 0.0:
-                final_flipped = refined_flipped
-        structural_visual = sample_structural_similarity(
-            ref,
-            sample,
-            flip_right=final_flipped,
-        )
-        forward_score = evaluate_forward_path_similarity(
-            reference_frames,
-            source_frames,
-            hasher,
-            ref_index,
-            pos,
-            horizon=6,
-            start_flip=final_flipped,
-        )
-        backward_score = evaluate_backward_path_similarity(
-            reference_frames,
-            source_frames,
-            hasher,
-            ref_index,
-            pos,
-            horizon=4,
-            end_flip=final_flipped,
-        )
-        if ref.frame_path and sample.frame_path:
-            context_score = evaluate_local_segment_context_similarity(
+        candidates.append(
+            evaluate_global_match_candidate_at_position(
                 reference_frames,
                 source_frames,
                 hasher,
                 ref_index,
                 pos,
-                radius=5,
-                preferred_flip=final_flipped,
+                similarity_threshold,
             )
-        else:
-            context_score = base_visual * 0.46 + forward_score * 0.32 + backward_score * 0.22
-
-        if refined_visual > 0.0:
-            combined_visual = refined_visual * 0.52 + base_visual * 0.30 + structural_visual * 0.18
-        else:
-            combined_visual = base_visual * 0.76 + structural_visual * 0.24
-
-        emission_score = (
-            combined_visual * 1.34
-            + context_score * 0.34
-            + forward_score * 0.12
-            + backward_score * 0.08
-        )
-        if ref_index == 0:
-            emission_score -= min(0.05, pos * 0.000008)
-        if structural_visual < MATCH_STRUCTURAL_MIN:
-            emission_score -= min(0.10, (MATCH_STRUCTURAL_MIN - structural_visual) * 0.45)
-        if context_score < MATCH_SEGMENT_CONTEXT_MIN:
-            emission_score -= min(0.12, (MATCH_SEGMENT_CONTEXT_MIN - context_score) * 0.55)
-        if combined_visual < max(0.40, similarity_threshold - 0.08):
-            emission_score -= 0.06
-
-        candidates.append(
-            {
-                "pos": pos,
-                "sample": sample,
-                "score": emission_score,
-                "visual": combined_visual,
-                "base_visual": base_visual,
-                "refined_visual": refined_visual,
-                "structural": structural_visual,
-                "context_score": context_score,
-                "forward_score": forward_score,
-                "backward_score": backward_score,
-                "flipped": final_flipped,
-            }
         )
 
     if not candidates and raw_shortlist:
@@ -15052,6 +17316,306 @@ def collect_global_match_candidates(
         reverse=True,
     )
     return candidates[:expanded_limit]
+
+
+def evaluate_global_match_candidate_at_position(
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    ref_index: int,
+    pos: int,
+    similarity_threshold: float,
+) -> Dict[str, object]:
+    ref = reference_frames[ref_index]
+    sample = source_frames[pos]
+    base_visual, base_flipped, _, _ = sample_signature_similarity(
+        hasher,
+        ref.signature,
+        sample,
+    )
+    refined_visual = 0.0
+    final_flipped = base_flipped
+    if ref.frame_path and sample.frame_path:
+        refined_visual, refined_flipped, _, _ = sample_refined_similarity(
+            hasher,
+            ref,
+            sample,
+            preferred_flip=base_flipped,
+        )
+        if refined_visual > 0.0:
+            final_flipped = refined_flipped
+    structural_visual = sample_structural_similarity(
+        ref,
+        sample,
+        flip_right=final_flipped,
+    )
+    forward_score = evaluate_forward_path_similarity(
+        reference_frames,
+        source_frames,
+        hasher,
+        ref_index,
+        pos,
+        horizon=6,
+        start_flip=final_flipped,
+    )
+    backward_score = evaluate_backward_path_similarity(
+        reference_frames,
+        source_frames,
+        hasher,
+        ref_index,
+        pos,
+        horizon=4,
+        end_flip=final_flipped,
+    )
+    if ref.frame_path and sample.frame_path:
+        context_score = evaluate_local_segment_context_similarity(
+            reference_frames,
+            source_frames,
+            hasher,
+            ref_index,
+            pos,
+            radius=5,
+            preferred_flip=final_flipped,
+        )
+    else:
+        context_score = base_visual * 0.46 + forward_score * 0.32 + backward_score * 0.22
+
+    if refined_visual > 0.0:
+        combined_visual = refined_visual * 0.52 + base_visual * 0.30 + structural_visual * 0.18
+    else:
+        combined_visual = base_visual * 0.76 + structural_visual * 0.24
+
+    emission_score = (
+        combined_visual * 1.34
+        + context_score * 0.34
+        + forward_score * 0.12
+        + backward_score * 0.08
+    )
+    if ref_index == 0:
+        emission_score -= min(0.05, pos * 0.000008)
+    if structural_visual < MATCH_STRUCTURAL_MIN:
+        emission_score -= min(0.10, (MATCH_STRUCTURAL_MIN - structural_visual) * 0.45)
+    if context_score < MATCH_SEGMENT_CONTEXT_MIN:
+        emission_score -= min(0.12, (MATCH_SEGMENT_CONTEXT_MIN - context_score) * 0.55)
+    if combined_visual < max(0.40, similarity_threshold - 0.08):
+        emission_score -= 0.06
+
+    return {
+        "pos": pos,
+        "sample": sample,
+        "score": emission_score,
+        "visual": combined_visual,
+        "base_visual": base_visual,
+        "refined_visual": refined_visual,
+        "structural": structural_visual,
+        "context_score": context_score,
+        "forward_score": forward_score,
+        "backward_score": backward_score,
+        "flipped": final_flipped,
+    }
+
+
+def find_local_bridge_candidate_from_source_window(
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    ref_index: int,
+    previous_candidate: Optional[Dict[str, object]],
+    current_candidate: Dict[str, object],
+    next_candidate: Optional[Dict[str, object]],
+    similarity_threshold: float,
+) -> Optional[Dict[str, object]]:
+    if previous_candidate is None or next_candidate is None:
+        return None
+    if not candidates_share_same_video_track(previous_candidate, next_candidate):
+        return None
+
+    previous_sample = cast(FrameSample, previous_candidate["sample"])
+    next_sample = cast(FrameSample, next_candidate["sample"])
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    current_flip = bool(current_candidate.get("flipped", False))
+    expected_flip = bool(previous_candidate.get("flipped", False))
+    neighbor_gap = next_sample.local_index - previous_sample.local_index
+    if neighbor_gap < 0 or neighbor_gap > MATCH_LOCAL_CONTINUITY_BRIDGE_MAX_GAP:
+        return None
+    tight_same_track_window = neighbor_gap <= 1
+
+    if tight_same_track_window:
+        start_pos = max(0, previous_sample.global_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS)
+        end_pos = min(len(source_frames) - 1, next_sample.global_index + MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS)
+    else:
+        start_pos = max(0, previous_sample.global_index + 1)
+        end_pos = min(len(source_frames) - 1, next_sample.global_index - 1)
+    if start_pos > end_pos:
+        return None
+
+    current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
+    best_candidate: Optional[Dict[str, object]] = None
+    best_quality = -999999.0
+    for pos in range(start_pos, end_pos + 1):
+        sample = source_frames[pos]
+        if sample.video_path != previous_sample.video_path:
+            continue
+        if tight_same_track_window:
+            if sample.local_index < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS:
+                continue
+            if sample.local_index > next_sample.local_index + MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS:
+                continue
+        else:
+            if sample.local_index <= previous_sample.local_index or sample.local_index >= next_sample.local_index:
+                continue
+
+        candidate = evaluate_global_match_candidate_at_position(
+            reference_frames,
+            source_frames,
+            hasher,
+            ref_index,
+            pos,
+            similarity_threshold,
+        )
+        candidate_sample = cast(FrameSample, candidate["sample"])
+        candidate_flip = bool(candidate.get("flipped", False))
+        if candidate_flip != expected_flip:
+            continue
+        if (
+            candidate_sample.video_path == current_sample.video_path
+            and candidate_sample.local_index == current_sample.local_index
+            and candidate_flip == current_flip
+        ):
+            continue
+        if candidate_breaks_local_video_continuity(previous_candidate, candidate, next_candidate):
+            continue
+        if float(candidate.get("visual", 0.0) or 0.0) < max(similarity_threshold - 0.24, current_visual - 0.20):
+            continue
+
+        center_offset = abs(
+            (candidate_sample.local_index - previous_sample.local_index) - neighbor_gap / 2.0
+        )
+        bridge_quality = (
+            float(candidate.get("score", 0.0) or 0.0) * 0.74
+            + float(candidate.get("visual", 0.0) or 0.0) * 0.46
+            + float(candidate.get("context_score", 0.0) or 0.0) * 0.12
+            + 0.22
+            - min(0.16, center_offset * 0.03)
+        )
+        if bridge_quality > best_quality:
+            best_candidate = candidate
+            best_quality = bridge_quality
+
+    return best_candidate
+
+
+def find_forward_continuation_candidate_from_previous(
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    ref_index: int,
+    previous_candidate: Optional[Dict[str, object]],
+    current_candidate: Dict[str, object],
+    next_candidate: Optional[Dict[str, object]],
+    similarity_threshold: float,
+    frame_interval: float,
+) -> Optional[Dict[str, object]]:
+    if previous_candidate is None or ref_index <= 0:
+        return None
+
+    previous_sample = cast(FrameSample, previous_candidate["sample"])
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    expected_flip = bool(previous_candidate.get("flipped", False))
+    current_flip = bool(current_candidate.get("flipped", False))
+    current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
+    min_forward_visual = max(0.50, similarity_threshold - 0.18, current_visual - 0.42)
+    ref_gap = max(
+        frame_interval,
+        float(reference_frames[ref_index].timestamp) - float(reference_frames[ref_index - 1].timestamp),
+    )
+    expected_local_gap = max(1, int(round(ref_gap / max(0.1, frame_interval))))
+    start_pos = max(0, previous_sample.global_index + 1)
+    end_pos = min(len(source_frames) - 1, previous_sample.global_index + max(8, expected_local_gap + 6))
+
+    next_sample: Optional[FrameSample] = None
+    allow_passing_next = False
+    if next_candidate is not None and candidates_share_same_video_track(previous_candidate, next_candidate):
+        candidate_next_sample = cast(FrameSample, next_candidate["sample"])
+        if candidate_next_sample.local_index > previous_sample.local_index:
+            next_sample = candidate_next_sample
+            allow_passing_next = (next_sample.local_index - previous_sample.local_index) <= 1
+
+    if start_pos > end_pos:
+        return None
+
+    best_candidate: Optional[Dict[str, object]] = None
+    best_quality = -999999.0
+    for pos in range(start_pos, end_pos + 1):
+        sample = source_frames[pos]
+        if sample.video_path != previous_sample.video_path:
+            break
+        if sample.local_index <= previous_sample.local_index:
+            continue
+        if next_sample is not None and not allow_passing_next and sample.local_index >= next_sample.local_index:
+            continue
+
+        candidate = evaluate_global_match_candidate_at_position(
+            reference_frames,
+            source_frames,
+            hasher,
+            ref_index,
+            pos,
+            similarity_threshold,
+        )
+        candidate_sample = cast(FrameSample, candidate["sample"])
+        candidate_flip = bool(candidate.get("flipped", False))
+        if candidate_flip != expected_flip:
+            continue
+        if (
+            candidate_sample.video_path == current_sample.video_path
+            and candidate_sample.local_index == current_sample.local_index
+            and candidate_flip == current_flip
+        ):
+            continue
+        if float(candidate.get("visual", 0.0) or 0.0) < min_forward_visual:
+            continue
+
+        local_gap = candidate_sample.local_index - previous_sample.local_index
+        quality = (
+            float(candidate.get("score", 0.0) or 0.0) * 0.78
+            + float(candidate.get("visual", 0.0) or 0.0) * 0.50
+            + float(candidate.get("context_score", 0.0) or 0.0) * 0.10
+            - min(0.20, abs(local_gap - expected_local_gap) * 0.08)
+        )
+        if next_sample is not None and not allow_passing_next:
+            remaining_gap = next_sample.local_index - candidate_sample.local_index
+            quality -= min(0.12, abs(remaining_gap - expected_local_gap) * 0.03)
+        if quality > best_quality:
+            best_candidate = candidate
+            best_quality = quality
+
+    return best_candidate
+
+
+def append_unique_match_candidate(
+    candidate_pool: List[Dict[str, object]],
+    candidate: Optional[Dict[str, object]],
+) -> None:
+    if candidate is None:
+        return
+    sample = cast(FrameSample, candidate["sample"])
+    candidate_key = (
+        sample.video_path,
+        sample.local_index,
+        bool(candidate.get("flipped", False)),
+    )
+    if any(
+        (
+            cast(FrameSample, existing_candidate["sample"]).video_path,
+            cast(FrameSample, existing_candidate["sample"]).local_index,
+            bool(existing_candidate.get("flipped", False)),
+        )
+        == candidate_key
+        for existing_candidate in candidate_pool
+    ):
+        return
+    candidate_pool.append(candidate)
 
 
 def score_match_candidate_transition(
@@ -15111,6 +17675,462 @@ def score_match_candidate_transition(
     transition_score += float(current_candidate.get("backward_score", 0.0) or 0.0) * 0.05
     transition_score += float(current_candidate.get("context_score", 0.0) or 0.0) * 0.04
     return transition_score
+
+
+def candidates_share_same_video_track(
+    left_candidate: Optional[Dict[str, object]],
+    right_candidate: Optional[Dict[str, object]],
+) -> bool:
+    if left_candidate is None or right_candidate is None:
+        return False
+    left_sample = cast(FrameSample, left_candidate["sample"])
+    right_sample = cast(FrameSample, right_candidate["sample"])
+    return (
+        left_sample.video_path == right_sample.video_path
+        and bool(left_candidate.get("flipped", False)) == bool(right_candidate.get("flipped", False))
+    )
+
+
+def candidate_fits_local_bridge_between_neighbors(
+    previous_candidate: Optional[Dict[str, object]],
+    current_candidate: Dict[str, object],
+    next_candidate: Optional[Dict[str, object]],
+    *,
+    max_local_gap: int = MATCH_LOCAL_CONTINUITY_BRIDGE_MAX_GAP,
+) -> bool:
+    if previous_candidate is None or next_candidate is None:
+        return False
+    if not candidates_share_same_video_track(previous_candidate, next_candidate):
+        return False
+
+    previous_sample = cast(FrameSample, previous_candidate["sample"])
+    next_sample = cast(FrameSample, next_candidate["sample"])
+    neighbor_gap = next_sample.local_index - previous_sample.local_index
+    if neighbor_gap <= 1 or neighbor_gap > max_local_gap:
+        return False
+
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    expected_flip = bool(previous_candidate.get("flipped", False))
+    if current_sample.video_path != previous_sample.video_path:
+        return False
+    if bool(current_candidate.get("flipped", False)) != expected_flip:
+        return False
+    return previous_sample.local_index < current_sample.local_index < next_sample.local_index
+
+
+def candidate_breaks_local_video_continuity(
+    previous_candidate: Optional[Dict[str, object]],
+    current_candidate: Dict[str, object],
+    next_candidate: Optional[Dict[str, object]],
+) -> bool:
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    current_flipped = bool(current_candidate.get("flipped", False))
+    tight_same_track_window = False
+    if (
+        previous_candidate is not None
+        and next_candidate is not None
+        and candidates_share_same_video_track(previous_candidate, next_candidate)
+    ):
+        tight_previous_sample = cast(FrameSample, previous_candidate["sample"])
+        tight_next_sample = cast(FrameSample, next_candidate["sample"])
+        tight_same_track_window = (
+            0 <= (tight_next_sample.local_index - tight_previous_sample.local_index) <= 1
+        )
+
+    if previous_candidate is not None:
+        previous_sample = cast(FrameSample, previous_candidate["sample"])
+        if (
+            current_sample.video_path == previous_sample.video_path
+            and current_flipped == bool(previous_candidate.get("flipped", False))
+            and current_sample.local_index <= previous_sample.local_index
+        ):
+            if (
+                not tight_same_track_window
+                or current_sample.local_index
+                < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+            ):
+                return True
+
+    if next_candidate is not None:
+        next_sample = cast(FrameSample, next_candidate["sample"])
+        if (
+            current_sample.video_path == next_sample.video_path
+            and current_flipped == bool(next_candidate.get("flipped", False))
+            and next_sample.local_index <= current_sample.local_index
+        ):
+            if (
+                not tight_same_track_window
+                or current_sample.local_index
+                > next_sample.local_index + MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+            ):
+                return True
+
+    if (
+        previous_candidate is not None
+        and next_candidate is not None
+        and candidates_share_same_video_track(previous_candidate, next_candidate)
+    ):
+        previous_sample = cast(FrameSample, previous_candidate["sample"])
+        next_sample = cast(FrameSample, next_candidate["sample"])
+        neighbor_gap = next_sample.local_index - previous_sample.local_index
+        if 0 <= neighbor_gap <= 1:
+            if (
+                current_sample.video_path != previous_sample.video_path
+                or current_flipped != bool(previous_candidate.get("flipped", False))
+                or current_sample.local_index
+                < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+                or current_sample.local_index
+                > next_sample.local_index + MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+            ):
+                return True
+        elif (
+            1 < neighbor_gap <= MATCH_LOCAL_CONTINUITY_BRIDGE_MAX_GAP
+            and not candidate_fits_local_bridge_between_neighbors(previous_candidate, current_candidate, next_candidate)
+        ):
+            return True
+
+    return False
+
+
+def score_local_same_track_timing_transition(
+    previous_candidate: Dict[str, object],
+    current_candidate: Dict[str, object],
+    ref_gap: float,
+    frame_interval: float,
+    attempt: int,
+    similarity_threshold: float,
+    *,
+    reference_transition_similarity: float = 1.0,
+) -> float:
+    base_score = score_match_candidate_transition(
+        previous_candidate,
+        current_candidate,
+        ref_gap,
+        frame_interval,
+        attempt,
+        reference_transition_similarity=reference_transition_similarity,
+    )
+    previous_sample = cast(FrameSample, previous_candidate["sample"])
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    if (
+        previous_sample.video_path != current_sample.video_path
+        or bool(previous_candidate.get("flipped", False)) != bool(current_candidate.get("flipped", False))
+    ):
+        return base_score
+
+    local_gap = current_sample.local_index - previous_sample.local_index
+    if local_gap >= 0:
+        return base_score
+
+    backtrack_gap = abs(local_gap)
+    previous_visual = float(previous_candidate.get("visual", 0.0) or 0.0)
+    current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
+    current_context = float(current_candidate.get("context_score", 0.0) or 0.0)
+    if (
+        backtrack_gap > MATCH_LOCAL_TIMING_MAX_BACKTRACK
+        or previous_visual < max(0.82, similarity_threshold + 0.06)
+        or current_visual < max(0.80, similarity_threshold + 0.04)
+        or current_context < max(0.62, MATCH_SEGMENT_CONTEXT_MIN)
+        or reference_transition_similarity < max(0.46, MATCH_REFERENCE_SCENE_CUT_SIMILARITY - 0.22)
+    ):
+        return base_score
+
+    actual_gap = current_sample.timestamp - previous_sample.timestamp
+    expected_gap = max(frame_interval, ref_gap)
+    relaxed_score = 0.04
+    relaxed_score += min(
+        0.12,
+        max(0.0, previous_visual - similarity_threshold) * 0.25
+        + max(0.0, current_visual - similarity_threshold) * 0.30,
+    )
+    relaxed_score += min(
+        0.08,
+        max(0.0, current_context - MATCH_SEGMENT_CONTEXT_MIN + 0.06) * 0.35,
+    )
+    relaxed_score -= min(0.14, max(0, backtrack_gap - 1) * 0.035)
+    relaxed_score -= min(0.08, abs(abs(actual_gap) - expected_gap) * 0.025)
+    return max(base_score, relaxed_score)
+
+
+def collect_same_track_timing_window_candidates(
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    candidate_layers: Sequence[Sequence[Dict[str, object]]],
+    selected_path: Sequence[Dict[str, object]],
+    ref_index: int,
+    source_window_start: int,
+    source_window_end: int,
+    similarity_threshold: float,
+    expected_video_path: str,
+    expected_flip: bool,
+) -> List[Dict[str, object]]:
+    current_candidate = selected_path[ref_index]
+    current_sample = cast(FrameSample, current_candidate["sample"])
+    current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
+    current_score = float(current_candidate.get("score", 0.0) or 0.0)
+    pool: List[Dict[str, object]] = []
+
+    for candidate in candidate_layers[ref_index]:
+        candidate_sample = cast(FrameSample, candidate["sample"])
+        if candidate_sample.video_path != expected_video_path:
+            continue
+        if bool(candidate.get("flipped", False)) != expected_flip:
+            continue
+        if candidate_sample.global_index < source_window_start or candidate_sample.global_index > source_window_end:
+            continue
+        append_unique_match_candidate(pool, candidate)
+
+    for pos in range(source_window_start, source_window_end + 1):
+        sample = source_frames[pos]
+        if sample.video_path != expected_video_path:
+            continue
+        candidate = evaluate_global_match_candidate_at_position(
+            reference_frames,
+            source_frames,
+            hasher,
+            ref_index,
+            pos,
+            similarity_threshold,
+        )
+        candidate_sample = cast(FrameSample, candidate["sample"])
+        if candidate_sample.video_path != expected_video_path:
+            continue
+        if bool(candidate.get("flipped", False)) != expected_flip:
+            continue
+        candidate_visual = float(candidate.get("visual", 0.0) or 0.0)
+        candidate_score = float(candidate.get("score", 0.0) or 0.0)
+        if (
+            candidate_visual < max(similarity_threshold - 0.22, current_visual - 0.24)
+            and candidate_score < current_score + 0.04
+        ):
+            continue
+        append_unique_match_candidate(pool, candidate)
+
+    append_unique_match_candidate(pool, current_candidate)
+    pool.sort(
+        key=lambda item: (
+            float(item.get("score", 0.0) or 0.0),
+            float(item.get("visual", 0.0) or 0.0),
+            float(item.get("context_score", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
+    if len(pool) <= MATCH_LOCAL_TIMING_MAX_CANDIDATES:
+        return pool
+
+    current_key = (
+        current_sample.video_path,
+        current_sample.local_index,
+        bool(current_candidate.get("flipped", False)),
+    )
+    trimmed = list(pool[:MATCH_LOCAL_TIMING_MAX_CANDIDATES])
+    if any(
+        (
+            cast(FrameSample, candidate["sample"]).video_path,
+            cast(FrameSample, candidate["sample"]).local_index,
+            bool(candidate.get("flipped", False)),
+        )
+        == current_key
+        for candidate in trimmed
+    ):
+        return trimmed
+
+    for candidate in pool[MATCH_LOCAL_TIMING_MAX_CANDIDATES :]:
+        candidate_sample = cast(FrameSample, candidate["sample"])
+        candidate_key = (
+            candidate_sample.video_path,
+            candidate_sample.local_index,
+            bool(candidate.get("flipped", False)),
+        )
+        if candidate_key == current_key:
+            trimmed[-1] = candidate
+            break
+    return trimmed
+
+
+def score_same_track_timing_window_sequence(
+    reference_frames: Sequence[ReferenceFrame],
+    candidate_sequence: Sequence[Dict[str, object]],
+    window_start: int,
+    frame_interval: float,
+    attempt: int,
+    similarity_threshold: float,
+    reference_transition_similarities: Optional[Sequence[float]] = None,
+    left_anchor: Optional[Dict[str, object]] = None,
+    right_anchor: Optional[Dict[str, object]] = None,
+) -> float:
+    if not candidate_sequence:
+        return -999999.0
+
+    total_score = 0.0
+    for offset, candidate in enumerate(candidate_sequence):
+        ref_index = window_start + offset
+        total_score += float(candidate.get("score", 0.0) or 0.0)
+        previous_candidate = (
+            left_anchor
+            if offset == 0
+            else candidate_sequence[offset - 1]
+        )
+        if previous_candidate is None:
+            continue
+        ref_gap = max(
+            frame_interval,
+            float(reference_frames[ref_index].timestamp) - float(reference_frames[ref_index - 1].timestamp),
+        )
+        total_score += score_local_same_track_timing_transition(
+            previous_candidate,
+            candidate,
+            ref_gap,
+            frame_interval,
+            attempt,
+            similarity_threshold,
+            reference_transition_similarity=(
+                float(reference_transition_similarities[ref_index])
+                if reference_transition_similarities is not None and ref_index < len(reference_transition_similarities)
+                else 1.0
+            ),
+        )
+
+    if right_anchor is not None:
+        last_ref_index = window_start + len(candidate_sequence) - 1
+        ref_gap = max(
+            frame_interval,
+            float(reference_frames[last_ref_index + 1].timestamp) - float(reference_frames[last_ref_index].timestamp),
+        )
+        total_score += score_local_same_track_timing_transition(
+            candidate_sequence[-1],
+            right_anchor,
+            ref_gap,
+            frame_interval,
+            attempt,
+            similarity_threshold,
+            reference_transition_similarity=(
+                float(reference_transition_similarities[last_ref_index + 1])
+                if reference_transition_similarities is not None and last_ref_index + 1 < len(reference_transition_similarities)
+                else 1.0
+            ),
+        )
+
+    return total_score
+
+
+def select_best_same_track_timing_window_path(
+    reference_frames: Sequence[ReferenceFrame],
+    candidate_pools: Sequence[Sequence[Dict[str, object]]],
+    window_start: int,
+    frame_interval: float,
+    attempt: int,
+    similarity_threshold: float,
+    reference_transition_similarities: Optional[Sequence[float]] = None,
+    left_anchor: Optional[Dict[str, object]] = None,
+    right_anchor: Optional[Dict[str, object]] = None,
+) -> List[Dict[str, object]]:
+    if not candidate_pools:
+        return []
+
+    score_layers: List[List[float]] = []
+    backpointer_layers: List[List[int]] = []
+    for offset, candidates in enumerate(candidate_pools):
+        if not candidates:
+            return []
+        ref_index = window_start + offset
+        current_scores = [-999999.0] * len(candidates)
+        current_backpointers = [-1] * len(candidates)
+        for candidate_index, candidate in enumerate(candidates):
+            emission_score = float(candidate.get("score", 0.0) or 0.0)
+            if offset == 0:
+                total_score = emission_score
+                if left_anchor is not None and ref_index > 0:
+                    ref_gap = max(
+                        frame_interval,
+                        float(reference_frames[ref_index].timestamp) - float(reference_frames[ref_index - 1].timestamp),
+                    )
+                    total_score += score_local_same_track_timing_transition(
+                        left_anchor,
+                        candidate,
+                        ref_gap,
+                        frame_interval,
+                        attempt,
+                        similarity_threshold,
+                        reference_transition_similarity=(
+                            float(reference_transition_similarities[ref_index])
+                            if reference_transition_similarities is not None and ref_index < len(reference_transition_similarities)
+                            else 1.0
+                        ),
+                    )
+                current_scores[candidate_index] = total_score
+                continue
+
+            best_total = -999999.0
+            best_previous_index = -1
+            ref_gap = max(
+                frame_interval,
+                float(reference_frames[ref_index].timestamp) - float(reference_frames[ref_index - 1].timestamp),
+            )
+            reference_transition_similarity = (
+                float(reference_transition_similarities[ref_index])
+                if reference_transition_similarities is not None and ref_index < len(reference_transition_similarities)
+                else 1.0
+            )
+            for previous_index, previous_candidate in enumerate(candidate_pools[offset - 1]):
+                previous_total = score_layers[offset - 1][previous_index]
+                if previous_total <= -999000.0:
+                    continue
+                transition_score = score_local_same_track_timing_transition(
+                    previous_candidate,
+                    candidate,
+                    ref_gap,
+                    frame_interval,
+                    attempt,
+                    similarity_threshold,
+                    reference_transition_similarity=reference_transition_similarity,
+                )
+                total_score = previous_total + emission_score + transition_score
+                if total_score > best_total:
+                    best_total = total_score
+                    best_previous_index = previous_index
+            current_scores[candidate_index] = best_total
+            current_backpointers[candidate_index] = best_previous_index
+
+        score_layers.append(current_scores)
+        backpointer_layers.append(current_backpointers)
+
+    best_index = 0
+    best_total = -999999.0
+    last_offset = len(candidate_pools) - 1
+    last_ref_index = window_start + last_offset
+    for candidate_index, candidate in enumerate(candidate_pools[-1]):
+        total_score = score_layers[-1][candidate_index]
+        if right_anchor is not None and last_ref_index + 1 < len(reference_frames):
+            ref_gap = max(
+                frame_interval,
+                float(reference_frames[last_ref_index + 1].timestamp) - float(reference_frames[last_ref_index].timestamp),
+            )
+            total_score += score_local_same_track_timing_transition(
+                candidate,
+                right_anchor,
+                ref_gap,
+                frame_interval,
+                attempt,
+                similarity_threshold,
+                reference_transition_similarity=(
+                    float(reference_transition_similarities[last_ref_index + 1])
+                    if reference_transition_similarities is not None and last_ref_index + 1 < len(reference_transition_similarities)
+                    else 1.0
+                ),
+            )
+        if total_score > best_total:
+            best_total = total_score
+            best_index = candidate_index
+
+    selected_sequence: List[Dict[str, object]] = []
+    for offset in range(len(candidate_pools) - 1, -1, -1):
+        selected_sequence.append(candidate_pools[offset][best_index])
+        previous_index = backpointer_layers[offset][best_index]
+        best_index = previous_index if previous_index >= 0 else 0
+    selected_sequence.reverse()
+    return selected_sequence
 
 
 def select_best_match_path(
@@ -15213,6 +18233,8 @@ def repair_boundary_lag_around_reference_cuts(
     reference_frames: Sequence[ReferenceFrame],
     candidate_layers: Sequence[Sequence[Dict[str, object]]],
     selected_path: Sequence[Dict[str, object]],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
     frame_interval: float,
     similarity_threshold: float,
     attempt: int,
@@ -15258,9 +18280,16 @@ def repair_boundary_lag_around_reference_cuts(
                 and bool(previous_candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
                 and 0 <= current_sample.local_index - previous_sample.local_index <= max(2, int(round(previous_gap / max(0.1, frame_interval))))
             )
+            current_prev_track_violation = (
+                previous_sample.video_path == current_sample.video_path
+                and bool(previous_candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
+                and current_sample.local_index <= previous_sample.local_index
+            )
             current_matches_future = candidate_matches_future_segment(current_candidate, next_candidate)
-            if current_matches_future and current_score >= max(0.82, similarity_threshold + 0.08):
-                continue
+            current_bridge_outlier = (
+                candidates_share_same_video_track(previous_candidate, next_candidate)
+                and not candidate_fits_local_bridge_between_neighbors(previous_candidate, current_candidate, next_candidate)
+            )
 
             current_prev_transition = score_match_candidate_transition(
                 previous_candidate,
@@ -15282,27 +18311,98 @@ def repair_boundary_lag_around_reference_cuts(
                     else 1.0
                 ),
             )
+            current_continuity_violation = candidate_breaks_local_video_continuity(
+                previous_candidate,
+                current_candidate,
+                next_candidate,
+            )
+            if (
+                current_matches_future
+                and current_score >= max(0.82, similarity_threshold + 0.08)
+                and not current_continuity_violation
+                and not current_bridge_outlier
+            ):
+                continue
             current_window_score = (
                 current_score * 0.80
                 + current_visual * 0.32
-                + max(0.0, current_prev_transition) * 0.06
+                + current_prev_transition * 0.08
+                + current_next_transition * 0.07
                 + (0.14 if current_matches_future else 0.0)
             )
+            if current_continuity_violation:
+                current_window_score -= 0.34
+            elif current_bridge_outlier:
+                current_window_score -= 0.26
 
             best_candidate = current_candidate
             best_window_score = current_window_score
-            for candidate in candidate_layers[index]:
+            candidate_pool = list(candidate_layers[index])
+            if current_bridge_outlier or current_continuity_violation:
+                append_unique_match_candidate(
+                    candidate_pool,
+                    find_local_bridge_candidate_from_source_window(
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        index,
+                        previous_candidate,
+                        current_candidate,
+                        next_candidate,
+                        similarity_threshold,
+                    ),
+                )
+            if current_prev_track_violation or current_continuity_violation:
+                append_unique_match_candidate(
+                    candidate_pool,
+                    find_forward_continuation_candidate_from_previous(
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        index,
+                        previous_candidate,
+                        current_candidate,
+                        next_candidate,
+                        similarity_threshold,
+                        frame_interval,
+                    ),
+                )
+            for candidate in candidate_pool:
                 candidate_sample = cast(FrameSample, candidate["sample"])
                 candidate_visual = float(candidate.get("visual", 0.0) or 0.0)
+                candidate_bridge_fit = candidate_fits_local_bridge_between_neighbors(
+                    previous_candidate,
+                    candidate,
+                    next_candidate,
+                )
+                candidate_forward_fix = (
+                    current_prev_track_violation
+                    and candidate_sample.video_path == previous_sample.video_path
+                    and bool(candidate.get("flipped", False)) == bool(previous_candidate.get("flipped", False))
+                    and candidate_sample.local_index > previous_sample.local_index
+                    and (
+                        next_sample.video_path != previous_sample.video_path
+                        or next_sample.local_index <= previous_sample.local_index
+                        or candidate_sample.local_index < next_sample.local_index
+                    )
+                )
                 if (
                     candidate_sample.video_path == current_sample.video_path
                     and candidate_sample.local_index == current_sample.local_index
                     and bool(candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
                 ):
                     continue
-                if candidate_visual < max(similarity_threshold - 0.08, current_visual - 0.10):
+                if candidate_visual < max(
+                    similarity_threshold - 0.10 if current_bridge_outlier else similarity_threshold - 0.08,
+                    current_visual - 0.14 if current_bridge_outlier else current_visual - 0.10,
+                ):
                     continue
                 if previous_continuity and candidate_matches_future_segment(candidate, previous_candidate, max_local_gap=1):
+                    continue
+                if (
+                    candidate_breaks_local_video_continuity(previous_candidate, candidate, next_candidate)
+                    and not candidate_forward_fix
+                ):
                     continue
 
                 candidate_score = float(candidate.get("score", 0.0) or 0.0)
@@ -15330,11 +18430,15 @@ def repair_boundary_lag_around_reference_cuts(
                 candidate_window_score = (
                     candidate_score * 0.82
                     + candidate_visual * 0.36
-                    + max(0.0, candidate_prev_transition) * 0.05
-                    + max(0.0, candidate_next_transition) * 0.04
+                    + candidate_prev_transition * 0.08
+                    + candidate_next_transition * 0.07
                     + 0.08
                     + future_alignment_bonus
                 )
+                if candidate_bridge_fit:
+                    candidate_window_score += 0.18
+                if candidate_forward_fix:
+                    candidate_window_score += 0.26
                 force_replace_ready = (
                     cut_strength >= 0.55
                     and candidate_visual >= max(similarity_threshold + 0.02, current_visual + 0.04)
@@ -15346,13 +18450,34 @@ def repair_boundary_lag_around_reference_cuts(
                     )
                 )
                 if (
+                    current_bridge_outlier
+                    and candidate_bridge_fit
+                    and candidate_visual >= max(similarity_threshold - 0.10, current_visual - 0.14)
+                ):
+                    force_replace_ready = True
+                if (
+                    candidate_forward_fix
+                    and candidate_visual >= max(0.50, similarity_threshold - 0.18, current_visual - 0.42)
+                ):
+                    force_replace_ready = True
+                if (
                     force_replace_ready
                     or (
-                        candidate_window_score > best_window_score + 0.03
+                        candidate_window_score
+                        > best_window_score
+                        + (
+                            0.01
+                            if current_continuity_violation or current_bridge_outlier
+                            else 0.03
+                        )
                         and (
                             candidate_score >= current_score + 0.02
                             or candidate_visual >= current_visual + 0.03
+                            or current_continuity_violation
+                            or current_bridge_outlier
                             or candidate_matches_future_segment(candidate, next_candidate)
+                            or candidate_bridge_fit
+                            or candidate_forward_fix
                         )
                     )
                 ):
@@ -15383,6 +18508,8 @@ def smooth_isolated_match_outliers(
     reference_frames: Sequence[ReferenceFrame],
     candidate_layers: Sequence[Sequence[Dict[str, object]]],
     selected_path: Sequence[Dict[str, object]],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
     frame_interval: float,
     similarity_threshold: float,
     attempt: int,
@@ -15393,83 +18520,64 @@ def smooth_isolated_match_outliers(
 
     smoothed_path = list(selected_path)
     replacement_count = 0
-    for index in range(1, len(smoothed_path) - 1):
-        previous_candidate = smoothed_path[index - 1]
-        current_candidate = smoothed_path[index]
-        next_candidate = smoothed_path[index + 1]
-        previous_sample = cast(FrameSample, previous_candidate["sample"])
-        current_sample = cast(FrameSample, current_candidate["sample"])
-        next_sample = cast(FrameSample, next_candidate["sample"])
-        previous_visual = float(previous_candidate.get("visual", 0.0) or 0.0)
-        current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
-        next_visual = float(next_candidate.get("visual", 0.0) or 0.0)
+    for _pass in range(2):
+        pass_replacements = 0
+        for index in range(1, len(smoothed_path) - 1):
+            previous_candidate = smoothed_path[index - 1]
+            current_candidate = smoothed_path[index]
+            next_candidate = smoothed_path[index + 1]
+            previous_sample = cast(FrameSample, previous_candidate["sample"])
+            current_sample = cast(FrameSample, current_candidate["sample"])
+            next_sample = cast(FrameSample, next_candidate["sample"])
+            previous_visual = float(previous_candidate.get("visual", 0.0) or 0.0)
+            current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
+            next_visual = float(next_candidate.get("visual", 0.0) or 0.0)
 
-        if current_visual >= max(0.84, similarity_threshold + 0.08):
-            continue
-        if previous_visual < similarity_threshold or next_visual < similarity_threshold:
-            continue
-
-        previous_gap = max(
-            frame_interval,
-            float(reference_frames[index].timestamp) - float(reference_frames[index - 1].timestamp),
-        )
-        next_gap = max(
-            frame_interval,
-            float(reference_frames[index + 1].timestamp) - float(reference_frames[index].timestamp),
-        )
-        current_bridge_score = (
-            current_visual
-            + score_match_candidate_transition(
+            neighbors_same_track = candidates_share_same_video_track(previous_candidate, next_candidate)
+            neighbor_local_gap = (
+                next_sample.local_index - previous_sample.local_index
+                if neighbors_same_track
+                else 0
+            )
+            bridge_expected = neighbors_same_track and 1 < neighbor_local_gap <= MATCH_LOCAL_CONTINUITY_BRIDGE_MAX_GAP
+            current_bridge_outlier = bridge_expected and not candidate_fits_local_bridge_between_neighbors(
                 previous_candidate,
                 current_candidate,
-                previous_gap,
-                frame_interval,
-                attempt,
-                reference_transition_similarity=(
-                    float(reference_transition_similarities[index])
-                    if reference_transition_similarities is not None and index < len(reference_transition_similarities)
-                    else 1.0
-                ),
-            )
-            + score_match_candidate_transition(
-                current_candidate,
                 next_candidate,
-                next_gap,
-                frame_interval,
-                attempt,
-                reference_transition_similarity=(
-                    float(reference_transition_similarities[index + 1])
-                    if reference_transition_similarities is not None and index + 1 < len(reference_transition_similarities)
-                    else 1.0
-                ),
             )
-        )
-        best_candidate = current_candidate
-        best_bridge_score = current_bridge_score
+            tight_same_track_window = (
+                neighbors_same_track
+                and 0 <= neighbor_local_gap <= 1
+            )
+            current_prev_track_violation = (
+                previous_sample.video_path == current_sample.video_path
+                and bool(previous_candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
+                and current_sample.local_index <= previous_sample.local_index
+                and (
+                    not tight_same_track_window
+                    or current_sample.local_index
+                    < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+                )
+            )
 
-        neighbors_same_video = previous_sample.video_path == next_sample.video_path
-        neighbor_local_gap = (
-            next_sample.local_index - previous_sample.local_index
-            if neighbors_same_video
-            else 0
-        )
-        for candidate in candidate_layers[index]:
-            candidate_sample = cast(FrameSample, candidate["sample"])
-            candidate_visual = float(candidate.get("visual", 0.0) or 0.0)
-            if (
-                candidate_sample.video_path == current_sample.video_path
-                and candidate_sample.local_index == current_sample.local_index
-                and bool(candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
-            ):
+            if current_visual >= max(0.84, similarity_threshold + 0.08) and not current_bridge_outlier:
                 continue
-            if candidate_visual < max(current_visual + 0.02, similarity_threshold - 0.18):
+            if previous_visual < similarity_threshold or next_visual < similarity_threshold:
                 continue
 
-            bridge_score = (
-                candidate_visual
+            previous_gap = max(
+                frame_interval,
+                float(reference_frames[index].timestamp) - float(reference_frames[index - 1].timestamp),
+            )
+            next_gap = max(
+                frame_interval,
+                float(reference_frames[index + 1].timestamp) - float(reference_frames[index].timestamp),
+            )
+            current_bridge_score = (
+                current_visual
                 + score_match_candidate_transition(
                     previous_candidate,
-                    candidate,
+                    current_candidate,
                     previous_gap,
                     frame_interval,
                     attempt,
@@ -15480,7 +18588,7 @@ def smooth_isolated_match_outliers(
                     ),
                 )
                 + score_match_candidate_transition(
-                    candidate,
+                    current_candidate,
                     next_candidate,
                     next_gap,
                     frame_interval,
@@ -15492,26 +18600,731 @@ def smooth_isolated_match_outliers(
                     ),
                 )
             )
-            if neighbors_same_video:
-                if candidate_sample.video_path == previous_sample.video_path:
-                    prev_delta = candidate_sample.local_index - previous_sample.local_index
-                    next_delta = next_sample.local_index - candidate_sample.local_index
-                    if 0 < prev_delta and 0 < next_delta and prev_delta + next_delta <= max(6, neighbor_local_gap + 2):
-                        bridge_score += 0.12
-                    elif prev_delta <= 0 or next_delta <= 0:
-                        bridge_score -= 0.10
-                else:
-                    bridge_score -= 0.12
+            current_continuity_violation = candidate_breaks_local_video_continuity(
+                previous_candidate,
+                current_candidate,
+                next_candidate,
+            )
+            if current_continuity_violation:
+                current_bridge_score -= 0.30
+            elif current_bridge_outlier:
+                current_bridge_score -= 0.24
+            best_candidate = current_candidate
+            best_bridge_score = current_bridge_score
 
-            if bridge_score > best_bridge_score + 0.10:
-                best_candidate = candidate
-                best_bridge_score = bridge_score
+            candidate_pool = list(candidate_layers[index])
+            if current_bridge_outlier or current_continuity_violation:
+                append_unique_match_candidate(
+                    candidate_pool,
+                    find_local_bridge_candidate_from_source_window(
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        index,
+                        previous_candidate,
+                        current_candidate,
+                        next_candidate,
+                        similarity_threshold,
+                    ),
+                )
+            if current_prev_track_violation or current_continuity_violation:
+                append_unique_match_candidate(
+                    candidate_pool,
+                    find_forward_continuation_candidate_from_previous(
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        index,
+                        previous_candidate,
+                        current_candidate,
+                        next_candidate,
+                        similarity_threshold,
+                        frame_interval,
+                    ),
+                )
 
-        if best_candidate is not current_candidate:
-            smoothed_path[index] = best_candidate
-            replacement_count += 1
+            for candidate in candidate_pool:
+                candidate_sample = cast(FrameSample, candidate["sample"])
+                candidate_visual = float(candidate.get("visual", 0.0) or 0.0)
+                candidate_bridge_fit = candidate_fits_local_bridge_between_neighbors(
+                    previous_candidate,
+                    candidate,
+                    next_candidate,
+                )
+                candidate_forward_fix = (
+                    current_prev_track_violation
+                    and candidate_sample.video_path == previous_sample.video_path
+                    and bool(candidate.get("flipped", False)) == bool(previous_candidate.get("flipped", False))
+                    and candidate_sample.local_index > previous_sample.local_index
+                    and (
+                        next_sample.video_path != previous_sample.video_path
+                        or next_sample.local_index <= previous_sample.local_index
+                        or candidate_sample.local_index < next_sample.local_index
+                    )
+                )
+                if (
+                    candidate_sample.video_path == current_sample.video_path
+                    and candidate_sample.local_index == current_sample.local_index
+                    and bool(candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
+                ):
+                    continue
+                if candidate_breaks_local_video_continuity(previous_candidate, candidate, next_candidate):
+                    if candidate_forward_fix:
+                        pass
+                    else:
+                        continue
+                if candidate_visual < max(
+                    current_visual - 0.18 if current_bridge_outlier else current_visual + 0.02,
+                    similarity_threshold - 0.22 if current_bridge_outlier else similarity_threshold - 0.18,
+                ):
+                    continue
+
+                bridge_score = (
+                    candidate_visual
+                    + score_match_candidate_transition(
+                        previous_candidate,
+                        candidate,
+                        previous_gap,
+                        frame_interval,
+                        attempt,
+                        reference_transition_similarity=(
+                            float(reference_transition_similarities[index])
+                            if reference_transition_similarities is not None and index < len(reference_transition_similarities)
+                            else 1.0
+                        ),
+                    )
+                    + score_match_candidate_transition(
+                        candidate,
+                        next_candidate,
+                        next_gap,
+                        frame_interval,
+                        attempt,
+                        reference_transition_similarity=(
+                            float(reference_transition_similarities[index + 1])
+                            if reference_transition_similarities is not None and index + 1 < len(reference_transition_similarities)
+                            else 1.0
+                        ),
+                    )
+                )
+                if bridge_expected:
+                    if candidate_bridge_fit:
+                        center_offset = abs(
+                            (candidate_sample.local_index - previous_sample.local_index)
+                            - neighbor_local_gap / 2.0
+                        )
+                        bridge_score += 0.18
+                        bridge_score += max(0.0, 0.08 - center_offset * 0.01)
+                    elif (
+                        candidate_sample.video_path == previous_sample.video_path
+                        and bool(candidate.get("flipped", False)) == bool(previous_candidate.get("flipped", False))
+                    ):
+                        bridge_score -= 0.14
+                    else:
+                        bridge_score -= 0.20
+                if candidate_forward_fix:
+                    bridge_score += 0.28
+
+                force_bridge_replace = (
+                    current_bridge_outlier
+                    and candidate_bridge_fit
+                    and candidate_visual >= max(similarity_threshold - 0.12, current_visual - 0.18)
+                )
+                if (
+                    candidate_forward_fix
+                    and candidate_visual >= max(0.50, similarity_threshold - 0.18, current_visual - 0.42)
+                ):
+                    force_bridge_replace = True
+                required_gain = 0.00 if current_continuity_violation or current_bridge_outlier else 0.10
+                if force_bridge_replace or bridge_score > best_bridge_score + required_gain:
+                    best_candidate = candidate
+                    best_bridge_score = bridge_score
+
+            if best_candidate is not current_candidate:
+                smoothed_path[index] = best_candidate
+                pass_replacements += 1
+
+        replacement_count += pass_replacements
+        if pass_replacements <= 0:
+            break
 
     return smoothed_path, replacement_count
+
+
+def repair_same_video_continuity_glitches(
+    reference_frames: Sequence[ReferenceFrame],
+    selected_path: Sequence[Dict[str, object]],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    frame_interval: float,
+    similarity_threshold: float,
+    reference_transition_similarities: Optional[Sequence[float]] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Tuple[List[Dict[str, object]], int]:
+    if len(selected_path) < 2:
+        return list(selected_path), 0
+
+    repaired_path = list(selected_path)
+    replacement_count = 0
+    for _pass in range(3):
+        pass_replacements = 0
+        for index in range(1, len(repaired_path)):
+            previous_candidate = repaired_path[index - 1]
+            current_candidate = repaired_path[index]
+            next_candidate = repaired_path[index + 1] if index + 1 < len(repaired_path) else None
+            previous_transition_similarity = (
+                float(reference_transition_similarities[index])
+                if reference_transition_similarities is not None and index < len(reference_transition_similarities)
+                else 1.0
+            )
+            next_transition_similarity = (
+                float(reference_transition_similarities[index + 1])
+                if reference_transition_similarities is not None and index + 1 < len(reference_transition_similarities)
+                else 1.0
+            )
+            previous_cut_strength = reference_scene_cut_strength(previous_transition_similarity)
+            next_cut_strength = reference_scene_cut_strength(next_transition_similarity)
+            adjacent_reference_cut = max(previous_cut_strength, next_cut_strength) >= 0.30
+
+            previous_sample = cast(FrameSample, previous_candidate["sample"])
+            current_sample = cast(FrameSample, current_candidate["sample"])
+            next_sample = cast(FrameSample, next_candidate["sample"]) if next_candidate is not None else None
+            tight_same_track_window = (
+                next_sample is not None
+                and candidates_share_same_video_track(previous_candidate, next_candidate)
+                and 0 <= (next_sample.local_index - previous_sample.local_index) <= 1
+            )
+
+            current_prev_track_violation = (
+                previous_sample.video_path == current_sample.video_path
+                and bool(previous_candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
+                and current_sample.local_index <= previous_sample.local_index
+                and (
+                    not tight_same_track_window
+                    or current_sample.local_index
+                    < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+                )
+            )
+            current_same_track_violation = (
+                next_candidate is not None
+                and candidates_share_same_video_track(previous_candidate, next_candidate)
+                and candidate_breaks_local_video_continuity(
+                    previous_candidate,
+                    current_candidate,
+                    next_candidate,
+                )
+            )
+            if adjacent_reference_cut and not current_prev_track_violation:
+                continue
+            if not current_prev_track_violation and not current_same_track_violation:
+                continue
+
+            replacement_candidate: Optional[Dict[str, object]] = None
+            if current_same_track_violation and next_candidate is not None:
+                replacement_candidate = find_local_bridge_candidate_from_source_window(
+                    reference_frames,
+                    source_frames,
+                    hasher,
+                    index,
+                    previous_candidate,
+                    current_candidate,
+                    next_candidate,
+                    similarity_threshold,
+                )
+            if replacement_candidate is None and current_prev_track_violation:
+                replacement_candidate = find_forward_continuation_candidate_from_previous(
+                    reference_frames,
+                    source_frames,
+                    hasher,
+                    index,
+                    previous_candidate,
+                    current_candidate,
+                    next_candidate,
+                    similarity_threshold,
+                    frame_interval,
+                )
+            if replacement_candidate is None:
+                continue
+
+            replacement_sample = cast(FrameSample, replacement_candidate["sample"])
+            if (
+                replacement_sample.video_path == current_sample.video_path
+                and replacement_sample.local_index == current_sample.local_index
+                and bool(replacement_candidate.get("flipped", False)) == bool(current_candidate.get("flipped", False))
+            ):
+                continue
+            if (
+                previous_sample.video_path == replacement_sample.video_path
+                and bool(previous_candidate.get("flipped", False)) == bool(replacement_candidate.get("flipped", False))
+                and replacement_sample.local_index <= previous_sample.local_index
+            ):
+                if (
+                    not tight_same_track_window
+                    or replacement_sample.local_index
+                    < previous_sample.local_index - MATCH_TIGHT_SAME_TRACK_CLUSTER_RADIUS
+                ):
+                    continue
+            if (
+                current_same_track_violation
+                and next_candidate is not None
+                and candidate_breaks_local_video_continuity(
+                    previous_candidate,
+                    replacement_candidate,
+                    next_candidate,
+                )
+            ):
+                continue
+
+            if log_func and replacement_count + pass_replacements < 8:
+                log_func(
+                    "  Continuity repair "
+                    f"ref {float(reference_frames[index].timestamp):.1f}s: "
+                    f"{current_sample.video_name}@{current_sample.timestamp:.1f}s -> "
+                    f"{replacement_sample.video_name}@{replacement_sample.timestamp:.1f}s"
+                )
+            repaired_path[index] = replacement_candidate
+            pass_replacements += 1
+
+        replacement_count += pass_replacements
+        if pass_replacements <= 0:
+            break
+
+    return repaired_path, replacement_count
+
+
+def repair_same_video_local_timing_windows(
+    reference_frames: Sequence[ReferenceFrame],
+    candidate_layers: Sequence[Sequence[Dict[str, object]]],
+    selected_path: Sequence[Dict[str, object]],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    frame_interval: float,
+    similarity_threshold: float,
+    attempt: int,
+    reference_transition_similarities: Optional[Sequence[float]] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Tuple[List[Dict[str, object]], int]:
+    if len(selected_path) < max(4, MATCH_LOCAL_TIMING_MIN_RUN):
+        return list(selected_path), 0
+
+    repaired_path = list(selected_path)
+    replacement_count = 0
+
+    for _pass in range(2):
+        pass_replacements = 0
+        run_start = 0
+        while run_start < len(repaired_path):
+            run_end = run_start
+            while (
+                run_end + 1 < len(repaired_path)
+                and candidates_share_same_video_track(repaired_path[run_end], repaired_path[run_end + 1])
+            ):
+                run_end += 1
+
+            run_length = run_end - run_start + 1
+            if run_length < MATCH_LOCAL_TIMING_MIN_RUN:
+                run_start = run_end + 1
+                continue
+
+            problem_windows: List[Tuple[int, int]] = []
+            for index in range(run_start + 1, run_end + 1):
+                previous_candidate = repaired_path[index - 1]
+                current_candidate = repaired_path[index]
+                previous_sample = cast(FrameSample, previous_candidate["sample"])
+                current_sample = cast(FrameSample, current_candidate["sample"])
+                reference_transition_similarity = (
+                    float(reference_transition_similarities[index])
+                    if reference_transition_similarities is not None and index < len(reference_transition_similarities)
+                    else 1.0
+                )
+                ref_gap = max(
+                    frame_interval,
+                    float(reference_frames[index].timestamp) - float(reference_frames[index - 1].timestamp),
+                )
+                expected_local_gap = max(1, int(round(ref_gap / max(0.1, frame_interval))))
+                local_gap = current_sample.local_index - previous_sample.local_index
+                if reference_scene_cut_strength(reference_transition_similarity) >= 0.30:
+                    continue
+                if local_gap <= expected_local_gap + MATCH_LOCAL_TIMING_LARGE_GAP:
+                    continue
+                window_start = max(run_start, index - MATCH_LOCAL_TIMING_WINDOW_RADIUS)
+                window_end = min(run_end, index + MATCH_LOCAL_TIMING_WINDOW_RADIUS)
+                if problem_windows and window_start <= problem_windows[-1][1] + 1:
+                    problem_windows[-1] = (problem_windows[-1][0], max(problem_windows[-1][1], window_end))
+                else:
+                    problem_windows.append((window_start, window_end))
+
+            for window_start, window_end in problem_windows:
+                window_candidates = repaired_path[window_start : window_end + 1]
+                if len(window_candidates) < 3:
+                    continue
+
+                first_sample = cast(FrameSample, window_candidates[0]["sample"])
+                last_sample = cast(FrameSample, window_candidates[-1]["sample"])
+                expected_video_path = first_sample.video_path
+                expected_flip = bool(window_candidates[0].get("flipped", False))
+                if any(
+                    cast(FrameSample, candidate["sample"]).video_path != expected_video_path
+                    or bool(candidate.get("flipped", False)) != expected_flip
+                    for candidate in window_candidates
+                ):
+                    continue
+
+                source_window_start = max(
+                    0,
+                    first_sample.global_index - MATCH_LOCAL_TIMING_CORRIDOR_PADDING,
+                )
+                source_window_end = min(
+                    len(source_frames) - 1,
+                    last_sample.global_index + MATCH_LOCAL_TIMING_CORRIDOR_PADDING,
+                )
+                while source_window_start > 0 and source_frames[source_window_start].video_path == expected_video_path:
+                    previous_index = source_window_start - 1
+                    if source_frames[previous_index].video_path != expected_video_path:
+                        break
+                    if first_sample.global_index - previous_index > MATCH_LOCAL_TIMING_CORRIDOR_PADDING:
+                        break
+                    source_window_start = previous_index
+                while source_window_end + 1 < len(source_frames) and source_frames[source_window_end].video_path == expected_video_path:
+                    next_index = source_window_end + 1
+                    if source_frames[next_index].video_path != expected_video_path:
+                        break
+                    if next_index - last_sample.global_index > MATCH_LOCAL_TIMING_CORRIDOR_PADDING:
+                        break
+                    source_window_end = next_index
+
+                candidate_pools: List[List[Dict[str, object]]] = []
+                for ref_index in range(window_start, window_end + 1):
+                    candidate_pool = collect_same_track_timing_window_candidates(
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        candidate_layers,
+                        repaired_path,
+                        ref_index,
+                        source_window_start,
+                        source_window_end,
+                        similarity_threshold,
+                        expected_video_path,
+                        expected_flip,
+                    )
+                    if not candidate_pool:
+                        candidate_pools = []
+                        break
+                    candidate_pools.append(candidate_pool)
+                if not candidate_pools:
+                    continue
+
+                left_anchor = repaired_path[window_start - 1] if window_start > 0 else None
+                right_anchor = repaired_path[window_end + 1] if window_end + 1 < len(repaired_path) else None
+                replacement_window = select_best_same_track_timing_window_path(
+                    reference_frames,
+                    candidate_pools,
+                    window_start,
+                    frame_interval,
+                    attempt,
+                    similarity_threshold,
+                    reference_transition_similarities=reference_transition_similarities,
+                    left_anchor=left_anchor,
+                    right_anchor=right_anchor,
+                )
+                if len(replacement_window) != len(window_candidates):
+                    continue
+
+                current_score = score_same_track_timing_window_sequence(
+                    reference_frames,
+                    window_candidates,
+                    window_start,
+                    frame_interval,
+                    attempt,
+                    similarity_threshold,
+                    reference_transition_similarities=reference_transition_similarities,
+                    left_anchor=left_anchor,
+                    right_anchor=right_anchor,
+                )
+                replacement_score = score_same_track_timing_window_sequence(
+                    reference_frames,
+                    replacement_window,
+                    window_start,
+                    frame_interval,
+                    attempt,
+                    similarity_threshold,
+                    reference_transition_similarities=reference_transition_similarities,
+                    left_anchor=left_anchor,
+                    right_anchor=right_anchor,
+                )
+                if replacement_score <= current_score + MATCH_LOCAL_TIMING_MIN_GAIN:
+                    continue
+
+                changed_offsets = [
+                    offset
+                    for offset, (current_candidate, replacement_candidate) in enumerate(zip(window_candidates, replacement_window))
+                    if (
+                        cast(FrameSample, current_candidate["sample"]).local_index
+                        != cast(FrameSample, replacement_candidate["sample"]).local_index
+                        or bool(current_candidate.get("flipped", False)) != bool(replacement_candidate.get("flipped", False))
+                    )
+                ]
+                if not changed_offsets:
+                    continue
+
+                score_gain = max(
+                    (
+                        float(replacement_window[offset].get("score", 0.0) or 0.0)
+                        - float(window_candidates[offset].get("score", 0.0) or 0.0)
+                    )
+                    for offset in changed_offsets
+                )
+                if score_gain < 0.08:
+                    continue
+
+                repaired_path[window_start : window_end + 1] = replacement_window
+                pass_replacements += len(changed_offsets)
+                if log_func and replacement_count + pass_replacements <= 8:
+                    before_preview = ", ".join(
+                        f"{cast(FrameSample, candidate['sample']).timestamp:.1f}s"
+                        for candidate in window_candidates
+                    )
+                    after_preview = ", ".join(
+                        f"{cast(FrameSample, candidate['sample']).timestamp:.1f}s"
+                        for candidate in replacement_window
+                    )
+                    log_func(
+                        "  Local timing retime "
+                        f"ref {float(reference_frames[window_start].timestamp):.1f}-{float(reference_frames[window_end].timestamp):.1f}s: "
+                        f"{Path(expected_video_path).name} [{before_preview}] -> [{after_preview}]"
+                    )
+
+            run_start = run_end + 1
+
+        replacement_count += pass_replacements
+        if pass_replacements <= 0:
+            break
+
+    return repaired_path, replacement_count
+
+
+def build_forward_shifted_same_track_sequence(
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    sequence_start: int,
+    candidate_sequence: Sequence[Dict[str, object]],
+    similarity_threshold: float,
+) -> List[Dict[str, object]]:
+    if not candidate_sequence:
+        return []
+
+    expected_flip = bool(candidate_sequence[0].get("flipped", False))
+    replacement_sequence: List[Dict[str, object]] = []
+    for offset, current_candidate in enumerate(candidate_sequence):
+        current_sample = cast(FrameSample, current_candidate["sample"])
+        shifted_pos = current_sample.global_index + 1
+        if shifted_pos < 0 or shifted_pos >= len(source_frames):
+            return []
+        shifted_sample = source_frames[shifted_pos]
+        if shifted_sample.video_path != current_sample.video_path:
+            return []
+        replacement_candidate = evaluate_global_match_candidate_at_position(
+            reference_frames,
+            source_frames,
+            hasher,
+            sequence_start + offset,
+            shifted_pos,
+            similarity_threshold,
+        )
+        if bool(replacement_candidate.get("flipped", False)) != expected_flip:
+            return []
+        replacement_sequence.append(replacement_candidate)
+    return replacement_sequence
+
+
+def repair_boundary_phase_lag_runs(
+    reference_frames: Sequence[ReferenceFrame],
+    selected_path: Sequence[Dict[str, object]],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    frame_interval: float,
+    similarity_threshold: float,
+    attempt: int,
+    reference_transition_similarities: Optional[Sequence[float]] = None,
+    log_func: Optional[Callable[[str], None]] = None,
+) -> Tuple[List[Dict[str, object]], int]:
+    if len(selected_path) < 3:
+        return list(selected_path), 0
+
+    repaired_path = list(selected_path)
+    replacement_count = 0
+
+    for _pass in range(2):
+        pass_replacements = 0
+        run_start = 1
+        while run_start < len(repaired_path) - 1:
+            reference_transition_similarity = (
+                float(reference_transition_similarities[run_start])
+                if reference_transition_similarities is not None and run_start < len(reference_transition_similarities)
+                else 1.0
+            )
+            cut_strength = reference_scene_cut_strength(reference_transition_similarity)
+            if cut_strength < MATCH_BOUNDARY_PHASE_LAG_MIN_CUT:
+                run_start += 1
+                continue
+
+            previous_candidate = repaired_path[run_start - 1]
+            current_candidate = repaired_path[run_start]
+            previous_sample = cast(FrameSample, previous_candidate["sample"])
+            current_sample = cast(FrameSample, current_candidate["sample"])
+            same_previous_track = candidates_share_same_video_track(previous_candidate, current_candidate)
+            expected_gap = max(1, int(round(frame_interval / max(0.1, frame_interval))))
+            local_gap = current_sample.local_index - previous_sample.local_index if same_previous_track else 9999
+            boundary_jump = (
+                not same_previous_track
+                or local_gap <= 0
+                or local_gap > expected_gap + 1
+            )
+            if not boundary_jump:
+                run_start += 1
+                continue
+
+            run_end = run_start
+            while run_end + 1 < len(repaired_path):
+                current_run_candidate = repaired_path[run_end]
+                next_run_candidate = repaired_path[run_end + 1]
+                if not candidates_share_same_video_track(current_run_candidate, next_run_candidate):
+                    break
+                current_run_sample = cast(FrameSample, current_run_candidate["sample"])
+                next_run_sample = cast(FrameSample, next_run_candidate["sample"])
+                if next_run_sample.local_index <= current_run_sample.local_index:
+                    break
+                next_cut_strength = (
+                    reference_scene_cut_strength(float(reference_transition_similarities[run_end + 1]))
+                    if reference_transition_similarities is not None and run_end + 1 < len(reference_transition_similarities)
+                    else 0.0
+                )
+                if run_end + 1 > run_start and next_cut_strength >= MATCH_BOUNDARY_PHASE_LAG_MIN_CUT:
+                    break
+                run_end += 1
+                if run_end - run_start + 1 >= MATCH_BOUNDARY_PHASE_LAG_MAX_RUN:
+                    break
+
+            current_sequence = repaired_path[run_start : run_end + 1]
+            if len(current_sequence) < 2:
+                run_start += 1
+                continue
+
+            expected_video_path = cast(FrameSample, current_sequence[0]["sample"]).video_path
+            expected_flip = bool(current_sequence[0].get("flipped", False))
+            if any(
+                cast(FrameSample, candidate["sample"]).video_path != expected_video_path
+                or bool(candidate.get("flipped", False)) != expected_flip
+                for candidate in current_sequence
+            ):
+                run_start = run_end + 1
+                continue
+
+            left_anchor = repaired_path[run_start - 1] if run_start > 0 else None
+            right_anchor = repaired_path[run_end + 1] if run_end + 1 < len(repaired_path) else None
+            if right_anchor is not None:
+                right_sample = cast(FrameSample, right_anchor["sample"])
+                last_current_sample = cast(FrameSample, current_sequence[-1]["sample"])
+                if (
+                    right_sample.video_path == last_current_sample.video_path
+                    and bool(right_anchor.get("flipped", False)) == expected_flip
+                    and right_sample.local_index <= last_current_sample.local_index
+                ):
+                    right_anchor = None
+
+            replacement_sequence = build_forward_shifted_same_track_sequence(
+                reference_frames,
+                source_frames,
+                hasher,
+                run_start,
+                current_sequence,
+                similarity_threshold,
+            )
+            if len(replacement_sequence) != len(current_sequence):
+                run_start = run_end + 1
+                continue
+
+            replacement_first_sample = cast(FrameSample, replacement_sequence[0]["sample"])
+            replacement_last_sample = cast(FrameSample, replacement_sequence[-1]["sample"])
+            if left_anchor is not None:
+                left_sample = cast(FrameSample, left_anchor["sample"])
+                if (
+                    left_sample.video_path == replacement_first_sample.video_path
+                    and bool(left_anchor.get("flipped", False)) == expected_flip
+                    and replacement_first_sample.local_index <= left_sample.local_index
+                ):
+                    run_start = run_end + 1
+                    continue
+            if right_anchor is not None:
+                right_sample = cast(FrameSample, right_anchor["sample"])
+                if (
+                    right_sample.video_path == replacement_last_sample.video_path
+                    and bool(right_anchor.get("flipped", False)) == expected_flip
+                    and replacement_last_sample.local_index >= right_sample.local_index
+                ):
+                    run_start = run_end + 1
+                    continue
+
+            current_score = score_same_track_timing_window_sequence(
+                reference_frames,
+                current_sequence,
+                run_start,
+                frame_interval,
+                attempt,
+                similarity_threshold,
+                reference_transition_similarities=reference_transition_similarities,
+                left_anchor=left_anchor,
+                right_anchor=right_anchor,
+            )
+            replacement_score = score_same_track_timing_window_sequence(
+                reference_frames,
+                replacement_sequence,
+                run_start,
+                frame_interval,
+                attempt,
+                similarity_threshold,
+                reference_transition_similarities=reference_transition_similarities,
+                left_anchor=left_anchor,
+                right_anchor=right_anchor,
+            )
+            current_visual = sum(float(candidate.get("visual", 0.0) or 0.0) for candidate in current_sequence) / len(
+                current_sequence
+            )
+            replacement_visual = sum(
+                float(candidate.get("visual", 0.0) or 0.0) for candidate in replacement_sequence
+            ) / len(replacement_sequence)
+
+            if (
+                replacement_score <= current_score + MATCH_BOUNDARY_PHASE_LAG_MIN_GAIN
+                or replacement_visual < current_visual + MATCH_BOUNDARY_PHASE_LAG_MIN_VISUAL_GAIN
+            ):
+                run_start = run_end + 1
+                continue
+
+            repaired_path[run_start : run_end + 1] = replacement_sequence
+            pass_replacements += len(replacement_sequence)
+            if log_func and replacement_count + pass_replacements <= 8:
+                before_preview = ", ".join(
+                    f"{cast(FrameSample, candidate['sample']).timestamp:.1f}s"
+                    for candidate in current_sequence
+                )
+                after_preview = ", ".join(
+                    f"{cast(FrameSample, candidate['sample']).timestamp:.1f}s"
+                    for candidate in replacement_sequence
+                )
+                log_func(
+                    "  Boundary phase repair "
+                    f"ref {float(reference_frames[run_start].timestamp):.1f}-{float(reference_frames[run_end].timestamp):.1f}s: "
+                    f"{Path(expected_video_path).name} [{before_preview}] -> [{after_preview}]"
+                )
+            run_start = run_end + 1
+
+        replacement_count += pass_replacements
+        if pass_replacements <= 0:
+            break
+
+    return repaired_path, replacement_count
 
 
 def repair_low_structural_match_windows(
@@ -15584,6 +19397,13 @@ def repair_low_structural_match_windows(
                         else 1.0
                     ),
                 )
+            current_continuity_violation = candidate_breaks_local_video_continuity(
+                previous_candidate,
+                current_candidate,
+                next_candidate,
+            )
+            if current_continuity_violation:
+                current_local_score -= 0.34
 
             best_candidate = current_candidate
             best_score = current_local_score
@@ -15598,6 +19418,8 @@ def repair_low_structural_match_windows(
                     and candidate_sample.local_index == current_sample.local_index
                     and candidate_flipped == current_flipped
                 ):
+                    continue
+                if candidate_breaks_local_video_continuity(previous_candidate, candidate, next_candidate):
                     continue
                 if candidate_visual < max(0.48, current_visual - 0.10, similarity_threshold - 0.18):
                     continue
@@ -15657,9 +19479,15 @@ def repair_low_structural_match_windows(
                 if candidate_structural < MATCH_STRUCTURAL_MIN and candidate_visual < max(current_visual + 0.10, similarity_threshold):
                     candidate_local_score -= 0.08
 
+                required_gain = 0.02 if current_continuity_violation else MATCH_LOW_STRUCTURAL_REPAIR_MIN_GAIN
+                structural_gain_ok = (
+                    candidate_structural >= best_structural - 0.02
+                    if current_continuity_violation
+                    else candidate_structural >= best_structural + 0.08
+                )
                 if (
-                    candidate_local_score > best_score + MATCH_LOW_STRUCTURAL_REPAIR_MIN_GAIN
-                    and candidate_structural >= best_structural + 0.08
+                    candidate_local_score > best_score + required_gain
+                    and structural_gain_ok
                 ):
                     best_candidate = candidate
                     best_score = candidate_local_score
@@ -16568,6 +20396,8 @@ def match_frames(
         reference_frames,
         candidate_layers,
         selected_path,
+        source_frames,
+        hasher,
         frame_interval,
         similarity_threshold,
         attempt,
@@ -16578,6 +20408,8 @@ def match_frames(
         reference_frames,
         candidate_layers,
         selected_path,
+        source_frames,
+        hasher,
         frame_interval,
         similarity_threshold,
         attempt,
@@ -16593,7 +20425,47 @@ def match_frames(
         reference_transition_similarities=reference_transition_similarities,
         log_func=log_func,
     )
-    diagnostics["refinements"] += boundary_replacements + smoothed_replacements + structural_replacements
+    selected_path, continuity_replacements = repair_same_video_continuity_glitches(
+        reference_frames,
+        selected_path,
+        source_frames,
+        hasher,
+        frame_interval,
+        similarity_threshold,
+        reference_transition_similarities=reference_transition_similarities,
+        log_func=log_func,
+    )
+    selected_path, local_timing_replacements = repair_same_video_local_timing_windows(
+        reference_frames,
+        candidate_layers,
+        selected_path,
+        source_frames,
+        hasher,
+        frame_interval,
+        similarity_threshold,
+        attempt,
+        reference_transition_similarities=reference_transition_similarities,
+        log_func=log_func,
+    )
+    selected_path, boundary_phase_replacements = repair_boundary_phase_lag_runs(
+        reference_frames,
+        selected_path,
+        source_frames,
+        hasher,
+        frame_interval,
+        similarity_threshold,
+        attempt,
+        reference_transition_similarities=reference_transition_similarities,
+        log_func=log_func,
+    )
+    diagnostics["refinements"] += (
+        boundary_replacements
+        + smoothed_replacements
+        + structural_replacements
+        + continuity_replacements
+        + local_timing_replacements
+        + boundary_phase_replacements
+    )
     if len(selected_path) != len(reference_frames):
         diagnostics["missed"] += max(0, len(reference_frames) - len(selected_path))
 
@@ -16635,7 +20507,9 @@ def match_frames(
             f"  Global path match complete: {len(matches)}/{len(reference_frames)}, "
             f"stable {confident}, low {diagnostics['low_sim']}, "
             f"backtracks {diagnostics['backtracks']}, switches {diagnostics['video_switches']}, "
-            f"boundary {boundary_replacements}, smooth {smoothed_replacements}, structural {structural_replacements}"
+            f"boundary {boundary_replacements}, smooth {smoothed_replacements}, "
+            f"structural {structural_replacements}, continuity {continuity_replacements}, "
+            f"local_timing {local_timing_replacements}, phase {boundary_phase_replacements}"
         )
 
     return matches, confident / len(reference_frames), diagnostics
@@ -16644,14 +20518,50 @@ def match_frames(
 def merge_matches(matches: Sequence[Dict[str, object]], tolerance: float = 0.05) -> List[SegmentJob]:
     if not matches:
         return []
-    jobs: List[SegmentJob] = []
-    current_video = str(matches[0]["source_video"])
-    current_start = float(matches[0]["source_start"])
-    current_duration = float(matches[0]["duration"])
-    current_flip = bool(matches[0].get("source_flip", False))
-    prev_match = matches[0]
+    normalized_matches: List[Dict[str, object]] = []
+    previous_normalized: Optional[Dict[str, object]] = None
+    for raw_match in matches:
+        match = dict(raw_match)
+        if previous_normalized is not None:
+            same_video = str(match["source_video"]) == str(previous_normalized["source_video"])
+            same_flip = bool(match.get("source_flip", False)) == bool(previous_normalized.get("source_flip", False))
+            contiguous_ref = abs(
+                float(match["ref_time"]) - (float(previous_normalized["ref_time"]) + float(previous_normalized["duration"]))
+            ) <= tolerance
+            previous_end = float(previous_normalized["source_start"]) + float(previous_normalized["duration"])
+            source_overlap = previous_end - float(match["source_start"])
+            source_gap = float(match["source_start"]) - previous_end
+            if (
+                same_video
+                and contiguous_ref
+                and not same_flip
+                and abs(source_gap) <= float(previous_normalized["duration"]) * 2.0 + tolerance
+            ):
+                match["source_flip"] = bool(previous_normalized.get("source_flip", False))
+                same_flip = True
+            if (
+                same_video
+                and same_flip
+                and contiguous_ref
+                and source_overlap > tolerance
+                # Only straighten tiny overlap jitter. Larger same-video overlaps
+                # often represent an intentional local retiming correction, and
+                # forcing them forward can skip the beginning of the original line.
+                and source_overlap
+                <= float(previous_normalized["duration"]) * MATCH_MERGE_OVERLAP_NORMALIZE_FACTOR + tolerance
+            ):
+                match["source_start"] = previous_end
+        normalized_matches.append(match)
+        previous_normalized = match
 
-    for match in matches[1:]:
+    jobs: List[SegmentJob] = []
+    current_video = str(normalized_matches[0]["source_video"])
+    current_start = float(normalized_matches[0]["source_start"])
+    current_duration = float(normalized_matches[0]["duration"])
+    current_flip = bool(normalized_matches[0].get("source_flip", False))
+    prev_match = normalized_matches[0]
+
+    for match in normalized_matches[1:]:
         same_video = str(match["source_video"]) == current_video
         same_flip = bool(match.get("source_flip", False)) == current_flip
         contiguous_source = abs(
@@ -17133,13 +21043,18 @@ def atempo_chain(speed: float) -> str:
     return ",".join(f"atempo={value:.6f}" for value in values)
 
 
-def choose_local_tts_fit_speed_factor(source_duration: float, target_duration: float) -> float:
+def choose_local_tts_fit_speed_factor(
+    source_duration: float,
+    target_duration: float,
+    *,
+    max_speed_factor: float = MAX_TTS_SPEED_FACTOR,
+) -> float:
     required_speed = source_duration / max(0.08, target_duration)
     if required_speed <= 1.01:
         return 1.0
     if required_speed <= LOCAL_TTS_MICRO_SPEED_FACTOR + 0.005:
         return clamp(required_speed, 1.0, LOCAL_TTS_MICRO_SPEED_FACTOR)
-    return clamp(required_speed, 1.0, MAX_TTS_SPEED_FACTOR)
+    return clamp(required_speed, 1.0, max(1.0, float(max_speed_factor)))
 
 
 def build_tts_cleanup_filters(
@@ -18650,6 +22565,7 @@ def build_tts_track(
     video_processor: VideoProcessor,
     ai_generator: Optional[AINarrationGenerator] = None,
     settings: Optional[CloneSettings] = None,
+    source_handoff_starts: Optional[Dict[int, float]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[Optional[Path], List[Tuple[float, float]], List[SubtitleEntry]]:
     if not entries:
@@ -18720,12 +22636,24 @@ def build_tts_track(
     strict_audio_timing_mode = prefer_sentence_pauses
     audio_master_timeline_mode = strict_audio_timing_mode
     duck_release = 0.0 if strict_audio_timing_mode else 0.04
+    timing_overflow_seconds = (
+        STRICT_TTS_TIMELINE_OVERFLOW_SECONDS
+        if strict_audio_timing_mode
+        else MAX_TTS_TIMELINE_OVERFLOW_SECONDS
+    )
+    local_fit_speed_cap = (
+        STRICT_TTS_MAX_LOCAL_SPEED_FACTOR
+        if strict_audio_timing_mode
+        else MAX_TTS_SPEED_FACTOR
+    )
     strict_boundary_audio_pause_map: Optional[Dict[int, float]] = None
     if strict_audio_timing_mode and settings is not None:
-        combined_boundary_pause_map = build_strict_tts_reference_boundary_pause_map(
+        subtitle_boundary_pause_map = build_strict_tts_reference_boundary_pause_map(
             speech_entries,
             settings.subtitle_entries,
         )
+        combined_boundary_pause_map: Dict[int, float] = {}
+        audio_pause_probe_used = False
         if NUMPY_AVAILABLE:
             reference_audio_path = extract_reference_audio_for_classification(
                 settings.reference_video,
@@ -18734,16 +22662,61 @@ def build_tts_track(
             )
             if reference_audio_path is not None:
                 reference_samples, reference_sample_rate = load_wav_mono_samples(reference_audio_path)
-                waveform_pause_map = build_strict_tts_boundary_audio_pause_map(
+                waveform_pause_map = build_text_aligned_reference_boundary_pause_map(
+                    speech_entries,
+                    settings.subtitle_entries,
+                    reference_samples,
+                    reference_sample_rate,
+                )
+                direct_waveform_pause_map = build_strict_tts_boundary_audio_pause_map(
                     speech_entries,
                     reference_samples,
                     reference_sample_rate,
                 )
+                for entry_index, pause_duration in direct_waveform_pause_map.items():
+                    waveform_pause_map[entry_index] = max(
+                        float(waveform_pause_map.get(entry_index, 0.0) or 0.0),
+                        float(pause_duration or 0.0),
+                    )
+                if waveform_pause_map:
+                    audio_pause_probe_used = True
                 for entry_index, pause_duration in waveform_pause_map.items():
                     combined_boundary_pause_map[entry_index] = max(
                         float(combined_boundary_pause_map.get(entry_index, 0.0) or 0.0),
                         float(pause_duration or 0.0),
                     )
+            analysis_audio_path = extract_reference_audio_for_uvr_pause_analysis(
+                settings.reference_video,
+                video_processor,
+                log_func=None,
+            )
+            if analysis_audio_path is not None:
+                analysis_samples, analysis_sample_rate = load_wav_mono_samples(analysis_audio_path)
+                analysis_pause_map = build_text_aligned_reference_boundary_pause_map(
+                    speech_entries,
+                    settings.subtitle_entries,
+                    analysis_samples,
+                    analysis_sample_rate,
+                )
+                direct_analysis_pause_map = build_strict_tts_boundary_audio_pause_map(
+                    speech_entries,
+                    analysis_samples,
+                    analysis_sample_rate,
+                )
+                for entry_index, pause_duration in direct_analysis_pause_map.items():
+                    analysis_pause_map[entry_index] = max(
+                        float(analysis_pause_map.get(entry_index, 0.0) or 0.0),
+                        float(pause_duration or 0.0),
+                    )
+                if analysis_pause_map:
+                    audio_pause_probe_used = True
+                for entry_index, pause_duration in analysis_pause_map.items():
+                    combined_boundary_pause_map[entry_index] = max(
+                        float(combined_boundary_pause_map.get(entry_index, 0.0) or 0.0),
+                        float(pause_duration or 0.0),
+                    )
+        if not audio_pause_probe_used:
+            combined_boundary_pause_map = subtitle_boundary_pause_map
         strict_boundary_audio_pause_map = combined_boundary_pause_map or None
         if log_func and strict_boundary_audio_pause_map:
             audio_pause_count = sum(
@@ -18780,7 +22753,15 @@ def build_tts_track(
             log_func(f"  TTS pause planner: {join_count} joins selected by strict audio sentence rules")
         else:
             log_func(f"  TTS pause planner: {join_count} full-text joins selected by local sentence rules")
-    prepared_groups = build_prepared_tts_groups(tts_groups, raw_dir, strict_timeline_duration)
+    prepared_groups = build_prepared_tts_groups(
+        tts_groups,
+        raw_dir,
+        strict_timeline_duration,
+        overflow_seconds=timing_overflow_seconds,
+    )
+    annotate_prepared_tts_group_join_guards(prepared_groups, tts_join_map)
+    if strict_audio_timing_mode:
+        apply_strict_reference_tts_targets(prepared_groups)
     timeline_position_map = {entry.index: position for position, entry in enumerate(timeline_entries)}
 
     def should_bridge_short_strict_duck_gap(
@@ -18804,6 +22785,36 @@ def build_tts_track(
             return False
         return True
 
+    def find_next_source_handoff_start(group_state: Dict[str, object]) -> Tuple[Optional[float], bool]:
+        group_entries = list(group_state.get("entries") or [])
+        if not group_entries:
+            return None, False
+        last_entry_index = int(group_entries[-1].index)
+        current_position = timeline_position_map.get(last_entry_index)
+        if current_position is None:
+            return None, False
+        saw_intervening_narration = False
+        for candidate in timeline_entries[current_position + 1 :]:
+            candidate_text = normalize_subtitle_text(candidate.text)
+            if candidate.entry_type == "watermark" or not candidate_text:
+                continue
+            if candidate.entry_type in {"dialogue", "original_subtitle"}:
+                candidate_start = max(0.0, float(candidate.start))
+                if source_handoff_starts:
+                    candidate_start = min(
+                        candidate_start,
+                        max(
+                            0.0,
+                            float(source_handoff_starts.get(candidate.index, candidate_start) or candidate_start),
+                        ),
+                    )
+                return candidate_start, not saw_intervening_narration
+            if candidate.entry_type == "narration":
+                saw_intervening_narration = True
+                continue
+            return None, False
+        return None, False
+
     def render_prepared_groups(render_rate: str) -> Tuple[int, int]:
         nonlocal last_tts_error
         attempts = 0
@@ -18812,11 +22823,18 @@ def build_tts_track(
             order = int(group_state["order"])
             group_text = str(group_state["text"])
             raw_path = Path(str(group_state["raw_path"]))
+            group_render_rate = render_rate
+            if strict_audio_timing_mode:
+                target_duration_hint = max(
+                    0.05,
+                    float(group_state.get("target_duration", 0.0) or 0.0),
+                )
+                group_render_rate = adaptive_tts_rate(group_text, target_duration_hint, rate)
             attempts += 1
             result = synthesize_tts_segment(
                 group_text,
                 locked_voice,
-                render_rate,
+                group_render_rate,
                 raw_path,
                 video_processor,
                 settings=settings,
@@ -18826,7 +22844,7 @@ def build_tts_track(
                 group_state["raw_tts_boundaries"] = tuple(result.boundaries)
                 update_group_tts_source_metrics(
                     group_state,
-                    render_rate,
+                    group_render_rate,
                     video_processor,
                     log_func=log_func,
                 )
@@ -18836,7 +22854,7 @@ def build_tts_track(
                         f"  TTS #{order} [{group_state['label']}] recovered with fallback voice {result.used_voice}"
                     )
             else:
-                raw_duration = estimate_tts_render_duration(group_text, render_rate)
+                raw_duration = estimate_tts_render_duration(group_text, group_render_rate)
                 failures += 1
                 last_tts_error = result.error_text or last_tts_error
                 if log_func:
@@ -18851,7 +22869,7 @@ def build_tts_track(
             group_state["success"] = result.success and tts_audio_file_ready(raw_path)
             group_state["used_voice"] = result.used_voice
             group_state["used_provider"] = result.provider
-            group_state["applied_rate"] = render_rate
+            group_state["applied_rate"] = group_render_rate
         return attempts, failures
 
     applied_rate = rate
@@ -18865,6 +22883,9 @@ def build_tts_track(
             raw_dir,
             strict_timeline_duration,
             applied_rate,
+            overflow_seconds=timing_overflow_seconds,
+            max_fit_speed_factor=local_fit_speed_cap,
+            protected_join_indices=tts_join_map,
         )
         if split_count > 0:
             split_signature = prepared_tts_group_signature(split_candidate_groups)
@@ -18878,6 +22899,8 @@ def build_tts_track(
                     )
             else:
                 prepared_groups = split_candidate_groups
+                if strict_audio_timing_mode:
+                    apply_strict_reference_tts_targets(prepared_groups)
                 seen_group_layouts.add(split_signature)
                 refinement_passes += 1
                 if log_func:
@@ -18891,6 +22914,8 @@ def build_tts_track(
                 raw_dir,
                 strict_timeline_duration,
                 applied_rate,
+                overflow_seconds=timing_overflow_seconds,
+                max_fit_speed_factor=local_fit_speed_cap,
             )
             if merge_count > 0:
                 merge_signature = prepared_tts_group_signature(merge_candidate_groups)
@@ -18904,6 +22929,8 @@ def build_tts_track(
                         )
                 else:
                     prepared_groups = merge_candidate_groups
+                    if strict_audio_timing_mode:
+                        apply_strict_reference_tts_targets(prepared_groups)
                     seen_group_layouts.add(merge_signature)
                     refinement_passes += 1
                     if log_func:
@@ -18923,6 +22950,8 @@ def build_tts_track(
             log_func(
                 f"  TTS reference windows: core {total_raw_duration:.2f}s -> subtitle {total_reference_duration:.2f}s @ {applied_rate}"
             )
+        if strict_audio_timing_mode:
+            break
         suggested_rate = derive_uniform_tts_rate(prepared_groups, applied_rate)
         if strict_audio_timing_mode and tts_rate_factor(suggested_rate) < tts_rate_factor(applied_rate):
             suggested_rate = applied_rate
@@ -18935,12 +22964,33 @@ def build_tts_track(
         applied_rate = suggested_rate
         rate_passes += 1
     if log_func:
-        log_func(f"  TTS uniform synth rate locked: {applied_rate}")
+        if strict_audio_timing_mode:
+            local_rate_summary = ", ".join(
+                f"{rate_text} x{count}"
+                for rate_text, count in collections.Counter(
+                    str(group_state.get("applied_rate", rate) or rate)
+                    for group_state in prepared_groups
+                ).most_common(5)
+            )
+            if local_rate_summary:
+                log_func(
+                    "  TTS strict synth rate mode: "
+                    f"local reference-window rates {local_rate_summary}"
+                )
+            else:
+                log_func(f"  TTS strict synth rate mode: base {rate}")
+        else:
+            log_func(f"  TTS uniform synth rate locked: {applied_rate}")
 
-    schedule_stats = schedule_prepared_tts_groups(prepared_groups, strict_timeline_duration)
+    schedule_stats = schedule_prepared_tts_groups(
+        prepared_groups,
+        strict_timeline_duration,
+        max_fit_speed_factor=local_fit_speed_cap,
+        prefer_strict_windows=strict_audio_timing_mode,
+    )
     if log_func and prepared_groups:
         log_func(
-            f"  TTS sentence scheduling: drift cap {MAX_TTS_TIMELINE_OVERFLOW_SECONDS:.2f}s / "
+            f"  TTS sentence scheduling: drift cap {timing_overflow_seconds:.2f}s / "
             f"planned start drift <= {schedule_stats['max_start_drift']:.2f}s / "
             f"planned end drift <= {schedule_stats['max_end_drift']:.2f}s"
         )
@@ -18971,7 +23021,29 @@ def build_tts_track(
 
         actual_start = max(scheduled_start, cursor)
         if strict_audio_timing_mode and previous_render_end is not None:
-            desired_start = previous_render_end + STRICT_TTS_MIN_SENTENCE_GAP_SECONDS
+            reference_gap = STRICT_TTS_MIN_SENTENCE_GAP_SECONDS
+            if group_index > 0:
+                previous_group_state = prepared_groups[group_index - 1]
+                previous_strict_start = max(
+                    0.0,
+                    float(previous_group_state.get("strict_start", 0.0) or 0.0),
+                )
+                previous_strict_end = max(
+                    previous_strict_start + 0.05,
+                    float(
+                        previous_group_state.get(
+                            "strict_end",
+                            previous_strict_start + 0.05,
+                        )
+                        or (previous_strict_start + 0.05)
+                    ),
+                )
+                reference_gap = max(0.0, strict_start - previous_strict_end)
+            desired_gap = min(
+                STRICT_TTS_MIN_SENTENCE_GAP_SECONDS,
+                max(0.0, reference_gap),
+            )
+            desired_start = previous_render_end + desired_gap
             if desired_start > actual_start + 0.001:
                 actual_start = min(desired_start, latest_start)
         if actual_start > cursor + min_gap_threshold:
@@ -18987,6 +23059,35 @@ def build_tts_track(
             actual_start = cursor
 
         available_duration = max(0.05, scheduled_end - actual_start)
+        next_source_handoff_start = None
+        immediate_source_handoff = False
+        if strict_audio_timing_mode:
+            next_source_handoff_start, immediate_source_handoff = find_next_source_handoff_start(group_state)
+        handoff_corridor = False
+        handoff_protected = False
+        guarded_handoff_end: Optional[float] = None
+        if next_source_handoff_start is not None:
+            handoff_distance = max(0.0, float(next_source_handoff_start) - strict_end)
+            handoff_corridor = handoff_distance <= STRICT_TTS_SOURCE_HANDOFF_CORRIDOR_SECONDS
+            if immediate_source_handoff:
+                effective_handoff_guard = STRICT_TTS_SOURCE_HANDOFF_GUARD_SECONDS
+                if handoff_distance > 0.0:
+                    effective_handoff_guard = min(
+                        STRICT_TTS_SOURCE_HANDOFF_GUARD_SECONDS,
+                        max(STRICT_TTS_MIN_SENTENCE_GAP_SECONDS * 0.25, handoff_distance * 0.50),
+                    )
+                guarded_handoff_end = max(
+                    actual_start + 0.05,
+                    float(next_source_handoff_start) - effective_handoff_guard,
+                )
+                # Preserve the current narration group's reference window. Handoff
+                # protection is only allowed to limit spillover beyond the reference
+                # end, never to cut away audio that should still exist in the
+                # current narration sentence.
+                guarded_handoff_end = max(strict_end, guarded_handoff_end)
+                if guarded_handoff_end < scheduled_end - 0.01:
+                    handoff_protected = True
+                    available_duration = max(0.05, min(available_duration, guarded_handoff_end - actual_start))
         speech_start_offset = 0.0
         speech_end_offset = available_duration
 
@@ -19039,20 +23140,105 @@ def build_tts_track(
                     raw_duration,
                 ),
             )
+            group_fit_speed_cap = local_fit_speed_cap
+            handoff_overflow = raw_duration / max(group_fit_speed_cap, 1.0) - target_duration
+            if (
+                strict_audio_timing_mode
+                and STRICT_TTS_SOURCE_HANDOFF_RATE_RESYNTH_ENABLED
+                and handoff_corridor
+                and immediate_source_handoff
+                and handoff_overflow > 0.03
+                and not bool(group_state.get("tight_handoff_rate_resynth_done"))
+            ):
+                raw_path = Path(str(group_state["raw_path"]))
+                current_rate = str(group_state.get("applied_rate", applied_rate) or applied_rate)
+                current_rate_factor = tts_rate_factor(current_rate)
+                max_handoff_rate_factor = max(
+                    current_rate_factor,
+                    min(MAX_TTS_SYNTH_RATE_FACTOR, STRICT_TTS_SOURCE_HANDOFF_MAX_SYNTH_RATE_FACTOR),
+                )
+                required_rate_factor = clamp(
+                    current_rate_factor * raw_duration / max(0.08, target_duration * max(group_fit_speed_cap, 1.0)),
+                    current_rate_factor * MIN_TTS_RATE_BOOST_MULTIPLIER,
+                    max_handoff_rate_factor,
+                )
+                if required_rate_factor > current_rate_factor + 0.015:
+                    boosted_rate = factor_to_rate_text(required_rate_factor)
+                    boosted_raw_path = raw_path.with_name(f"{raw_path.stem}_tight_handoff{raw_path.suffix}")
+                    boosted_sidecar_path = tts_boundary_sidecar_path(boosted_raw_path)
+                    boosted_sidecar_path.unlink(missing_ok=True)
+                    boosted_result = synthesize_tts_segment(
+                        str(group_state.get("text", "") or ""),
+                        locked_voice,
+                        boosted_rate,
+                        boosted_raw_path,
+                        video_processor,
+                        settings=settings,
+                    )
+                    group_state["tight_handoff_rate_resynth_done"] = True
+                    log_tts_backup_notice_once(boosted_result, backup_notice_state, log_func)
+                    if boosted_result.success and tts_audio_file_ready(boosted_raw_path):
+                        raw_path.unlink(missing_ok=True)
+                        boosted_raw_path.replace(raw_path)
+                        raw_sidecar_path = tts_boundary_sidecar_path(raw_path)
+                        if boosted_sidecar_path.exists():
+                            raw_sidecar_path.unlink(missing_ok=True)
+                            boosted_sidecar_path.replace(raw_sidecar_path)
+                        group_state["raw_tts_boundaries"] = tuple(boosted_result.boundaries)
+                        update_group_tts_source_metrics(
+                            group_state,
+                            boosted_rate,
+                            video_processor,
+                            log_func=log_func,
+                        )
+                        if boosted_result.used_voice:
+                            group_state["used_voice"] = boosted_result.used_voice
+                        if boosted_result.provider:
+                            group_state["used_provider"] = boosted_result.provider
+                        raw_duration = max(0.05, tts_group_schedulable_duration(group_state))
+                        target_duration = max(
+                            0.05,
+                            min(
+                                available_duration,
+                                float(group_state.get("target_duration", raw_duration) or raw_duration),
+                                raw_duration,
+                            ),
+                        )
+                        handoff_overflow = raw_duration / max(group_fit_speed_cap, 1.0) - target_duration
+                        if log_func:
+                            log_func(
+                                f"  TTS #{order} [{group_state['label']}] tightened its source-handoff fit with a faster resynthesis rate {current_rate} -> {boosted_rate}"
+                            )
+                    else:
+                        boosted_raw_path.unlink(missing_ok=True)
+                        boosted_sidecar_path.unlink(missing_ok=True)
             if (
                 raw_duration > target_duration + 0.03
-                and raw_duration / max(MAX_TTS_SPEED_FACTOR, 1.0) > target_duration + 0.03
+                and raw_duration / max(group_fit_speed_cap, 1.0) > target_duration + 0.03
                 and log_func
             ):
                 if audio_master_timeline_mode:
                     log_func(
-                        f"  TTS #{order} [{group_state['label']}] still exceeds its original sentence window at max speed; keeping the full rendered audio and letting the later timeline follow it"
+                        f"  TTS #{order} [{group_state['label']}] still exceeds its original sentence window at max speed; "
+                        + (
+                            "hitting the following source-audio handoff so the scheduler will keep rendered speech inside the reference handoff corridor"
+                            if handoff_protected
+                            else (
+                                "approaching a source-audio handoff so the clip will be kept inside its reference corridor"
+                                if immediate_source_handoff and handoff_corridor
+                                else "keeping the full rendered audio and letting the later timeline follow it"
+                            )
+                        )
                     )
                 else:
                     log_func(
                         f"  TTS #{order} [{group_state['label']}] still exceeds its drift-capped sentence window at max speed; tail will be trimmed to stay within {MAX_TTS_TIMELINE_OVERFLOW_SECONDS:.2f}s subtitle drift"
                     )
-            fit_speed_factor = choose_local_tts_fit_speed_factor(raw_duration, target_duration)
+            fit_speed_factor = choose_local_tts_fit_speed_factor(
+                raw_duration,
+                target_duration,
+                max_speed_factor=group_fit_speed_cap,
+            )
             group_state["fit_speed_factor"] = fit_speed_factor
             fit_source_path = Path(str(group_state.get("effective_path", group_state["raw_path"]) or group_state["raw_path"]))
             if not tts_audio_file_ready(fit_source_path):
@@ -19124,7 +23310,7 @@ def build_tts_track(
         duck_start = max(0.0, speech_start if not strict_audio_timing_mode else strict_start)
         duck_end = min(
             strict_timeline_duration,
-            render_end + duck_release
+            speech_end
             if strict_audio_timing_mode
             else max(strict_end, render_end + duck_release),
         )
@@ -19146,28 +23332,36 @@ def build_tts_track(
                 if 0.0 < short_gap <= STRICT_TTS_DUCK_BRIDGE_GAP_SECONDS:
                     duck_end = max(duck_end, next_actual_start)
         duck_intervals.append((duck_start, duck_end))
+        group_entries = list(group_state["entries"])
         if strict_audio_timing_mode:
-            group_entries = list(group_state["entries"])
-            first_group_entry = group_entries[0] if group_entries else None
-            rendered_group_entries = [
-                SubtitleEntry(
-                    index=int(first_group_entry.index) if first_group_entry else order,
-                    start=render_start,
-                    end=render_end,
-                    text=normalize_subtitle_text(str(group_state.get("text", "") or "")),
-                    entry_type=first_group_entry.entry_type if first_group_entry else "narration",
+            # In strict audio mode the subtitle sentence boundaries should match
+            # the actual TTS pause groups instead of being split back into the
+            # smaller repaired FunASR fragments inside the same group.
+            group_text = normalize_subtitle_text(str(group_state.get("text", "") or ""))
+            if not group_text:
+                group_text = join_narration_group_text(group_entries)
+            rendered_group_entries = []
+            if group_entries and group_text:
+                first_group_entry = group_entries[0]
+                rendered_group_entries.append(
+                    SubtitleEntry(
+                        index=first_group_entry.index,
+                        start=render_start,
+                        end=render_end,
+                        text=group_text,
+                        entry_type=first_group_entry.entry_type,
+                    )
                 )
-            ]
         else:
             rendered_group_entries = render_entries_from_tts_boundaries(
-                list(group_state["entries"]),
+                group_entries,
                 final_tts_boundaries,
                 fallback_start=render_start,
                 fallback_end=render_end,
             )
             if not rendered_group_entries:
                 rendered_group_entries = distribute_group_rendered_entries(
-                    list(group_state["entries"]),
+                    group_entries,
                     render_start,
                     render_end,
                 )
@@ -20818,9 +25012,52 @@ def run_clone_pipeline(
             log("  Subtitle mask skipped: no stable subtitle band detected")
         reference_timeline_entries = preserve_reference_timeline_entries(subtitle_bundle.all_entries)
         reference_timeline_end = max((entry.end for entry in reference_timeline_entries), default=0.0)
+        strict_audio_timing_mode = bool(
+            settings.prefer_funasr_audio_subtitles and settings.prefer_funasr_sentence_pauses
+        )
+        if strict_audio_timing_mode and NUMPY_AVAILABLE:
+            reference_audio_path = extract_reference_audio_for_classification(
+                settings.reference_video,
+                video_processor,
+                log_func=None,
+            )
+            auxiliary_audio_path = extract_reference_audio_for_uvr_pause_analysis(
+                settings.reference_video,
+                video_processor,
+                log_func=None,
+            )
+            reference_samples = None
+            reference_sample_rate = 0
+            auxiliary_samples = None
+            auxiliary_sample_rate = 0
+            if reference_audio_path is not None:
+                reference_samples, reference_sample_rate = load_wav_mono_samples(reference_audio_path)
+            if auxiliary_audio_path is not None:
+                auxiliary_samples, auxiliary_sample_rate = load_wav_mono_samples(auxiliary_audio_path)
+            split_reference_entries = split_narration_entries_by_reference_audio_valleys(
+                reference_timeline_entries,
+                reference_samples,
+                reference_sample_rate,
+                auxiliary_samples=auxiliary_samples,
+                auxiliary_sample_rate=auxiliary_sample_rate,
+            )
+            if len(split_reference_entries) != len(reference_timeline_entries):
+                log(
+                    "  TTS reference audio valley split: "
+                    f"{len(reference_timeline_entries)} -> {len(split_reference_entries)} timeline entries"
+                )
+                reference_timeline_entries = preserve_reference_timeline_entries(split_reference_entries)
+                reference_timeline_end = max((entry.end for entry in reference_timeline_entries), default=0.0)
+        source_handoff_start_map = build_clean_source_handoff_start_map(
+            reference_timeline_entries,
+            clean_video_path,
+            video_processor=video_processor,
+            log_func=log,
+        )
         narration_entries = [
             entry
-            for entry in preserve_reference_timeline_entries(subtitle_bundle.narration_entries)
+            for entry in reference_timeline_entries
+            if entry.entry_type == "narration"
             if normalize_subtitle_text(entry.text) and entry.end > entry.start + 0.01
         ]
         if not narration_entries:
@@ -20829,7 +25066,11 @@ def run_clone_pipeline(
         reference_profile = analyze_reference_subtitle_profile(reference_profile_entries)
         requested_tts_rate = (settings.tts_rate or "").strip() or "+0%"
         reference_tts_rate = suggest_reference_tts_rate(reference_profile_entries)
-        effective_tts_rate = min_rate_text(requested_tts_rate, reference_tts_rate)
+        effective_tts_rate = (
+            reference_tts_rate
+            if strict_audio_timing_mode
+            else min_rate_text(requested_tts_rate, reference_tts_rate)
+        )
         effective_tts_voice = choose_reference_tts_voice(settings.tts_voice, reference_profile_entries)
         target_gap = normalize_reference_gap(reference_profile["avg_gap"])
         log(
@@ -20864,10 +25105,8 @@ def run_clone_pipeline(
             video_processor=video_processor,
             ai_generator=ai_generator,
             settings=settings,
+            source_handoff_starts=source_handoff_start_map,
             log_func=log,
-        )
-        strict_audio_timing_mode = bool(
-            settings.prefer_funasr_audio_subtitles and settings.prefer_funasr_sentence_pauses
         )
         if strict_audio_timing_mode and rendered_entries:
             strict_non_tts_entries = [
