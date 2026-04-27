@@ -32,6 +32,33 @@ def _normalize_box(points: object) -> list[int]:
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+def _append_line(
+    lines: list[dict],
+    text_parts: list[str],
+    score_state: list[float],
+    box: object,
+    text: object,
+    score_value: object,
+) -> None:
+    text_value = str(text or "").strip()
+    if not text_value:
+        return
+    try:
+        score = float(score_value or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    lines.append(
+        {
+            "text": text_value,
+            "score": score,
+            "box": _normalize_box(box),
+        }
+    )
+    text_parts.append(text_value)
+    score_state[0] += score
+    score_state[1] += 1.0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", required=True)
@@ -48,9 +75,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
-    from backend.tools.ocr import OcrRecogniser
+    rapid_ocr = None
+    recogniser = None
+    try:
+        from rapidocr_onnxruntime import RapidOCR
 
-    recogniser = OcrRecogniser()
+        rapid_ocr = RapidOCR()
+    except Exception:
+        from backend.tools.ocr import OcrRecogniser
+
+        recogniser = OcrRecogniser()
+
     results: list[dict] = []
     for item in payload.get("images") or []:
         key = str(item.get("key") or "").strip()
@@ -58,35 +93,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not key or not path.exists():
             continue
 
-        dt_box, rec_res = recogniser.predict(str(path))
         lines: list[dict] = []
         text_parts: list[str] = []
-        score_sum = 0.0
-        score_count = 0
-        for box, rec_item in zip(dt_box, rec_res):
-            text = str(rec_item[0] or "").strip()
-            try:
-                score = float(rec_item[1] or 0.0)
-            except (TypeError, ValueError):
-                score = 0.0
-            if not text:
-                continue
-            lines.append(
-                {
-                    "text": text,
-                    "score": score,
-                    "box": _normalize_box(box),
-                }
-            )
-            text_parts.append(text)
-            score_sum += score
-            score_count += 1
+        score_state = [0.0, 0.0]
+        if rapid_ocr is not None:
+            rec_result, _ = rapid_ocr(str(path), use_cls=False)
+            for rec_item in rec_result or []:
+                if not isinstance(rec_item, (list, tuple)) or len(rec_item) < 2:
+                    continue
+                box = rec_item[0]
+                text = rec_item[1]
+                score = rec_item[2] if len(rec_item) >= 3 else 0.0
+                _append_line(lines, text_parts, score_state, box, text, score)
+        else:
+            dt_box, rec_res = recogniser.predict(str(path))
+            for box, rec_item in zip(dt_box, rec_res):
+                text = rec_item[0] if isinstance(rec_item, (list, tuple)) and rec_item else ""
+                score = rec_item[1] if isinstance(rec_item, (list, tuple)) and len(rec_item) >= 2 else 0.0
+                _append_line(lines, text_parts, score_state, box, text, score)
 
         results.append(
             {
                 "key": key,
                 "joined_text": "".join(text_parts),
-                "avg_score": score_sum / max(1, score_count),
+                "avg_score": score_state[0] / max(1.0, score_state[1]),
                 "lines": lines,
             }
         )

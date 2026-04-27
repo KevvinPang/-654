@@ -89,6 +89,22 @@
     .fallback-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     .job-preview{margin-top:8px;padding:10px 11px;border-radius:14px;background:var(--surface-soft);color:var(--ink);font-size:12px;line-height:1.55;white-space:pre-wrap}
     .log-note{margin-top:10px}
+    .bgm-card{position:relative;overflow:hidden;background:linear-gradient(145deg,#fbfffc 0%,#eef8f3 58%,#fff8ed 100%);border-color:rgba(8,120,95,.20)}
+    .bgm-card::before{content:"";position:absolute;right:-62px;top:-72px;width:180px;height:180px;border-radius:999px;background:radial-gradient(circle,rgba(8,120,95,.16),transparent 65%);pointer-events:none}
+    .bgm-card>*{position:relative}
+    .bgm-mode-select{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(8,120,95,.18);border-radius:18px;background:rgba(255,255,255,.78)}
+    .bgm-mode-select select{background:#fff}
+    .bgm-status{padding:12px 13px;border-radius:18px;background:rgba(255,255,255,.76);border:1px solid rgba(8,120,95,.14);color:var(--muted);font-size:13px;line-height:1.65}
+    .bgm-status strong{display:block;color:var(--ink);font-size:14px;margin-bottom:3px}
+    .bgm-mode-none .bgm-active-only,.bgm-mode-none .bgm-manual-only,.bgm-mode-none .bgm-online-only,.bgm-mode-none .bgm-advanced-only{display:none}
+    .bgm-mode-auto .bgm-manual-only,.bgm-mode-local_auto .bgm-manual-only,.bgm-mode-online_auto .bgm-manual-only{display:none}
+    .bgm-mode-manual .bgm-auto-only,.bgm-mode-manual .bgm-online-only{display:none}
+    .bgm-mode-local_auto .bgm-online-only{display:none}
+    .bgm-advanced{border:1px dashed rgba(8,120,95,.26);border-radius:18px;background:rgba(255,255,255,.56);padding:10px 12px}
+    .bgm-advanced summary{cursor:pointer;font-weight:900;color:var(--accent);list-style:none}
+    .bgm-advanced summary::-webkit-details-marker{display:none}
+    .bgm-advanced summary::after{content:"展开";margin-left:8px;font-size:12px;color:var(--muted)}
+    .bgm-advanced[open] summary::after{content:"收起"}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(8,120,95,.3)}70%{box-shadow:0 0 0 10px rgba(8,120,95,0)}100%{box-shadow:0 0 0 0 rgba(8,120,95,0)}}
     @keyframes panelPulse{0%{box-shadow:var(--shadow)}45%{box-shadow:0 0 0 4px rgba(8,120,95,.16),var(--shadow-tight)}100%{box-shadow:var(--shadow)}}
     @media (max-width:1180px){.fallback-row{grid-template-columns:1fr}}
@@ -354,36 +370,71 @@
             </div>
           </div>
           <div class="grid2" style="margin-top:14px">
-            <div class="card stack">
+            <div class="card stack bgm-card" id="bgmCard">
               <div class="row">
                 <h3>BGM</h3>
-                <span class="pill">可选</span>
+                <span class="pill good">参考视频自动匹配</span>
               </div>
-              <label class="field">
+              <div class="bgm-mode-select">
+                <label class="field">
+                  <span>BGM 模式</span>
+                  <select id="bgmSourceMode" onchange="updateBgmModeUi()">
+                    <option value="auto">自动匹配参考视频 BGM（推荐）</option>
+                    <option value="local_auto">只用本地曲库自动匹配</option>
+                    <option value="online_auto">只用 Jamendo 联网匹配</option>
+                    <option value="manual">手动指定一个 BGM</option>
+                    <option value="none">不使用 BGM</option>
+                  </select>
+                </label>
+                <span id="bgmModePill" class="pill good">自动</span>
+              </div>
+              <div id="bgmModeStatus" class="bgm-status"></div>
+              <label class="field bgm-manual-only">
                 <span>已选 BGM</span>
                 <select id="bgmAudioSelect"></select>
-                <div class="hint">可先上传到当前工作间，再从这里切换。留空表示不加 BGM。</div>
+                <div class="hint">只有“手动指定”模式会读取这里；其他模式会忽略这个选择。</div>
               </label>
-              <label class="field">
+              <label class="field bgm-active-only">
                 <span>BGM 音量占比</span>
                 <input id="bgmVolumePercent" type="number" min="0" max="100" step="1" value="12">
                 <div class="hint">按最终成片主声音量的大致百分比混入，默认较轻，避免压住解说和对白。</div>
               </label>
-              <div class="actions">
-                <button class="secondary" type="button" onclick="openLocalFilePicker('bgmAudioUploadInput')">浏览本地音频</button>
-                <button class="secondary" type="button" onclick="openLocalFilePicker('bgmFolderUploadInput')">选择音频文件夹</button>
-              </div>
-              <div id="bgmImportStatus" class="hint upload-note">当前工作间还没有导入 BGM，可直接点击上方按钮浏览导入。</div>
-              <label class="field">
-                <span>本地音频或文件夹路径</span>
-                <textarea id="localBgmPaths" placeholder="E:\BGM\bgm01.mp3&#10;E:\BGM合集"></textarea>
-              </label>
-              <button class="secondary" type="button" onclick="importLocalPaths('bgm','localBgmPaths',this)">按路径导入 BGM</button>
-              <div id="bgmAssetList" class="file-picker"></div>
+              <details class="bgm-advanced bgm-advanced-only">
+                <summary>高级设置</summary>
+                <div class="stack" style="margin-top:10px">
+                  <label class="field bgm-auto-only">
+                    <span>风格补充词</span>
+                    <input id="bgmSearchQuery" type="text" placeholder="可留空，系统会优先分析参考视频 BGM">
+                    <div class="hint">不是必填项。只在参考视频音频特征不够明确时作为辅助关键词。</div>
+                  </label>
+                  <label class="field bgm-online-only">
+                    <span>Jamendo Client ID</span>
+                    <input id="bgmJamendoClientId" type="password" placeholder="联网曲库需要，可留空只用本地曲库">
+                    <div class="hint">联网模式使用。未填写时不会联网下载；自动模式会退回本地曲库。</div>
+                  </label>
+                  <label class="field bgm-auto-only">
+                    <span>LX Music 下载目录 / 外部 BGM 目录</span>
+                    <textarea id="bgmExternalDirs" placeholder="C:\Users\24995\Desktop\LX-BGM&#10;D:\BGM合集"></textarea>
+                    <div class="hint">每行一个文件夹。可把 LX Music 的下载路径填到这里，自动匹配时会和当前工作间 BGM 一起按参考视频风格筛选。</div>
+                  </label>
+                  <button class="secondary bgm-auto-only" type="button" onclick="pickFolderForInput('bgmExternalDirs',this)">选择外部 BGM 目录</button>
+                  <div class="actions">
+                    <button class="secondary" type="button" onclick="openLocalFilePicker('bgmAudioUploadInput')">导入本地音频</button>
+                    <button class="secondary" type="button" onclick="openLocalFilePicker('bgmFolderUploadInput')">导入音频文件夹</button>
+                  </div>
+                  <div id="bgmImportStatus" class="hint upload-note">当前工作间还没有导入 BGM，可直接点击上方按钮浏览导入。</div>
+                  <label class="field">
+                    <span>本地音频或文件夹路径</span>
+                    <textarea id="localBgmPaths" placeholder="E:\BGM\bgm01.mp3&#10;E:\BGM合集"></textarea>
+                  </label>
+                  <button class="secondary" type="button" onclick="importLocalPaths('bgm','localBgmPaths',this)">按路径导入 BGM</button>
+                </div>
+              </details>
+              <div id="bgmAssetList" class="file-picker bgm-active-only"></div>
             </div>
             <div class="card stack">
               <h3>输出补充说明</h3>
-              <div class="muted">封面会在成片输出时一起复制到最终输出目录，并沿用当前工作间同名文件前缀。BGM 只在你明确选中后才会参与最终混音，不会影响未选择 BGM 的工作间。</div>
+              <div class="muted">封面会在成片输出时一起复制到最终输出目录，并沿用当前工作间同名文件前缀。BGM 默认按参考视频音频风格自动匹配；选择“不使用 BGM”时会明确跳过所有搜索和混音。</div>
             </div>
           </div>
           <div class="grid3" style="margin-top:14px">
@@ -456,7 +507,7 @@
   <input id="bgmFolderUploadInput" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,audio/*" webkitdirectory directory multiple hidden onchange="uploadLocalFiles(this,'bgm')">
 
   <script>
-const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-character-251128",ai_fallback_models:[],prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
+const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-character-251128",ai_fallback_models:[],prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_source_mode:"auto",bgm_search_query:"",bgm_online_provider:"jamendo",bgm_jamendo_client_id:"",bgm_external_dirs:[],bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
     let latestStatus=null,currentWorkspace="",currentTask=null,selectedWorkspaces=new Set(),activeJobId="",baiduFiles=[],baiduSavedEntries=[],baiduListingUrl="",selectedBaiduKeys=new Set(),baiduExpandedFolders=new Set(),baiduLoginState=null,baiduListingPending=false,toastCounter=0,sidebarCollapsed=false,workspaceFocusTimer=null,lastSystemNoticeId="";
     const baiduOfficialDiagnosisCache=new Map();
     const $=id=>document.getElementById(id);
@@ -875,7 +926,9 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     function formatImportStatus(label,section,emptyText){const count=assetSectionCount(section);if(!count)return emptyText;const recent=assetSectionRecent(section);return recent.length?`当前工作间已导入 ${count} 个${label}，最近：${recent.join("、")}`:`当前工作间已导入 ${count} 个${label}。`}
     function formatBytes(value){const size=Number(value||0);if(!Number.isFinite(size)||size<=0)return"";if(size<1024)return`${size} B`;if(size<1024**2)return`${(size/1024).toFixed(size>=10*1024?0:1)} KB`;if(size<1024**3)return`${(size/1024**2).toFixed(size>=10*1024**2?0:1)} MB`;return`${(size/1024**3).toFixed(1)} GB`}
     function renderWorkspaceAssetPicker(nodeId,section,emptyText){const node=$(nodeId);if(!node)return;const items=assetSectionItems(section);if(!items.length){node.innerHTML=`<div class="empty">${esc(emptyText)}</div>`;return}const hiddenCount=Math.max(0,Number(section?.hidden_count||0));node.innerHTML=`${items.map(item=>{const relative=normalizeDisplayText(item?.relative_path||item?.name||"",currentWorkspace),name=normalizeDisplayText(item?.name||relative.split(/[\\/]/).pop()||"",currentWorkspace),sizeText=formatBytes(item?.size),meta=relative&&relative!==name?relative:"已在当前工作间";return`<div class="file-row"><span class="pill good">文件</span><div><strong title="${esc(name)}">${esc(name)}</strong><small title="${esc(relative||meta)}">${esc(meta)}</small></div><span class="pill">${esc(sizeText||"已导入")}</span></div>`}).join("")}${hiddenCount?`<div class="hint">还有 ${hiddenCount} 个文件未展开显示。</div>`:""}`}
-    function renderBgmAssetOptions(section,selectedPath=""){const select=$("bgmAudioSelect");if(!select)return;const normalizedSelected=String(selectedPath||"").trim(),items=assetSectionItems(section),availablePaths=new Set(items.map(item=>String(item?.relative_path||"").trim()).filter(Boolean));let options=`<option value="">不使用 BGM</option>`;for(const item of items){const relative=normalizeDisplayText(item?.relative_path||item?.name||"",currentWorkspace),name=normalizeDisplayText(item?.name||relative.split(/[\\/]/).pop()||"",currentWorkspace),sizeText=formatBytes(item?.size);options+=`<option value="${esc(relative)}">${esc(sizeText?`${name} · ${sizeText}`:name)}</option>`}if(normalizedSelected&&!availablePaths.has(normalizedSelected))options+=`<option value="${esc(normalizedSelected)}">${esc(normalizedSelected)}</option>`;select.innerHTML=options;select.value=normalizedSelected||""}
+    function normalizeBgmMode(mode){const value=String(mode||DEFAULT_SETTINGS.bgm_source_mode).trim().toLowerCase();if(["none","manual","local_auto","online_auto","auto"].includes(value))return value;if(["local","local-auto"].includes(value))return"local_auto";if(["online","online-auto"].includes(value))return"online_auto";return"auto"}
+    function updateBgmModeUi(){const mode=normalizeBgmMode($("bgmSourceMode")?.value),card=$("bgmCard"),pill=$("bgmModePill"),status=$("bgmModeStatus"),audioSelect=$("bgmAudioSelect"),volume=$("bgmVolumePercent"),query=$("bgmSearchQuery"),jamendo=$("bgmJamendoClientId"),externalDirs=$("bgmExternalDirs");if(card)card.className=`card stack bgm-card bgm-mode-${mode}`;if($("bgmSourceMode"))$("bgmSourceMode").value=mode;if(audioSelect)audioSelect.disabled=mode!=="manual";if(volume)volume.disabled=mode==="none";if(query)query.disabled=mode==="none"||mode==="manual";if(jamendo)jamendo.disabled=!(mode==="auto"||mode==="online_auto");if(externalDirs)externalDirs.disabled=mode==="none"||mode==="manual"||mode==="online_auto";const details={auto:["自动匹配","优先分析参考视频 BGM 风格，联网搜索 Jamendo；没有 Key 或联网失败时，自动回退当前工作间与外部 BGM 目录。","good"],local_auto:["本地自动","分析参考视频 BGM 风格后，在当前工作间 BGM 曲库和外部 BGM 目录中挑选最接近的音频。","good"],online_auto:["联网自动","分析参考视频 BGM 风格后，只从 Jamendo 联网搜索；没有 Client ID 时不会加 BGM。","warn"],manual:["手动指定","只使用下面选中的一个本地 BGM 文件；不会联网，也不会自动换歌。","warn"],none:["不使用","本次成片明确不加 BGM，联网搜索、本地曲库和手动选择都会被忽略。","bad"]}[mode]||[];if(pill){pill.className=`pill ${details[2]||"good"}`;pill.textContent=details[0]||"自动"}if(status)status.innerHTML=`<strong>${esc(details[0]||"自动匹配")}</strong>${esc(details[1]||"")}`}
+    function renderBgmAssetOptions(section,selectedPath=""){const select=$("bgmAudioSelect");if(!select)return;const normalizedSelected=String(selectedPath||"").trim(),items=assetSectionItems(section),availablePaths=new Set(items.map(item=>String(item?.relative_path||"").trim()).filter(Boolean));let options=`<option value="">未选择文件</option>`;for(const item of items){const relative=normalizeDisplayText(item?.relative_path||item?.name||"",currentWorkspace),name=normalizeDisplayText(item?.name||relative.split(/[\\/]/).pop()||"",currentWorkspace),sizeText=formatBytes(item?.size);options+=`<option value="${esc(relative)}">${esc(sizeText?`${name} · ${sizeText}`:name)}</option>`}if(normalizedSelected&&!availablePaths.has(normalizedSelected))options+=`<option value="${esc(normalizedSelected)}">${esc(normalizedSelected)}</option>`;select.innerHTML=options;select.value=normalizedSelected||"";updateBgmModeUi()}
     function renderCoverPreviewFromSettings(settings={}){const panel=$("coverPreviewPanel");if(!panel)return;const coverPath=String(settings?.cover_image_path||"").trim(),coverName=String(settings?.cover_image_name||"").trim()||coverPath.split(/[\\/]/).pop()||"封面";if(!currentWorkspace||!coverPath){panel.className="empty";panel.textContent=currentWorkspace?"还没有选中封面。提取网盘内容后，找到图片并点击“设为封面”。":"请先选择工作间。";return}const previewUrl=`/api/workspaces/${encodeURIComponent(currentWorkspace)}/cover-preview?path=${encodeURIComponent(coverPath)}`;panel.className="";panel.innerHTML=`<div class="stack"><img src="${previewUrl}" alt="${esc(coverName)}" style="width:100%;max-height:260px;object-fit:contain;border:1px solid var(--line);border-radius:16px;background:#fff"><div class="muted">当前封面：${esc(coverName)}</div></div>`}
     async function refreshCoverPreview(button=null){if(!currentWorkspace){toast("请先选择工作间。","error");return}await withBusy(button,async()=>{await loadTask();toast("已刷新封面预览。","success")}).catch(error=>toast(error.message,"error"))}
     async function clearWorkspaceCover(button=null){if(!currentWorkspace){toast("请先选择工作间。","error");return}await withBusy(button,async()=>{await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/clear-cover`,{method:"POST",body:JSON.stringify({})});await loadTask();await loadStatus(true);toast("已清空当前封面。","success")}).catch(error=>toast(error.message,"error"))}
@@ -888,6 +941,7 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     function removeFallbackModelRow(button){button.closest(".fallback-row")?.remove();updateFallbackModelEmpty()}
     function setFallbackModels(items){const list=$("aiFallbackModelList");if(!list)return;list.innerHTML="";for(const item of (items||[]).map(normalizeFallbackModelItem).filter(item=>item.model))addFallbackModelRow(item);updateFallbackModelEmpty()}
     function readFallbackModels(){return Array.from($("aiFallbackModelList")?.querySelectorAll(".fallback-row")||[]).map(row=>{const model=row.querySelector("[data-fallback-model]")?.value.trim()||"",apiUrl=row.querySelector("[data-fallback-api-url]")?.value.trim()||"",apiKey=row.querySelector("[data-fallback-api-key]")?.value.trim()||"";if(!model)return null;const item={model};if(apiUrl)item.api_url=apiUrl;if(apiKey)item.api_key=apiKey;return item}).filter(Boolean)}
+    function readPathList(id){return String($(id)?.value||"").split(/\r?\n/).map(item=>item.trim()).filter(Boolean)}
     function setAiTestStatus(message="",type=""){const node=$("apiTestStatus");if(!node)return;node.textContent=message||"可点击“测试 API”验证当前主模型与备用模型链路。";node.style.color=type==="error"?"var(--bad)":type==="success"?"var(--good)":type==="info"?"var(--accent)":""}
     async function testAiApi(button=null){const apiKey=$("aiApiKey").value.trim(),apiModel=$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,apiUrl=$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url;if(!apiKey){const message="请先填写 API Key。";setAiTestStatus(message,"error");toast(message,"error");return}setAiTestStatus("正在测试当前主模型与备用模型链路，请稍等。","info");await withBusy(button,async()=>{const data=await api("/api/test-ai",{method:"POST",body:JSON.stringify({ai_api_key:apiKey,ai_model:apiModel,ai_api_url:apiUrl,ai_fallback_models:readFallbackModels()})});const label=data.active_label||data.active_model||apiModel,detail=data.used_fallback?`${label}（已切换到备用模型）`:label,message=`AI 连接成功：${detail}`;setAiTestStatus(message,"success");toast(message,"success")}).catch(error=>{const message=error.message||String(error);setAiTestStatus(message,"error");toast(message,"error")})}
     function setFallbackTestStatus(row,message="",type=""){const node=row?.querySelector("[data-fallback-test-status]");if(!node)return;node.textContent=message||"可单独测试这一条备用模型链路。";node.style.color=type==="error"?"var(--bad)":type==="success"?"var(--good)":type==="info"?"var(--accent)":""}
@@ -918,6 +972,10 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       setChecked("forceNoNarrationMode",settings.force_no_narration_mode===true);
       setValue("narrationBackgroundPercent",settings.narration_background_percent??DEFAULT_SETTINGS.narration_background_percent);
       setValue("outputWatermarkText",settings.output_watermark_text||DEFAULT_SETTINGS.output_watermark_text);
+      setValue("bgmSourceMode",settings.bgm_source_mode||DEFAULT_SETTINGS.bgm_source_mode);
+      setValue("bgmSearchQuery",settings.bgm_search_query||DEFAULT_SETTINGS.bgm_search_query);
+      setValue("bgmJamendoClientId",settings.bgm_jamendo_client_id||DEFAULT_SETTINGS.bgm_jamendo_client_id);
+      setValue("bgmExternalDirs",Array.isArray(settings.bgm_external_dirs)?settings.bgm_external_dirs.join("\n"):(settings.bgm_external_dirs||""));
       setValue("bgmVolumePercent",settings.bgm_volume_percent??DEFAULT_SETTINGS.bgm_volume_percent);
       setChecked("enableAiNarrationRewrite",settings.disable_ai_narration_rewrite!==true);
       setValue("aiApiKey",settings.ai_api_key||"");
@@ -943,8 +1001,8 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       task.douyin_download=douyinItems.map((item,index)=>({url:item.url,output_subdir:douyinOutput,with_watermark:$("douyinWithWatermark").checked,overwrite:$("douyinOverwrite").checked,filename_prefix:douyinReferencePrefix(index+1),force_no_narration_mode:item.force_no_narration_mode===true}));
       const subtitleOutputSubdir="subtitles/audio";
       task.subtitle_extract=douyinItems.length?douyinItems.map((item,index)=>({input_glob:joinPathText(douyinOutput,`${douyinReferencePrefix(index+1)}*`),output_subdir:subtitleOutputSubdir,skip_existing:false})):([{input_glob:"downloads/douyin/*",output_subdir:subtitleOutputSubdir,skip_existing:false}]);
-      const clipOutputRoot=$("clipOutputRoot").value.trim(),bgmAudioPath=$("bgmAudioSelect").value.trim(),autoClipBase={...baseTask(currentWorkspace).auto_clip[0],...one(task.auto_clip)},flipRatioValue=Number.parseFloat($("autoRandomEpisodeFlipRatio").value),flipRatio=Number.isFinite(flipRatioValue)?Math.max(0,Math.min(1,flipRatioValue)):.4;
-      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,ai_api_key:$("aiApiKey").value.trim(),ai_model:$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,ai_api_url:$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,ai_fallback_models:readFallbackModels(),prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:!$("enableAiNarrationRewrite").checked,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmAudioPath,bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
+      const clipOutputRoot=$("clipOutputRoot").value.trim(),rawBgmMode=normalizeBgmMode($("bgmSourceMode").value),bgmAudioPath=$("bgmAudioSelect").value.trim(),bgmSourceMode=rawBgmMode==="manual"&&!bgmAudioPath?"none":rawBgmMode,autoClipBase={...baseTask(currentWorkspace).auto_clip[0],...one(task.auto_clip)},flipRatioValue=Number.parseFloat($("autoRandomEpisodeFlipRatio").value),flipRatio=Number.isFinite(flipRatioValue)?Math.max(0,Math.min(1,flipRatioValue)):.4;
+      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,ai_api_key:$("aiApiKey").value.trim(),ai_model:$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,ai_api_url:$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,ai_fallback_models:readFallbackModels(),prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:!$("enableAiNarrationRewrite").checked,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmSourceMode==="manual"?bgmAudioPath:"",bgm_source_mode:bgmSourceMode,bgm_search_query:$("bgmSearchQuery").value.trim(),bgm_online_provider:"jamendo",bgm_jamendo_client_id:$("bgmJamendoClientId").value.trim(),bgm_external_dirs:readPathList("bgmExternalDirs"),bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
       if(douyinItems.length){
         task.auto_clip=douyinItems.map((item,index)=>{const prefix=douyinReferencePrefix(index+1),forceNoNarration=$("forceNoNarrationMode").checked||item.force_no_narration_mode===true,titleTemplate=douyinItems.length>1?`{workspace_name}_${prefix}{reference_stem}`:(autoClipBase.title||"{workspace_name}_{reference_stem}");return{...autoClipBase,reference_video_glob:joinPathText(douyinOutput,`${prefix}*`),reference_subtitle_glob:joinPathText(subtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:titleTemplate,match_all_references:false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:forceNoNarration}})
       }else{

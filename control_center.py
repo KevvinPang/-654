@@ -352,6 +352,11 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
             "cover_image_name": "",
             "cover_image_share_key": "",
             "bgm_audio_path": "",
+            "bgm_source_mode": "auto",
+            "bgm_search_query": "",
+            "bgm_online_provider": "jamendo",
+            "bgm_jamendo_client_id": "",
+            "bgm_external_dirs": [],
             "bgm_volume_percent": 12,
             "clip_output_root": "",
             "tts_voice": "zh-CN-YunxiNeural",
@@ -396,6 +401,11 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     settings.setdefault("cover_image_name", "")
     settings.setdefault("cover_image_share_key", "")
     settings.setdefault("bgm_audio_path", "")
+    settings.setdefault("bgm_source_mode", "auto")
+    settings.setdefault("bgm_search_query", "")
+    settings.setdefault("bgm_online_provider", "jamendo")
+    settings.setdefault("bgm_jamendo_client_id", "")
+    settings.setdefault("bgm_external_dirs", [])
     settings.setdefault("bgm_volume_percent", 12)
     settings.setdefault("clip_output_root", "")
     settings.setdefault("tts_voice", "zh-CN-YunxiNeural")

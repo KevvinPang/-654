@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import array
 import concurrent.futures
 import glob
+import hashlib
 import json
 import logging
+import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +34,7 @@ except Exception:
     pass
 
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
+SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 SUPPORTED_SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".txt"}
 AUTO_CLIP_SETTINGS_KEYS = (
     "ai_api_key",
@@ -52,7 +60,25 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "reference_speed_factor",
     "cover_image_path",
     "bgm_audio_path",
+    "bgm_source_mode",
+    "bgm_search_query",
+    "bgm_online_provider",
+    "bgm_jamendo_client_id",
+    "bgm_external_dirs",
     "bgm_volume_percent",
+)
+BGM_SOURCE_MODES = {"none", "manual", "local_auto", "online_auto", "auto"}
+BGM_ONLINE_PROVIDERS = {"jamendo"}
+BGM_JAMENDO_API_URL = "https://api.jamendo.com/v3.0/tracks/"
+BGM_REFERENCE_ANALYSIS_SECONDS = 45.0
+BGM_REFERENCE_ANALYSIS_SAMPLE_RATE = 16000
+BGM_REFERENCE_ANALYSIS_MAX_BYTES = int(BGM_REFERENCE_ANALYSIS_SECONDS * BGM_REFERENCE_ANALYSIS_SAMPLE_RATE * 2)
+BGM_ONLINE_CANDIDATE_LIMIT = 4
+BGM_FFMPEG_ENV_NAMES = ("SERVER_AUTO_CLIP_FFMPEG", "FFMPEG_PATH")
+BGM_FFMPEG_FALLBACKS = (
+    Path(r"D:\NarratoAI_v0.7\lib\ffmpeg\ffmpeg-7.0-essentials_build\ffmpeg.exe"),
+    Path(r"D:\FFmpeg\bin\ffmpeg.exe"),
+    Path(r"C:\FFmpeg\bin\ffmpeg.exe"),
 )
 KNOWN_MOJIBAKE_REPLACEMENTS = {
     "E:\\鏍风墖": "E:\\样片",
@@ -428,6 +454,644 @@ def resolve_workspace_inputs(
 
 def filter_paths_by_suffix(paths: list[Path], allowed_suffixes: set[str]) -> list[Path]:
     return [path for path in paths if path.suffix.lower() in allowed_suffixes]
+
+
+def setting_value(task: dict[str, Any], shared_settings: dict[str, Any], key: str, default: Any = "") -> Any:
+    if key in task:
+        return task.get(key)
+    return shared_settings.get(key, default)
+
+
+def normalize_bgm_source_mode(raw_mode: Any) -> str:
+    mode = str(raw_mode or "auto").strip().lower()
+    if mode in {"", "none", "off", "no", "false", "disabled", "disable"}:
+        return "none"
+    if mode in {"local", "local_auto", "local-auto"}:
+        return "local_auto"
+    if mode in {"online", "online_auto", "online-auto"}:
+        return "online_auto"
+    if mode in {"auto", "smart"}:
+        return "auto"
+    return mode if mode in BGM_SOURCE_MODES else "auto"
+
+
+def sanitize_bgm_filename_part(text: str, fallback: str = "bgm") -> str:
+    normalized = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(text or "").strip(), flags=re.UNICODE)
+    normalized = normalized.strip("._-")
+    return (normalized or fallback)[:80]
+
+
+def infer_bgm_search_query(workspace: WorkspaceContext, reference_video: Path, raw_query: Any) -> str:
+    custom_query = str(raw_query or "").strip()
+    if custom_query:
+        return custom_query
+
+    context = f"{workspace.name} {reference_video.stem}".lower()
+    profiles: list[tuple[tuple[str, ...], str]] = [
+        (("不好惹", "战神", "复仇", "杀", "打", "霸", "逆袭", "打脸"), "dramatic cinematic tension action instrumental"),
+        (("甜", "恋", "爱", "婚", "嫁", "宠", "妻", "总裁"), "romantic warm cinematic piano instrumental"),
+        (("悬", "谜", "鬼", "惊", "恐", "命案"), "dark suspense cinematic instrumental"),
+        (("搞笑", "喜剧", "沙雕", "爆笑"), "playful upbeat comedy instrumental"),
+        (("乡下", "农村", "村", "田园"), "warm rural cinematic acoustic instrumental"),
+    ]
+    for needles, query in profiles:
+        if any(needle.lower() in context for needle in needles):
+            return query
+    return "cinematic drama emotional instrumental"
+
+
+def resolve_bgm_ffmpeg_path(
+    workspace: WorkspaceContext,
+    task: dict[str, Any],
+    shared_settings: dict[str, Any],
+) -> Path | None:
+    raw_path = str(setting_value(task, shared_settings, "ffmpeg", "") or "").strip()
+    if raw_path:
+        candidate = resolve_workspace_path(workspace.root, raw_path, "")
+        if candidate.exists():
+            return candidate
+    for env_name in BGM_FFMPEG_ENV_NAMES:
+        env_path = os.environ.get(env_name, "").strip()
+        if env_path and Path(env_path).exists():
+            return Path(env_path)
+    resolved = shutil.which("ffmpeg")
+    if resolved:
+        return Path(resolved)
+    for candidate in BGM_FFMPEG_FALLBACKS:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def decode_bgm_audio_samples(media_path: Path, ffmpeg_path: Path) -> list[int]:
+    command = [
+        str(ffmpeg_path),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(media_path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(BGM_REFERENCE_ANALYSIS_SAMPLE_RATE),
+        "-t",
+        f"{BGM_REFERENCE_ANALYSIS_SECONDS:.1f}",
+        "-f",
+        "s16le",
+        "pipe:1",
+    ]
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return []
+    raw_audio = result.stdout[:BGM_REFERENCE_ANALYSIS_MAX_BYTES]
+    samples = array.array("h")
+    samples.frombytes(raw_audio[: len(raw_audio) - (len(raw_audio) % 2)])
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return list(samples)
+
+
+def decode_reference_audio_samples(reference_video: Path, ffmpeg_path: Path) -> list[int]:
+    return decode_bgm_audio_samples(reference_video, ffmpeg_path)
+
+
+def percentile(values: list[float], ratio: float, default: float = 0.0) -> float:
+    if not values:
+        return default
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, int(round((len(ordered) - 1) * ratio))))
+    return ordered[index]
+
+
+def analyze_reference_audio_style(samples: list[int]) -> dict[str, float]:
+    if len(samples) < BGM_REFERENCE_ANALYSIS_SAMPLE_RATE:
+        return {}
+    frame_size = 2048
+    rms_values: list[float] = []
+    zcr_values: list[float] = []
+    for offset in range(0, len(samples) - frame_size + 1, frame_size):
+        frame = samples[offset : offset + frame_size]
+        if not frame:
+            continue
+        square_sum = sum(float(sample) * float(sample) for sample in frame)
+        rms = math.sqrt(square_sum / len(frame)) / 32768.0
+        sign_changes = 0
+        previous = frame[0]
+        for sample in frame[1:]:
+            if (previous < 0 <= sample) or (previous >= 0 > sample):
+                sign_changes += 1
+            previous = sample
+        rms_values.append(rms)
+        zcr_values.append(sign_changes / max(1, len(frame) - 1))
+    if not rms_values:
+        return {}
+
+    mean_rms = sum(rms_values) / len(rms_values)
+    p30_rms = percentile(rms_values, 0.30, mean_rms)
+    p90_rms = percentile(rms_values, 0.90, mean_rms)
+    dynamic_ratio = p90_rms / max(0.001, p30_rms)
+    mean_zcr = sum(zcr_values) / max(1, len(zcr_values))
+    onset_threshold = max(mean_rms * 1.25, p30_rms * 1.55, 0.015)
+    onset_count = 0
+    for index in range(1, len(rms_values)):
+        if rms_values[index] >= onset_threshold and rms_values[index] >= rms_values[index - 1] * 1.22:
+            onset_count += 1
+    duration = len(samples) / float(BGM_REFERENCE_ANALYSIS_SAMPLE_RATE)
+    return {
+        "mean_rms": mean_rms,
+        "p90_rms": p90_rms,
+        "dynamic_ratio": dynamic_ratio,
+        "mean_zcr": mean_zcr,
+        "onset_density": onset_count / max(1.0, duration),
+    }
+
+
+def reference_audio_style_query(features: dict[str, float]) -> str:
+    mean_rms = float(features.get("mean_rms", 0.0) or 0.0)
+    dynamic_ratio = float(features.get("dynamic_ratio", 0.0) or 0.0)
+    mean_zcr = float(features.get("mean_zcr", 0.0) or 0.0)
+    onset_density = float(features.get("onset_density", 0.0) or 0.0)
+
+    if mean_rms >= 0.13 and onset_density >= 0.75:
+        if mean_zcr >= 0.105:
+            return "energetic electronic cinematic action tension instrumental"
+        return "dramatic cinematic action percussion tension instrumental"
+    if mean_rms <= 0.045 and onset_density <= 0.35:
+        return "soft emotional cinematic piano gentle instrumental"
+    if dynamic_ratio >= 3.0:
+        return "suspense cinematic tension build dark instrumental"
+    if mean_zcr >= 0.115:
+        return "modern electronic suspense tension instrumental"
+    if onset_density >= 0.55:
+        return "upbeat cinematic drama pulse instrumental"
+    return "warm emotional cinematic drama instrumental"
+
+
+def load_bgm_audio_features(media_path: Path, ffmpeg_path: Path) -> dict[str, float]:
+    samples = decode_bgm_audio_samples(media_path, ffmpeg_path)
+    return analyze_reference_audio_style(samples)
+
+
+def bgm_feature_distance(reference_features: dict[str, float], candidate_features: dict[str, float]) -> float:
+    if not reference_features or not candidate_features:
+        return 999.0
+    specs = (
+        ("mean_rms", 0.16),
+        ("dynamic_ratio", 2.5),
+        ("mean_zcr", 0.09),
+        ("onset_density", 0.80),
+    )
+    total = 0.0
+    weight = 0.0
+    for key, scale in specs:
+        if key not in reference_features or key not in candidate_features:
+            continue
+        total += abs(float(reference_features[key]) - float(candidate_features[key])) / max(scale, 0.001)
+        weight += 1.0
+    if weight <= 0.0:
+        return 999.0
+    return total / weight
+
+
+def bgm_similarity_score(reference_features: dict[str, float], candidate_features: dict[str, float]) -> float:
+    distance = bgm_feature_distance(reference_features, candidate_features)
+    if distance >= 999.0:
+        return 0.0
+    return 100.0 / (1.0 + distance)
+
+
+def infer_reference_bgm_search_query(
+    workspace: WorkspaceContext,
+    task: dict[str, Any],
+    shared_settings: dict[str, Any],
+    reference_video: Path,
+) -> str:
+    ffmpeg_path = resolve_bgm_ffmpeg_path(workspace, task, shared_settings)
+    if ffmpeg_path is None:
+        workspace.logger.warning("[auto_bgm] ffmpeg not found; cannot analyze reference BGM style")
+        return ""
+    try:
+        samples = decode_reference_audio_samples(reference_video, ffmpeg_path)
+        features = analyze_reference_audio_style(samples)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        workspace.logger.warning("[auto_bgm] reference audio style analysis failed: %s", exc)
+        return ""
+    if not features:
+        workspace.logger.warning("[auto_bgm] reference audio style analysis found no usable audio")
+        return ""
+    query = reference_audio_style_query(features)
+    workspace.logger.info(
+        "[auto_bgm] reference BGM style query='%s' energy=%.3f dynamic=%.2f zcr=%.3f onset=%.2f/s",
+        query,
+        features.get("mean_rms", 0.0),
+        features.get("dynamic_ratio", 0.0),
+        features.get("mean_zcr", 0.0),
+        features.get("onset_density", 0.0),
+    )
+    return query
+
+
+def build_bgm_similarity_context(
+    workspace: WorkspaceContext,
+    task: dict[str, Any],
+    shared_settings: dict[str, Any],
+    reference_video: Path,
+) -> tuple[str, dict[str, float], Path | None]:
+    manual_query = str(setting_value(task, shared_settings, "bgm_search_query", "") or "").strip()
+    reference_query = ""
+    reference_features: dict[str, float] = {}
+    ffmpeg_path = resolve_bgm_ffmpeg_path(workspace, task, shared_settings)
+    if ffmpeg_path is None:
+        workspace.logger.warning("[auto_bgm] ffmpeg not found; cannot analyze reference BGM similarity")
+    else:
+        try:
+            reference_features = load_bgm_audio_features(reference_video, ffmpeg_path)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            workspace.logger.warning("[auto_bgm] reference BGM similarity analysis failed: %s", exc)
+        if reference_features:
+            reference_query = reference_audio_style_query(reference_features)
+            workspace.logger.info(
+                "[auto_bgm] reference BGM profile query='%s' energy=%.3f dynamic=%.2f zcr=%.3f onset=%.2f/s",
+                reference_query,
+                reference_features.get("mean_rms", 0.0),
+                reference_features.get("dynamic_ratio", 0.0),
+                reference_features.get("mean_zcr", 0.0),
+                reference_features.get("onset_density", 0.0),
+            )
+        else:
+            workspace.logger.warning("[auto_bgm] reference BGM profile unavailable; falling back to text query")
+
+    if reference_query and manual_query:
+        return f"{reference_query} {manual_query}", reference_features, ffmpeg_path
+    if reference_query:
+        return reference_query, reference_features, ffmpeg_path
+    return infer_bgm_search_query(workspace, reference_video, manual_query), reference_features, ffmpeg_path
+
+
+def build_bgm_search_query(
+    workspace: WorkspaceContext,
+    task: dict[str, Any],
+    shared_settings: dict[str, Any],
+    reference_video: Path,
+) -> str:
+    query, _reference_features, _ffmpeg_path = build_bgm_similarity_context(
+        workspace,
+        task,
+        shared_settings,
+        reference_video,
+    )
+    return query
+
+
+def normalize_bgm_external_dirs(raw_dirs: Any) -> list[str]:
+    if raw_dirs is None:
+        return []
+    if isinstance(raw_dirs, (list, tuple, set)):
+        items = raw_dirs
+    else:
+        items = re.split(r"[\r\n]+", str(raw_dirs))
+    return [str(item or "").strip() for item in items if str(item or "").strip()]
+
+
+def collect_bgm_files_from_dir(directory: Path) -> list[Path]:
+    if not directory.exists() or not directory.is_dir():
+        return []
+    return [
+        path.resolve()
+        for path in directory.rglob("*")
+        if path.is_file() and path.suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS and path.stat().st_size > 0
+    ]
+
+
+def collect_workspace_bgm_files(workspace: WorkspaceContext, external_dirs: list[str] | None = None) -> list[Path]:
+    candidates = collect_bgm_files_from_dir(workspace.root / "bgm")
+    for raw_dir in external_dirs or []:
+        directory = resolve_workspace_path(workspace.root, raw_dir, "")
+        external_candidates = collect_bgm_files_from_dir(directory)
+        if external_candidates:
+            workspace.logger.info("[auto_bgm] found %d BGM files in external dir: %s", len(external_candidates), directory)
+        else:
+            workspace.logger.warning("[auto_bgm] external BGM dir has no supported audio: %s", directory)
+        candidates.extend(external_candidates)
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for path in sorted(candidates, key=lambda item: str(item).lower()):
+        if path in seen:
+            continue
+        seen.add(path)
+        deduped.append(path)
+    return deduped
+
+
+def score_local_bgm_candidate(path: Path, query: str, workspace: WorkspaceContext, reference_video: Path) -> float:
+    haystack = f"{path.stem} {path.parent.name}".lower()
+    context = f"{workspace.name} {reference_video.stem}".lower()
+    query_tokens = [
+        token.lower()
+        for token in re.findall(r"[\w\u4e00-\u9fff]+", query)
+        if len(token.strip()) >= 2
+    ]
+    score = 0.0
+    for token in query_tokens:
+        if token in haystack:
+            score += 3.0
+        elif token in context and token in haystack:
+            score += 2.0
+    for token in re.findall(r"[\w\u4e00-\u9fff]+", context):
+        if len(token) >= 2 and token in haystack:
+            score += 1.5
+    if "instrumental" in query.lower() and any(word in haystack for word in ("instrumental", "纯音乐", "无歌词")):
+        score += 2.0
+    if any(word in haystack for word in ("bgm", "配乐", "music")):
+        score += 0.5
+    return score
+
+
+def score_bgm_audio_candidate(
+    candidate_path: Path,
+    reference_features: dict[str, float],
+    ffmpeg_path: Path | None,
+) -> tuple[float, dict[str, float]]:
+    if not reference_features or ffmpeg_path is None:
+        return 0.0, {}
+    try:
+        candidate_features = load_bgm_audio_features(candidate_path, ffmpeg_path)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return 0.0, {}
+    return bgm_similarity_score(reference_features, candidate_features), candidate_features
+
+
+def choose_bgm_path_by_audio_similarity(
+    paths: list[Path],
+    reference_features: dict[str, float],
+    ffmpeg_path: Path | None,
+    workspace: WorkspaceContext,
+    label: str,
+) -> Path | None:
+    if not paths:
+        return None
+    if not reference_features or ffmpeg_path is None:
+        return paths[0]
+    scored: list[tuple[float, Path]] = []
+    for path in paths:
+        audio_score, _candidate_features = score_bgm_audio_candidate(path, reference_features, ffmpeg_path)
+        scored.append((audio_score, path))
+    best_score, best_path = max(
+        scored,
+        key=lambda item: (item[0], item[1].stat().st_size, str(item[1]).lower()),
+    )
+    if best_score > 0.0:
+        workspace.logger.info(
+            "[auto_bgm] %s audio similarity selected %.1f/100: %s",
+            label,
+            best_score,
+            best_path,
+        )
+    return best_path
+
+
+def choose_local_bgm(
+    workspace: WorkspaceContext,
+    reference_video: Path,
+    query: str,
+    reference_features: dict[str, float] | None = None,
+    ffmpeg_path: Path | None = None,
+    external_dirs: list[str] | None = None,
+) -> Path | None:
+    candidates = collect_workspace_bgm_files(workspace, external_dirs=external_dirs)
+    if not candidates:
+        return None
+    scored: list[tuple[float, float, Path]] = []
+    for path in candidates:
+        text_score = score_local_bgm_candidate(path, query, workspace, reference_video)
+        audio_score, _candidate_features = score_bgm_audio_candidate(
+            path,
+            reference_features or {},
+            ffmpeg_path,
+        )
+        scored.append((audio_score, text_score, path))
+    best_audio_score, best_text_score, best_path = max(
+        scored,
+        key=lambda item: (item[0], item[1], item[2].stat().st_size, str(item[2]).lower()),
+    )
+    if best_audio_score > 0.0:
+        workspace.logger.info(
+            "[auto_bgm] local BGM audio similarity %.1f/100, text score %.1f: %s",
+            best_audio_score,
+            best_text_score,
+            best_path,
+        )
+    return best_path
+
+
+def read_url_json(url: str, timeout: float = 18.0) -> dict[str, Any]:
+    request = urllib.request.Request(url, headers={"User-Agent": "server-auto-clip/1.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read()
+    return json.loads(raw.decode("utf-8", errors="replace"))
+
+
+def download_url_to_file(url: str, output_path: Path, timeout: float = 45.0) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": "server-auto-clip/1.0"})
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        with temp_path.open("wb") as file_obj:
+            shutil.copyfileobj(response, file_obj)
+    if temp_path.stat().st_size <= 0:
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError("downloaded BGM is empty")
+    temp_path.replace(output_path)
+
+
+def download_jamendo_bgm(
+    workspace: WorkspaceContext,
+    reference_video: Path,
+    query: str,
+    client_id: str,
+    reference_features: dict[str, float] | None = None,
+    ffmpeg_path: Path | None = None,
+) -> Path | None:
+    client_id = str(client_id or "").strip() or os.environ.get("JAMENDO_CLIENT_ID", "").strip()
+    if not client_id:
+        workspace.logger.warning("[auto_bgm] Jamendo client_id is empty; skip online BGM search")
+        return None
+
+    query_hash = hashlib.sha1(f"jamendo|{query}".encode("utf-8")).hexdigest()[:10]
+    online_dir = workspace.root / "bgm" / "online"
+    cached_matches = sorted(online_dir.glob(f"jamendo_{query_hash}_*"))
+    cached_audio = [path for path in cached_matches if path.suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS and path.is_file()]
+    def select_cached_audio(reason: str) -> Path | None:
+        selected_cached = choose_bgm_path_by_audio_similarity(
+            cached_audio,
+            reference_features or {},
+            ffmpeg_path,
+            workspace,
+            "cached Jamendo BGM",
+        )
+        if selected_cached is not None:
+            workspace.logger.info("[auto_bgm] using cached Jamendo BGM%s: %s", reason, selected_cached)
+            return selected_cached.resolve()
+        return None
+
+    if len(cached_audio) >= BGM_ONLINE_CANDIDATE_LIMIT:
+        selected_cached = select_cached_audio("")
+        if selected_cached is not None:
+            return selected_cached
+
+    results: list[Any] = []
+    for tags in ("instrumental", ""):
+        params = {
+            "client_id": client_id,
+            "format": "json",
+            "limit": "8",
+            "include": "musicinfo",
+            "audioformat": "mp31",
+            "search": query,
+            "order": "popularity_total",
+        }
+        if tags:
+            params["tags"] = tags
+        url = f"{BGM_JAMENDO_API_URL}?{urllib.parse.urlencode(params)}"
+        try:
+            payload = read_url_json(url)
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            workspace.logger.warning("[auto_bgm] Jamendo search failed: %s", exc)
+            if cached_audio:
+                return select_cached_audio(" after search failure")
+            return None
+        headers = payload.get("headers") if isinstance(payload, dict) else None
+        if isinstance(headers, dict) and str(headers.get("status") or "").lower() == "failed":
+            workspace.logger.warning(
+                "[auto_bgm] Jamendo API failed code=%s: %s",
+                headers.get("code", ""),
+                headers.get("error_message", "") or "unknown API error",
+            )
+            if cached_audio:
+                return select_cached_audio(" after API failure")
+            return None
+        raw_results = payload.get("results") if isinstance(payload, dict) else None
+        if isinstance(raw_results, list) and raw_results:
+            results = raw_results
+            break
+    if not results:
+        workspace.logger.warning("[auto_bgm] Jamendo returned no tracks for query: %s", query)
+        if cached_audio:
+            return select_cached_audio(" after empty search result")
+        return None
+
+    downloaded_candidates: list[Path] = [path.resolve() for path in cached_audio]
+    for item in results[:BGM_ONLINE_CANDIDATE_LIMIT]:
+        if not isinstance(item, dict):
+            continue
+        if item.get("audiodownload_allowed") is False or str(item.get("audiodownload_allowed")).lower() == "false":
+            workspace.logger.info(
+                "[auto_bgm] skip Jamendo track because download is not allowed: %s - %s",
+                item.get("artist_name") or "unknown artist",
+                item.get("name") or "unknown track",
+            )
+            continue
+        audio_url = str(item.get("audiodownload") or item.get("audio") or "").strip()
+        if not audio_url:
+            continue
+        track_id = sanitize_bgm_filename_part(str(item.get("id") or "track"), "track")
+        track_name = sanitize_bgm_filename_part(str(item.get("name") or "jamendo"), "jamendo")
+        output_path = online_dir / f"jamendo_{query_hash}_{track_id}_{track_name}.mp3"
+        metadata_path = output_path.with_suffix(".json")
+        if not output_path.exists() or output_path.stat().st_size <= 0:
+            try:
+                download_url_to_file(audio_url, output_path)
+            except (OSError, urllib.error.URLError, RuntimeError) as exc:
+                workspace.logger.warning("[auto_bgm] Jamendo track download failed (%s): %s", track_name, exc)
+                continue
+        metadata = {
+            "provider": "jamendo",
+            "query": query,
+            "reference_video": str(reference_video),
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "artist_name": item.get("artist_name"),
+            "license_ccurl": item.get("license_ccurl"),
+            "source_url": item.get("shareurl"),
+        }
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        resolved_output_path = output_path.resolve()
+        if resolved_output_path not in downloaded_candidates:
+            downloaded_candidates.append(resolved_output_path)
+        workspace.logger.info(
+            "[auto_bgm] prepared Jamendo candidate: %s - %s",
+            item.get("artist_name") or "unknown artist",
+            item.get("name") or output_path.name,
+        )
+
+    selected = choose_bgm_path_by_audio_similarity(
+        downloaded_candidates,
+        reference_features or {},
+        ffmpeg_path,
+        workspace,
+        "Jamendo BGM",
+    )
+    return selected.resolve() if selected is not None else None
+
+
+def resolve_auto_bgm_path(
+    workspace: WorkspaceContext,
+    task: dict[str, Any],
+    shared_settings: dict[str, Any],
+    reference_video: Path,
+) -> Path | None:
+    mode = normalize_bgm_source_mode(setting_value(task, shared_settings, "bgm_source_mode", "auto"))
+    if mode in {"none", "manual"}:
+        return None
+
+    query, reference_features, ffmpeg_path = build_bgm_similarity_context(
+        workspace,
+        task,
+        shared_settings,
+        reference_video,
+    )
+    provider = str(setting_value(task, shared_settings, "bgm_online_provider", "jamendo") or "jamendo").strip().lower()
+    if provider not in BGM_ONLINE_PROVIDERS:
+        workspace.logger.warning("[auto_bgm] unsupported online provider '%s'; using local BGM fallback", provider)
+        provider = "jamendo"
+
+    if mode in {"online_auto", "auto"}:
+        online_path = download_jamendo_bgm(
+            workspace,
+            reference_video,
+            query,
+            str(setting_value(task, shared_settings, "bgm_jamendo_client_id", "") or ""),
+            reference_features=reference_features,
+            ffmpeg_path=ffmpeg_path,
+        )
+        if online_path is not None:
+            return online_path
+        if mode == "online_auto":
+            workspace.logger.warning("[auto_bgm] online BGM unavailable; this clip will continue without auto BGM")
+            return None
+
+    local_path = choose_local_bgm(
+        workspace,
+        reference_video,
+        query,
+        reference_features=reference_features,
+        ffmpeg_path=ffmpeg_path,
+        external_dirs=normalize_bgm_external_dirs(setting_value(task, shared_settings, "bgm_external_dirs", [])),
+    )
+    if local_path is not None:
+        workspace.logger.info("[auto_bgm] selected local BGM: %s", local_path)
+    else:
+        workspace.logger.warning("[auto_bgm] no local BGM matched query: %s", query)
+    return local_path
 
 
 def resolve_first_workspace_input(
@@ -978,6 +1642,14 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             }
             if reference_subtitle is not None:
                 job_payload["reference_subtitle"] = str(reference_subtitle)
+            bgm_source_mode = normalize_bgm_source_mode(
+                setting_value(task, shared_settings, "bgm_source_mode", "auto")
+            )
+            auto_bgm_path = (
+                resolve_auto_bgm_path(workspace, task, shared_settings, reference_video)
+                if bgm_source_mode not in {"none", "manual"}
+                else None
+            )
             for key in AUTO_CLIP_SETTINGS_KEYS:
                 if key in task:
                     value = task[key]
@@ -985,7 +1657,11 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                     value = shared_settings[key]
                 else:
                     continue
-                if key in {"cover_image_path", "bgm_audio_path"}:
+                if key == "bgm_audio_path" and bgm_source_mode == "none":
+                    value = ""
+                elif key == "bgm_audio_path" and bgm_source_mode != "manual":
+                    value = str(auto_bgm_path) if auto_bgm_path is not None else ""
+                elif key in {"cover_image_path", "bgm_audio_path"}:
                     value = str(resolve_workspace_path(workspace.root, str(value or "").strip(), "")) if str(value or "").strip() else ""
                 job_payload[key] = value
 
