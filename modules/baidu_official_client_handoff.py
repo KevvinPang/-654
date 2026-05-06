@@ -41,8 +41,12 @@ CLIENT_LOCAL_SOURCE = "web_https"
 COMMON_DOWNLOAD_DIR_NAMES = ("BaiduNetdiskDownload", "百度网盘下载", "Downloads", "下载", "Download")
 DOWNLOAD_MOVE_TIMEOUT_SECONDS = 8 * 60 * 60
 DOWNLOAD_MOVE_POLL_SECONDS = 6
+DOWNLOAD_NO_PROGRESS_RELAUNCH_SECONDS = 90
 DOWNLOAD_STABLE_POLLS_REQUIRED = 2
 DOWNLOAD_CANDIDATE_LOOKBACK_SECONDS = 15 * 60
+BAIDU_TRANSFER_MAX_ATTEMPTS = 4
+BAIDU_TRANSFER_RETRY_DELAY_SECONDS = 8
+BAIDU_TRANSFER_RETRY_ERRNOS = {1504}
 CLIENT_UI_CONFIRM_TIMEOUT_SECONDS = 20
 CLIENT_UI_CONFIRM_POLL_SECONDS = 1
 CLIENT_UI_CONFIRM_TITLE_TOKENS = ("下载", "传输", "保存", "提示", "确认", "百度网盘")
@@ -107,6 +111,131 @@ def as_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def is_retryable_baidu_payload(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    errno = as_int(payload.get("errno"), 0)
+    if errno in BAIDU_TRANSFER_RETRY_ERRNOS:
+        return True
+    message = str(payload.get("show_msg") or payload.get("error_msg") or payload.get("errmsg") or "").strip()
+    return "timeout" in message.lower() or "超时" in message
+
+
+def retry_delay_for_attempt(attempt: int) -> int:
+    return max(1, BAIDU_TRANSFER_RETRY_DELAY_SECONDS * attempt)
+
+
+def transfer_share_item_to_own_netdisk_with_retry(
+    session: requests.Session,
+    runtime: dict[str, Any],
+    share_item: dict[str, Any],
+    share_url: str,
+    *,
+    workspace_name: str = "",
+    label: str = "",
+) -> dict[str, Any]:
+    for attempt in range(1, BAIDU_TRANSFER_MAX_ATTEMPTS + 1):
+        try:
+            transfer = BAIDU_DOWNLOADER.transfer_to_own_netdisk(session, runtime, share_item, share_url)
+        except requests.RequestException as exc:
+            if attempt >= BAIDU_TRANSFER_MAX_ATTEMPTS:
+                raise RuntimeError(f"转存请求失败：{exc}") from exc
+            delay_seconds = retry_delay_for_attempt(attempt)
+            print_json(
+                "OFFICIAL_CLIENT_TRANSFER_RETRY",
+                {
+                    "workspace_name": workspace_name,
+                    "label": label,
+                    "attempt": attempt,
+                    "max_attempts": BAIDU_TRANSFER_MAX_ATTEMPTS,
+                    "delay_seconds": delay_seconds,
+                    "error": str(exc),
+                },
+            )
+            time.sleep(delay_seconds)
+            continue
+        if int(transfer.get("errno") or 0) == 0:
+            return transfer
+        if not is_retryable_baidu_payload(transfer) or attempt >= BAIDU_TRANSFER_MAX_ATTEMPTS:
+            return transfer
+        delay_seconds = retry_delay_for_attempt(attempt)
+        print_json(
+            "OFFICIAL_CLIENT_TRANSFER_RETRY",
+            {
+                "workspace_name": workspace_name,
+                "label": label,
+                "attempt": attempt,
+                "max_attempts": BAIDU_TRANSFER_MAX_ATTEMPTS,
+                "delay_seconds": delay_seconds,
+                "response": transfer,
+            },
+        )
+        time.sleep(delay_seconds)
+    return {}
+
+
+def find_transferred_file_with_retry(
+    session: requests.Session,
+    access_token: str,
+    share_item: dict[str, Any],
+    used_paths: set[str],
+    *,
+    workspace_name: str = "",
+    label: str = "",
+) -> dict[str, Any]:
+    for attempt in range(1, BAIDU_TRANSFER_MAX_ATTEMPTS + 1):
+        try:
+            root_items = BAIDU_DOWNLOADER.get_root_file_list(session, access_token)
+            return find_transferred_file(root_items, share_item, used_paths)
+        except (requests.RequestException, RuntimeError) as exc:
+            if attempt >= BAIDU_TRANSFER_MAX_ATTEMPTS:
+                raise
+            delay_seconds = retry_delay_for_attempt(attempt)
+            print_json(
+                "OFFICIAL_CLIENT_TRANSFER_LOOKUP_RETRY",
+                {
+                    "workspace_name": workspace_name,
+                    "label": label,
+                    "attempt": attempt,
+                    "max_attempts": BAIDU_TRANSFER_MAX_ATTEMPTS,
+                    "delay_seconds": delay_seconds,
+                    "error": str(exc),
+                },
+            )
+            time.sleep(delay_seconds)
+    raise RuntimeError("转存后未找到文件")
+
+
+def get_own_file_dlink_with_retry(
+    session: requests.Session,
+    access_token: str,
+    fs_id: int,
+    *,
+    workspace_name: str = "",
+    label: str = "",
+) -> str:
+    for attempt in range(1, BAIDU_TRANSFER_MAX_ATTEMPTS + 1):
+        try:
+            return BAIDU_DOWNLOADER.get_own_file_dlink(session, access_token, fs_id)
+        except (requests.RequestException, RuntimeError) as exc:
+            if attempt >= BAIDU_TRANSFER_MAX_ATTEMPTS:
+                raise
+            delay_seconds = retry_delay_for_attempt(attempt)
+            print_json(
+                "OFFICIAL_CLIENT_DLINK_RETRY",
+                {
+                    "workspace_name": workspace_name,
+                    "label": label,
+                    "attempt": attempt,
+                    "max_attempts": BAIDU_TRANSFER_MAX_ATTEMPTS,
+                    "delay_seconds": delay_seconds,
+                    "error": str(exc),
+                },
+            )
+            time.sleep(delay_seconds)
+    raise RuntimeError("获取转存文件下载链接失败")
 
 
 def share_referer_url(share_url: str) -> str:
@@ -1117,11 +1246,40 @@ def wait_and_move_client_downloads(
     }
 
 
+def download_progress_snapshot(roots: list[Path], pending: list[dict[str, Any]]) -> tuple[int, int]:
+    wanted_names = {
+        str(target.get("filename_lower") or "").strip().lower()
+        for target in pending
+        if str(target.get("filename_lower") or "").strip()
+    }
+    if not wanted_names:
+        return 0, 0
+
+    active_count = 0
+    total_size = 0
+    for root in roots:
+        try:
+            for current_root, _, files in os.walk(root):
+                for filename in files:
+                    lowered = filename.lower()
+                    if not any(lowered == wanted or lowered.startswith(wanted + ".") for wanted in wanted_names):
+                        continue
+                    try:
+                        total_size += (Path(current_root) / filename).stat().st_size
+                        active_count += 1
+                    except OSError:
+                        continue
+        except Exception:
+            continue
+    return active_count, total_size
+
+
 def wait_for_client_target_downloads(
     preferred_output_dir: str,
     selected_items: list[dict[str, Any]],
     *,
     workspace_name: str,
+    main_exe: Path | None = None,
 ) -> dict[str, Any]:
     move_targets = build_move_targets(selected_items, preferred_output_dir)
     if not move_targets:
@@ -1164,6 +1322,10 @@ def wait_for_client_target_downloads(
     moved_count = 0
     wait_round = 0
     deadline = time.time() + DOWNLOAD_MOVE_TIMEOUT_SECONDS
+    last_activity_at = time.time()
+    last_pending_count = len(pending)
+    last_progress_size = -1
+    relaunch_count = 0
 
     while pending and time.time() < deadline:
         wait_round += 1
@@ -1189,6 +1351,32 @@ def wait_for_client_target_downloads(
         if not pending:
             break
 
+        active_partial_count, progress_size = download_progress_snapshot(roots, pending)
+        if len(pending) < last_pending_count or progress_size != last_progress_size:
+            last_activity_at = time.time()
+            last_pending_count = len(pending)
+            last_progress_size = progress_size
+
+        if (
+            main_exe is not None
+            and not list_running_baidu_main_processes(main_exe)
+            and time.time() - last_activity_at >= DOWNLOAD_NO_PROGRESS_RELAUNCH_SECONDS
+        ):
+            relaunched_pid = launch_command([str(main_exe)], main_exe.parent)
+            relaunch_count += 1
+            last_activity_at = time.time()
+            print_json(
+                "OFFICIAL_CLIENT_RELAUNCH",
+                {
+                    "workspace_name": workspace_name,
+                    "reason": "main_client_not_running",
+                    "launched_pid": relaunched_pid,
+                    "pending_count": len(pending),
+                    "relaunch_count": relaunch_count,
+                },
+            )
+            time.sleep(2)
+
         if wait_round == 1 or wait_round % 5 == 0:
             print_json(
                 "OFFICIAL_CLIENT_WAIT",
@@ -1198,6 +1386,8 @@ def wait_for_client_target_downloads(
                     "pending_labels": [str(item["label"]) for item in pending],
                     "search_root_count": len(roots),
                     "wait_round": wait_round,
+                    "active_partial_count": active_partial_count,
+                    "partial_total_size": progress_size,
                 },
             )
         time.sleep(DOWNLOAD_MOVE_POLL_SECONDS)
@@ -1214,6 +1404,7 @@ def wait_for_client_target_downloads(
         "moved_count": moved_count,
         "skipped_count": skipped_count,
         "roots": [str(path) for path in roots],
+        "relaunch_count": relaunch_count,
     }
 
 
@@ -1378,13 +1569,32 @@ def execute_queue_handoff(
     used_root_paths: set[str] = set()
     for item in selected_items:
         share_item = dict(item["share_item"])
-        transfer = BAIDU_DOWNLOADER.transfer_to_own_netdisk(session, runtime, share_item, args.share_url)
+        transfer = transfer_share_item_to_own_netdisk_with_retry(
+            session,
+            runtime,
+            share_item,
+            args.share_url,
+            workspace_name=args.workspace_name,
+            label=item["label"],
+        )
         if int(transfer.get("errno") or 0) != 0:
             raise RuntimeError(f"转存失败：{transfer}")
 
-        root_items = BAIDU_DOWNLOADER.get_root_file_list(session, access_token)
-        own_file = find_transferred_file(root_items, share_item, used_root_paths)
-        dlink = BAIDU_DOWNLOADER.get_own_file_dlink(session, access_token, int(own_file["fs_id"]))
+        own_file = find_transferred_file_with_retry(
+            session,
+            access_token,
+            share_item,
+            used_root_paths,
+            workspace_name=args.workspace_name,
+            label=item["label"],
+        )
+        dlink = get_own_file_dlink_with_retry(
+            session,
+            access_token,
+            int(own_file["fs_id"]),
+            workspace_name=args.workspace_name,
+            label=item["label"],
+        )
         local_path = str(item["local_path"] or "").strip()
         if not local_path:
             raise RuntimeError(f"未收到本地下载路径：{item['label']}")
@@ -1425,16 +1635,31 @@ def execute_queue_handoff(
     )
     queue_result = enqueue_client_downloads(database_path, transferred_queue, dry_run=args.dry_run)
 
-    running_before = list_running_baidu_processes()
+    running_before = list_running_baidu_main_processes(main_exe)
     launched_pid = 0
-    if int(queue_result.get("queued_count") or 0) > 0 and not running_before:
+    queue_ready_count = (
+        int(queue_result.get("queued_count") or 0)
+        + int(queue_result.get("requeued_count") or 0)
+        + int(queue_result.get("skipped_count") or 0)
+    )
+    if queue_ready_count > 0 and not running_before:
         launched_pid = launch_command([str(main_exe)], main_exe.parent)
         time.sleep(2)
+        print_json(
+            "OFFICIAL_CLIENT_LAUNCH",
+            {
+                "workspace_name": args.workspace_name,
+                "reason": "queue_ready_main_client_not_running",
+                "launched_pid": launched_pid,
+                "queue_ready_count": queue_ready_count,
+            },
+        )
 
     wait_result = wait_for_client_target_downloads(
         args.preferred_output_dir,
         selected_items,
         workspace_name=args.workspace_name,
+        main_exe=main_exe,
     )
     running_processes = list_running_baidu_processes()
     print_json(
@@ -1444,6 +1669,8 @@ def execute_queue_handoff(
             "client_user_dir": str(client_user_dir),
             "database_path": str(database_path),
             "queued_count": int(queue_result.get("queued_count") or 0),
+            "requeued_count": int(queue_result.get("requeued_count") or 0),
+            "deduped_count": int(queue_result.get("deduped_count") or 0),
             "skipped_count": int(queue_result.get("skipped_count") or 0),
             "launched_pid": launched_pid,
             "running_processes": running_processes,
@@ -1452,6 +1679,7 @@ def execute_queue_handoff(
             "moved_count": int(wait_result.get("moved_count") or 0),
             "move_skipped_count": int(wait_result.get("skipped_count") or 0),
             "move_search_roots": wait_result.get("roots") or [],
+            "relaunch_count": int(wait_result.get("relaunch_count") or 0),
         },
     )
     print("OFFICIAL_CLIENT_NOTE 已自动转存并写入官方百度网盘客户端下载队列，客户端会直接下载到目标目录，脚本会等待下载完成。")
@@ -1585,6 +1813,36 @@ def list_running_baidu_processes() -> list[dict[str, Any]]:
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
     return []
+
+
+def _normalize_process_executable(item: dict[str, Any]) -> str:
+    return str(item.get("ExecutablePath") or item.get("Path") or "").strip().lower()
+
+
+def _normalize_process_name(item: dict[str, Any]) -> str:
+    return str(item.get("Name") or "").strip().lower()
+
+
+def list_running_baidu_main_processes(main_exe: Path | None = None) -> list[dict[str, Any]]:
+    running = list_running_baidu_processes()
+    expected_path = ""
+    if main_exe is not None:
+        try:
+            expected_path = str(main_exe.expanduser().resolve()).lower()
+        except OSError:
+            expected_path = str(main_exe).lower()
+
+    main_process_names = {"baidunetdisk.exe", "baidunetdiskunite.exe"}
+    main_processes: list[dict[str, Any]] = []
+    for item in running:
+        process_name = _normalize_process_name(item)
+        executable_path = _normalize_process_executable(item)
+        if expected_path and executable_path == expected_path:
+            main_processes.append(item)
+            continue
+        if process_name in main_process_names:
+            main_processes.append(item)
+    return main_processes
 
 
 def load_target_specs(path_text: str, fallback_names: list[str]) -> list[dict[str, Any]]:
@@ -1723,6 +1981,26 @@ def build_remote_parent(path_text: str) -> str:
     return parent if parent and parent != "." else "/"
 
 
+def choose_existing_download_row(rows: list[dict[str, Any]], file_size: int) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    if file_size > 0:
+        for row in rows:
+            if int(row.get("file_size") or 0) == file_size:
+                return row
+    return max(rows, key=lambda row: (int(row.get("add_time") or 0), int(row.get("rowid") or 0)))
+
+
+def download_local_path_key(path_text: str) -> str:
+    normalized = str(path_text or "").strip()
+    if not normalized:
+        return ""
+    try:
+        return str(Path(normalized).expanduser().resolve()).lower()
+    except OSError:
+        return normalized.lower()
+
+
 def enqueue_client_downloads(database_path: Path, queue_items: list[dict[str, Any]], *, dry_run: bool = False) -> dict[str, Any]:
     queue_preview = [
         {
@@ -1733,21 +2011,39 @@ def enqueue_client_downloads(database_path: Path, queue_items: list[dict[str, An
         for item in queue_items
     ]
     if dry_run:
-        return {"queued_count": len(queue_items), "skipped_count": 0, "preview": queue_preview}
+        return {"queued_count": len(queue_items), "requeued_count": 0, "deduped_count": 0, "skipped_count": 0, "preview": queue_preview}
 
     connection = sqlite3.connect(str(database_path), timeout=30)
     try:
         cursor = connection.cursor()
-        existing_keys = {
-            (str(server_path or "").strip(), str(local_path or "").strip())
-            for server_path, local_path in cursor.execute("select server_path, local_path from download_file").fetchall()
-        }
+        existing_rows_by_local_path: dict[str, list[dict[str, Any]]] = {}
+        for rowid, server_path, local_path, file_size, add_time, status in cursor.execute(
+            "select rowid, server_path, local_path, file_size, add_time, status from download_file"
+        ).fetchall():
+            local_path_text = str(local_path or "").strip()
+            if not local_path_text:
+                continue
+            local_key = download_local_path_key(local_path_text)
+            if not local_key:
+                continue
+            existing_rows_by_local_path.setdefault(local_key, []).append(
+                {
+                    "rowid": int(rowid),
+                    "server_path": str(server_path or "").strip(),
+                    "local_path": local_path_text,
+                    "file_size": int(file_size or 0),
+                    "add_time": int(add_time or 0),
+                    "status": int(status or 0),
+                }
+            )
         max_task_id = int(cursor.execute("select coalesce(max(task_id), 0) from download_file").fetchone()[0] or 0)
         base_task_id = max(int(time.time()), max_task_id + 1)
         add_time = int(time.time())
         batch_id = uuid.uuid4().hex
 
         queued_count = 0
+        requeued_count = 0
+        deduped_count = 0
         skipped_count = 0
         insert_sql = (
             "insert into download_file ("
@@ -1760,11 +2056,66 @@ def enqueue_client_downloads(database_path: Path, queue_items: list[dict[str, An
         for offset, item in enumerate(queue_items):
             server_path = str(item["server_path"]).strip()
             local_path = str(item["local_path"]).strip()
-            if (server_path, local_path) in existing_keys:
+            local_file = Path(local_path).expanduser().resolve()
+            local_key = download_local_path_key(local_path)
+            file_size = int(item.get("file_size") or 0)
+            if file_size > 0 and local_file.exists() and local_file.is_file() and local_file.stat().st_size == file_size:
                 skipped_count += 1
                 continue
+            existing_row = choose_existing_download_row(existing_rows_by_local_path.get(local_key, []), file_size)
+            if existing_row is not None:
+                local_file.parent.mkdir(parents=True, exist_ok=True)
+                duplicate_rows = [
+                    row
+                    for row in existing_rows_by_local_path.get(local_key, [])
+                    if int(row.get("rowid") or 0) != int(existing_row["rowid"])
+                ]
+                if duplicate_rows:
+                    cursor.executemany(
+                        "delete from download_file where rowid=?",
+                        [(int(row["rowid"]),) for row in duplicate_rows],
+                    )
+                    deduped_count += len(duplicate_rows)
+                cursor.execute(
+                    (
+                        "update download_file set "
+                        "server_path=?, status=?, file_size=?, complete_size=?, error_code=?, add_time=?, "
+                        "status_changetime=?, download_url=?, cmd_type=?, md5=?, server_root_path=?, "
+                        "batch_id=?, reserved1=?, reserved2=? "
+                        "where rowid=?"
+                    ),
+                    (
+                        server_path,
+                        1,
+                        file_size,
+                        0,
+                        0,
+                        add_time,
+                        None,
+                        str(item.get("download_url") or "").strip(),
+                        1,
+                        str(item.get("md5") or "").strip(),
+                        build_remote_parent(server_path),
+                        batch_id,
+                        1,
+                        0,
+                        int(existing_row["rowid"]),
+                    ),
+                )
+                existing_rows_by_local_path[local_key] = [
+                    {
+                        **existing_row,
+                        "server_path": server_path,
+                        "local_path": local_path,
+                        "file_size": file_size,
+                        "add_time": add_time,
+                        "status": 1,
+                    }
+                ]
+                requeued_count += 1
+                continue
 
-            Path(local_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+            local_file.parent.mkdir(parents=True, exist_ok=True)
             cursor.execute(
                 insert_sql,
                 (
@@ -1772,7 +2123,7 @@ def enqueue_client_downloads(database_path: Path, queue_items: list[dict[str, An
                     server_path,
                     local_path,
                     1,
-                    int(item.get("file_size") or 0),
+                    file_size,
                     0,
                     0,
                     0,
@@ -1794,10 +2145,26 @@ def enqueue_client_downloads(database_path: Path, queue_items: list[dict[str, An
                     "",
                 ),
             )
+            existing_rows_by_local_path.setdefault(local_key, []).append(
+                {
+                    "rowid": int(cursor.lastrowid),
+                    "server_path": server_path,
+                    "local_path": local_path,
+                    "file_size": file_size,
+                    "add_time": add_time,
+                    "status": 1,
+                }
+            )
             queued_count += 1
 
         connection.commit()
-        return {"queued_count": queued_count, "skipped_count": skipped_count, "preview": queue_preview}
+        return {
+            "queued_count": queued_count,
+            "requeued_count": requeued_count,
+            "deduped_count": deduped_count,
+            "skipped_count": skipped_count,
+            "preview": queue_preview,
+        }
     finally:
         connection.close()
 

@@ -51,6 +51,8 @@ SUBTITLE_NOISE_KEYWORDS = (
     "收藏",
     "转发",
     "评论区",
+    "包子说剧",
+    "包子玩刷",
     "抖音",
     "douyin",
     "快手",
@@ -58,6 +60,22 @@ SUBTITLE_NOISE_KEYWORDS = (
     "bilibili",
     "下集",
     "上集",
+)
+DETECTED_CREATOR_WATERMARK_PREFIXES: Counter[str] = Counter()
+CREATOR_WATERMARK_PREFIXES = tuple(
+    sorted(
+        {
+            match.group(1)
+            for keyword in SUBTITLE_NOISE_KEYWORDS
+            for match in [re.match(r"^([\u4e00-\u9fff]{1,6})(?:说剧|看剧|追剧|刷剧|玩刷|剧场)", keyword)]
+            if match
+        },
+        key=len,
+        reverse=True,
+    )
+)
+SUBTITLE_CONTENT_START_PATTERN = re.compile(
+    r"^(一个|一位|一名|从|可|但|却|他|她|这|那|没|竟|才|无论|就|为了|因为|只因|而|随后|最后|此时|面对|男人|女人|女孩|儿子|妻子|丈夫)"
 )
 
 
@@ -130,12 +148,7 @@ def ensure_backend_loaded() -> None:
 
 
 def make_subtitle_area(ymin: int, ymax: int, xmin: int, xmax: int):
-    if SubtitleAreaClass is None:
-        try:
-            ensure_backend_loaded()
-        except Exception:
-            return LocalSubtitleArea(ymin=ymin, ymax=ymax, xmin=xmin, xmax=xmax)
-    return SubtitleAreaClass(ymin, ymax, xmin, xmax)
+    return LocalSubtitleArea(ymin=ymin, ymax=ymax, xmin=xmin, xmax=xmax)
 
 
 def parse_subtitle_area(value: str) -> tuple[int, int, int, int]:
@@ -579,6 +592,24 @@ def adjust_low_banner_region(area: Any, frame_width: int, frame_height: int) -> 
     y_ratio = area.ymin / max(1.0, frame_height)
     bottom_ratio = area.ymax / max(1.0, frame_height)
     height_ratio = (area.ymax - area.ymin) / max(1.0, frame_height)
+    if y_ratio >= 0.58 and bottom_ratio >= 0.90 and height_ratio >= 0.22:
+        adjusted_ymin = max(int(frame_height * 0.64), area.ymin + int(round(frame_height * 0.02)))
+        adjusted_ymax = min(
+            int(frame_height * 0.84),
+            area.ymin + max(150, int(round(frame_height * 0.17))),
+        )
+        if adjusted_ymax > adjusted_ymin + 48:
+            adjusted = make_subtitle_area(
+                adjusted_ymin,
+                adjusted_ymax,
+                int(frame_width * 0.03),
+                int(frame_width * 0.97),
+            )
+            return adjusted, {
+                "reason": "detected_lower_band_too_tall",
+                "original_area": [area.ymin, area.ymax, area.xmin, area.xmax],
+                "adjusted_area": [adjusted.ymin, adjusted.ymax, adjusted.xmin, adjusted.xmax],
+            }
     if y_ratio < 0.78 and not (bottom_ratio >= 0.95 and height_ratio >= 0.15):
         return None
 
@@ -628,8 +659,8 @@ def run_image_auto_detect(
             report["preview_image"] = str(preview_path)
             report["report_path"] = str(report_path)
             write_detection_report(report_path, preview_path, report)
-            print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False))
-            print("AUTO_SUBTITLE_REPORT", str(report_path))
+            print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False), flush=True)
+            print("AUTO_SUBTITLE_REPORT", str(report_path), flush=True)
             return area, report
         return None, report
     area = image_region_to_subtitle_area(region)
@@ -648,8 +679,8 @@ def run_image_auto_detect(
     report["preview_image"] = str(preview_path)
     report["report_path"] = str(report_path)
     write_detection_report(report_path, preview_path, report)
-    print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False))
-    print("AUTO_SUBTITLE_REPORT", str(report_path))
+    print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False), flush=True)
+    print("AUTO_SUBTITLE_REPORT", str(report_path), flush=True)
     return area, report
 
 
@@ -694,6 +725,10 @@ def clean_subtitle_text(text: str) -> str:
     cleaned = cleaned.replace(" ", "")
     cleaned = re.sub(r"[\r\n\t]+", "", cleaned)
     cleaned = cleaned.strip("|¦`'\"[](){}<>")
+    learn_creator_watermark_prefix(cleaned)
+    cleaned = re.sub(r"包子(?:说剧|玩刷)", "", cleaned)
+    cleaned = re.sub(r"^[\u4e00-\u9fff]{1,6}(?:说剧|看剧|追剧|刷剧|剧场)", "", cleaned)
+    cleaned = strip_detected_creator_watermark_prefix(cleaned)
     if not cleaned:
         return ""
     ascii_letters = len(re.findall(r"[A-Za-z]", cleaned))
@@ -722,6 +757,41 @@ def normalize_subtitle_text(text: str) -> str:
     normalized = normalized.replace("\n", "")
     normalized = re.sub(r"[\s\-_—–~`'\"“”‘’.,，。!！?？:：;；/\\|()\[\]{}<>]+", "", normalized)
     return normalized
+
+
+def learn_creator_watermark_prefix(text: str) -> None:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return
+    match = re.match(r"^([\u4e00-\u9fff]{1,6})(?:说剧|看剧|追剧|刷剧|玩刷|剧场)", normalized)
+    if not match:
+        return
+    prefix = match.group(1)
+    if 1 <= len(prefix) <= 6:
+        DETECTED_CREATOR_WATERMARK_PREFIXES[prefix] += 1
+
+
+def strip_detected_creator_watermark_prefix(text: str) -> str:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return text
+    learned_prefixes = [
+        prefix
+        for prefix, count in DETECTED_CREATOR_WATERMARK_PREFIXES.most_common()
+        if count > 0
+    ]
+    for prefix in [*learned_prefixes, *CREATOR_WATERMARK_PREFIXES]:
+        if not normalized.startswith(prefix):
+            continue
+        if len(normalized) <= len(prefix) + 2:
+            continue
+        remainder = normalized[len(prefix):]
+        if prefix in CREATOR_WATERMARK_PREFIXES and not SUBTITLE_CONTENT_START_PATTERN.match(remainder):
+            continue
+        # OCR can glue a moving creator watermark to the beginning of the real
+        # subtitle. Strip only prefixes learned from this video's watermark text.
+        return text[len(prefix):].lstrip("，,。.!！?？:：;；、 ")
+    return text
 
 
 def subtitle_text_quality_score(text: str) -> float:
@@ -757,6 +827,36 @@ def subtitle_noise_like_text(text: str) -> bool:
     return False
 
 
+def subtitle_creator_watermark_like_text(text: str) -> bool:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return False
+    if len(normalized) <= 10 and re.search(r"(说剧|看剧|追剧|刷剧|剧场)$", normalized):
+        return True
+    return False
+
+
+def subtitle_line_cluster_score(cluster: list[tuple[int | None, str]]) -> float:
+    text = "\n".join(line_text for _line_y, line_text in cluster if line_text)
+    if not text:
+        return -999.0
+    score = subtitle_text_quality_score(text)
+    normalized = normalize_subtitle_text(text)
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+    y_values = [float(line_y) for line_y, _line_text in cluster if line_y is not None]
+    if y_values:
+        # Moving creator marks often drift above the main subtitle. Prefer the
+        # lower, stable subtitle row when text quality is otherwise comparable.
+        score += min(max(sum(y_values) / len(y_values), 0.0), 320.0) * 0.035
+    if len(normalized) <= 4 and len(cluster) == 1:
+        score -= 3.0
+    if chinese_chars <= 2:
+        score -= 4.0
+    if subtitle_creator_watermark_like_text(text):
+        score -= 80.0
+    return score
+
+
 def select_preferred_subtitle_text(lines: list[tuple[int | None, str]]) -> str:
     if not lines:
         return ""
@@ -765,19 +865,36 @@ def select_preferred_subtitle_text(lines: list[tuple[int | None, str]]) -> str:
     if not filtered:
         return ""
 
-    selected: list[str] = []
+    clusters: list[list[tuple[int | None, str]]] = []
+    current_cluster: list[tuple[int | None, str]] = []
     previous_y: int | None = None
     for line_y, line_text in filtered:
-        if not selected:
-            selected.append(line_text)
+        if not current_cluster:
+            current_cluster.append((line_y, line_text))
             previous_y = line_y
             continue
         if previous_y is None or line_y is None or line_y - previous_y <= SUBTITLE_LINE_JOIN_GAP:
-            selected.append(line_text)
+            current_cluster.append((line_y, line_text))
             previous_y = line_y
             continue
-        break
-    return "\n".join(piece for piece in selected if piece)
+        clusters.append(current_cluster)
+        current_cluster = [(line_y, line_text)]
+        previous_y = line_y
+    if current_cluster:
+        clusters.append(current_cluster)
+    if not clusters:
+        return ""
+
+    content_clusters = [
+        cluster
+        for cluster in clusters
+        if not subtitle_creator_watermark_like_text("\n".join(piece for _line_y, piece in cluster if piece))
+    ]
+    if not content_clusters:
+        return ""
+
+    best_cluster = max(content_clusters, key=subtitle_line_cluster_score)
+    return "\n".join(piece for _line_y, piece in best_cluster if piece)
 
 
 def subtitles_are_similar(left: str, right: str) -> bool:
@@ -1032,7 +1149,10 @@ def build_rapidocr_text(result) -> str:
 def extract_frame_subtitle_text_with_rapidocr(ocr, frame, area) -> str:
     best_text = ""
     best_score = -999.0
-    for candidate in build_ocr_candidates(frame, area):
+    candidates = build_ocr_candidates(frame, area)
+    if len(candidates) > 1:
+        candidates = [candidates[-1], *candidates[:-1]]
+    for candidate_index, candidate in enumerate(candidates):
         result, _ = ocr(candidate, use_cls=False)
         text = build_rapidocr_text(result)
         if not text:
@@ -1041,6 +1161,8 @@ def extract_frame_subtitle_text_with_rapidocr(ocr, frame, area) -> str:
         if score > best_score:
             best_text = text
             best_score = score
+        if candidate_index == 0 and score >= 18.0 and not subtitle_noise_like_text(text):
+            break
     return best_text
 
 
@@ -1093,9 +1215,9 @@ def run_direct_ocr_extraction(
         from rapidocr_onnxruntime import RapidOCR
 
         ocr = RapidOCR()
-        print("OCR_BACKEND rapidocr")
+        print("OCR_BACKEND rapidocr", flush=True)
     except Exception as exc:
-        print(f"OCR_BACKEND_FALLBACK paddle ({exc})")
+        print(f"OCR_BACKEND_FALLBACK paddle ({exc})", flush=True)
 
     if ocr is None:
         ensure_backend_loaded()
@@ -1120,9 +1242,10 @@ def run_direct_ocr_extraction(
     sample_duration_ms = max(200, int(round(sample_step / max(fps, 1e-6) * 1000)))
     estimated_samples = max(1, (frame_count + sample_step - 1) // sample_step)
     video_duration_ms = int(round(frame_count / max(fps, 1e-6) * 1000))
+    stable_text_recheck_samples = max(2, int(round(effective_extract_frequency * 0.75)))
 
-    print("SUBTITLE_AREA", json.dumps([area.ymin, area.ymax, area.xmin, area.xmax], ensure_ascii=False))
-    print("SUBTITLE_START", str(input_path), str(output_path))
+    print("SUBTITLE_AREA", json.dumps([area.ymin, area.ymax, area.xmin, area.xmax], ensure_ascii=False), flush=True)
+    print("SUBTITLE_START", str(input_path), str(output_path), flush=True)
 
     segments: list[SubtitleSegment] = []
     current_segment: SubtitleSegment | None = None
@@ -1152,7 +1275,7 @@ def run_direct_ocr_extraction(
                 if delta >= 6.0:
                     should_run_ocr = True
                 elif last_text:
-                    should_run_ocr = sample_index - last_ocr_sample_index >= 2
+                    should_run_ocr = sample_index - last_ocr_sample_index >= stable_text_recheck_samples
                 else:
                     should_run_ocr = sample_index - last_ocr_sample_index >= max(1, int(extract_frequency))
             if should_run_ocr:
@@ -1188,7 +1311,7 @@ def run_direct_ocr_extraction(
                         empty_streak = 0
 
             if sample_index == 1 or sample_index == estimated_samples or sample_index % max(1, estimated_samples // 10) == 0:
-                print(f"OCR_PROGRESS {sample_index}/{estimated_samples}")
+                print(f"OCR_PROGRESS {sample_index}/{estimated_samples}", flush=True)
             frame_no += 1
     finally:
         capture.release()
@@ -1252,6 +1375,10 @@ def main(argv: list[str] | None = None) -> int:
         multiprocessing.set_start_method("spawn")
     except RuntimeError:
         pass
+    try:
+        multiprocessing.set_executable(sys.executable)
+    except Exception:
+        pass
 
     detected_area = None
     if args.subtitle_area is not None:
@@ -1283,8 +1410,8 @@ def main(argv: list[str] | None = None) -> int:
             report["detector"] = "generic_fallback"
             report["subtitle_area"] = [detected_area.ymin, detected_area.ymax, detected_area.xmin, detected_area.xmax]
             write_detection_report(report_path, preview_path, report)
-            print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False))
-            print("AUTO_SUBTITLE_REPORT", str(report_path))
+            print("AUTO_SUBTITLE_AREA", json.dumps(report["subtitle_area"], ensure_ascii=False), flush=True)
+            print("AUTO_SUBTITLE_REPORT", str(report_path), flush=True)
 
     assert detected_area is not None
 
@@ -1304,7 +1431,7 @@ def main(argv: list[str] | None = None) -> int:
     if not output_path.exists():
         raise RuntimeError(f"subtitle extraction finished but output file was not created: {output_path}")
 
-    print("SUBTITLE_DONE", str(output_path))
+    print("SUBTITLE_DONE", str(output_path), flush=True)
     return 0
 
 

@@ -41,6 +41,7 @@ COVER_ARTIFACT_STEM = "selected_cover"
 CONTROL_CENTER_RUNTIME_DIR = PROJECT_ROOT / "runtime" / "control_center"
 CONTROL_CENTER_PID_FILE = CONTROL_CENTER_RUNTIME_DIR / "control_center.pid"
 CONTROL_CENTER_NOTICE_FILE = CONTROL_CENTER_RUNTIME_DIR / "last_system_notice.json"
+CONTROL_CENTER_GLOBAL_SETTINGS_FILE = CONTROL_CENTER_RUNTIME_DIR / "global_settings.json"
 BAIDU_LOGIN_URL = "https://pan.baidu.com/disk/main"
 BAIDU_EDGE_RUNTIME_ROOT = PROJECT_ROOT / "runtime" / "edge_profiles"
 BAIDU_MANAGED_EDGE_USER_DATA = BAIDU_EDGE_RUNTIME_ROOT / "baidu_login_profile"
@@ -57,8 +58,18 @@ DEFAULT_CONCURRENCY = {
     "baidu_share": 1,
     "douyin_download": 3,
     "subtitle_extract": 1,
+    "visual_subtitle_extract": 1,
     "auto_clip": 1,
 }
+DEFAULT_GLOBAL_AI_SETTINGS = {
+    "ai_api_key": "",
+    "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    "ai_model": "doubao-seed-2-0-lite-260215",
+    "ai_fallback_models": [],
+    "disable_ai_subtitle_review": False,
+    "disable_ai_narration_rewrite": False,
+}
+GLOBAL_AI_SETTING_KEYS = tuple(DEFAULT_GLOBAL_AI_SETTINGS.keys())
 KNOWN_MOJIBAKE_REPLACEMENTS = {
     "E:\\鏍风墖": "E:\\样片",
     "E:\\鎴愮墖": "E:\\成片",
@@ -135,6 +146,46 @@ def read_json(path: Path, default: Any) -> Any:
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def normalize_global_ai_settings(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    settings: dict[str, Any] = {}
+    for key in GLOBAL_AI_SETTING_KEYS:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if key == "ai_fallback_models":
+            settings[key] = value if isinstance(value, list) else []
+        elif key in {"disable_ai_subtitle_review", "disable_ai_narration_rewrite"}:
+            settings[key] = bool(value)
+        else:
+            settings[key] = str(value or "").strip()
+    return settings
+
+
+def read_global_ai_settings() -> dict[str, Any]:
+    return normalize_global_ai_settings(read_json(CONTROL_CENTER_GLOBAL_SETTINGS_FILE, {}))
+
+
+def write_global_ai_settings(payload: Any) -> dict[str, Any]:
+    existing = read_global_ai_settings()
+    updated = {**existing, **normalize_global_ai_settings(payload)}
+    if updated:
+        write_json(CONTROL_CENTER_GLOBAL_SETTINGS_FILE, updated)
+    return updated
+
+
+def apply_global_ai_settings(task: dict[str, Any]) -> dict[str, Any]:
+    global_settings = read_global_ai_settings()
+    if not global_settings:
+        return task
+    merged_task = dict(task)
+    settings = dict(merged_task.get("settings") or {})
+    settings.update(global_settings)
+    merged_task["settings"] = settings
+    return merged_task
 
 
 def runtime_timestamp_text() -> str:
@@ -333,13 +384,11 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
         "workspace_name": workspace_name,
         "concurrency": dict(DEFAULT_CONCURRENCY),
         "settings": {
-            "ai_api_key": "",
-            "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-                    "ai_model": "doubao-seed-character-251128",
-            "ai_fallback_models": [],
-            "prefer_funasr_audio_subtitles": True,
-            "disable_ai_subtitle_review": False,
-            "disable_ai_narration_rewrite": False,
+            **{
+                key: list(value) if isinstance(value, list) else value
+                for key, value in DEFAULT_GLOBAL_AI_SETTINGS.items()
+            },
+            "prefer_funasr_audio_subtitles": False,
             "prefer_funasr_sentence_pauses": True,
             "force_no_narration_mode": False,
             "narration_background_percent": 3,
@@ -354,9 +403,8 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
             "bgm_audio_path": "",
             "bgm_source_mode": "auto",
             "bgm_search_query": "",
-            "bgm_online_provider": "jamendo",
-            "bgm_jamendo_client_id": "",
-            "bgm_external_dirs": [],
+            "bgm_external_dirs": [r"D:\BGM库"],
+            "bgm_chromaprint_fpcalc_path": "",
             "bgm_volume_percent": 12,
             "clip_output_root": "",
             "tts_voice": "zh-CN-YunxiNeural",
@@ -367,8 +415,10 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
             "azure_tts_voice": "",
         },
         "baidu_share": [],
+        "baidu_share_listing_cache": {},
         "douyin_download": [],
         "subtitle_extract": [],
+        "visual_subtitle_extract": [],
         "auto_clip": [],
     }
 
@@ -385,10 +435,9 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     if not isinstance(settings, dict):
         settings = {}
     task["settings"] = settings
-    settings.setdefault("ai_fallback_models", [])
-    settings.setdefault("prefer_funasr_audio_subtitles", True)
-    settings.setdefault("disable_ai_subtitle_review", False)
-    settings.setdefault("disable_ai_narration_rewrite", False)
+    for key, value in DEFAULT_GLOBAL_AI_SETTINGS.items():
+        settings.setdefault(key, list(value) if isinstance(value, list) else value)
+    settings.setdefault("prefer_funasr_audio_subtitles", False)
     settings.setdefault("prefer_funasr_sentence_pauses", True)
     settings.setdefault("force_no_narration_mode", False)
     settings.setdefault("narration_background_percent", 3)
@@ -403,9 +452,9 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     settings.setdefault("bgm_audio_path", "")
     settings.setdefault("bgm_source_mode", "auto")
     settings.setdefault("bgm_search_query", "")
-    settings.setdefault("bgm_online_provider", "jamendo")
-    settings.setdefault("bgm_jamendo_client_id", "")
-    settings.setdefault("bgm_external_dirs", [])
+    if not settings.get("bgm_external_dirs"):
+        settings["bgm_external_dirs"] = [r"D:\BGM库"]
+    settings.setdefault("bgm_chromaprint_fpcalc_path", "")
     settings.setdefault("bgm_volume_percent", 12)
     settings.setdefault("clip_output_root", "")
     settings.setdefault("tts_voice", "zh-CN-YunxiNeural")
@@ -414,9 +463,11 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     settings.setdefault("azure_tts_key", "")
     settings.setdefault("azure_tts_region", "")
     settings.setdefault("azure_tts_voice", "")
-    for key in ("baidu_share", "douyin_download", "subtitle_extract"):
+    for key in ("baidu_share", "douyin_download", "subtitle_extract", "visual_subtitle_extract"):
         if not isinstance(task.get(key), list):
             task[key] = []
+    if not isinstance(task.get("baidu_share_listing_cache"), dict):
+        task["baidu_share_listing_cache"] = {}
     raw_auto_clip_entries = task.get("auto_clip")
     if not isinstance(raw_auto_clip_entries, list):
         raw_auto_clip_entries = []
@@ -602,6 +653,7 @@ def summarize_task(task_data: dict[str, Any]) -> dict[str, int]:
         "baidu_share": len(task_data.get("baidu_share") or []),
         "douyin_download": len(task_data.get("douyin_download") or []),
         "subtitle_extract": len(task_data.get("subtitle_extract") or []),
+        "visual_subtitle_extract": len(task_data.get("visual_subtitle_extract") or []),
         "auto_clip": len(task_data.get("auto_clip") or []),
     }
 
@@ -736,23 +788,31 @@ def get_workspace_task(workspace_name: str) -> dict[str, Any]:
     workspace_dir = resolve_workspace_dir(workspace_name, create=False)
     task_path = workspace_dir / "task.json"
     if not task_path.exists():
-        return default_workspace_task(workspace_dir.name)
+        return apply_global_ai_settings(default_workspace_task(workspace_dir.name))
     raw_task = read_json(task_path, default_workspace_task(workspace_dir.name))
     if not isinstance(raw_task, dict):
-        return default_workspace_task(workspace_dir.name)
+        return apply_global_ai_settings(default_workspace_task(workspace_dir.name))
     normalized_task = normalize_task_payload(raw_task, workspace_dir.name)
     migrated_task, migrated = migrate_legacy_workspace_task(normalized_task)
     task = apply_workspace_task_defaults(migrated_task, workspace_dir.name)
     if migrated or task != raw_task:
         task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
-    return task
+    return apply_global_ai_settings(task)
 
 
-def save_workspace_task(workspace_name: str, payload: dict[str, Any]) -> Path:
+def save_workspace_task(
+    workspace_name: str,
+    payload: dict[str, Any],
+    *,
+    global_ai_settings: dict[str, Any] | None = None,
+) -> Path:
     workspace_dir = resolve_workspace_dir(workspace_name, create=True)
     task_path = workspace_dir / "task.json"
+    if global_ai_settings is not None:
+        write_global_ai_settings(global_ai_settings)
     payload = normalize_task_payload(dict(payload), workspace_dir.name)
     payload = apply_workspace_task_defaults(payload, workspace_dir.name)
+    payload = apply_global_ai_settings(payload)
     task_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return task_path
 
@@ -2207,6 +2267,8 @@ def start_batch_job(workspace_names: list[str], *, workspace_parallel: int | Non
     if not normalized_names:
         raise ValueError("at least one workspace is required")
     ensure_baidu_login_for_workspaces(normalized_names)
+    for workspace_name in normalized_names:
+        save_workspace_task(workspace_name, get_workspace_task(workspace_name))
 
     command = [resolve_python(), "-u", str(BATCH_RUNNER)]
     for workspace_name in normalized_names:
@@ -2622,7 +2684,7 @@ HTML_PAGE = """<!doctype html>
         <div class="guide-card">
           <strong>3</strong>
           <h3>补字幕和剪辑</h3>
-          <p>要提字幕就配 <code>subtitle_extract</code>；要自动出片就补 <code>settings</code> 和 <code>auto_clip</code>。</p>
+          <p>要提音频字幕就配 <code>subtitle_extract</code>；要提参考视频硬字幕就配 <code>visual_subtitle_extract</code>；要自动出片就补 <code>settings</code> 和 <code>auto_clip</code>。</p>
         </div>
         <div class="guide-card">
           <strong>4</strong>
@@ -2680,7 +2742,8 @@ HTML_PAGE = """<!doctype html>
       <div class="actions" style="margin: 12px 0;">
         <span class="status-pill status-idle"><code>baidu_share</code></span>
         <span class="status-pill status-idle"><code>douyin_download</code></span>
-        <span class="status-pill status-idle"><code>subtitle_extract</code></span>
+          <span class="status-pill status-idle"><code>subtitle_extract</code></span>
+          <span class="status-pill status-idle"><code>visual_subtitle_extract</code></span>
         <span class="status-pill status-idle"><code>settings</code></span>
         <span class="status-pill status-idle"><code>auto_clip</code></span>
       </div>
@@ -2719,13 +2782,14 @@ HTML_PAGE = """<!doctype html>
       baidu_share: 1,
       douyin_download: 3,
       subtitle_extract: 1,
+      visual_subtitle_extract: 1,
       auto_clip: 1
     };
 
     const DEFAULT_SETTINGS = {
       ai_api_key: "",
       ai_api_url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-                ai_model: "doubao-seed-character-251128",
+                ai_model: "doubao-seed-2-0-lite-260215",
       tts_voice: "zh-CN-YunxiNeural",
       tts_rate: "+8%",
       enable_backup_tts: false,
@@ -2797,6 +2861,7 @@ HTML_PAGE = """<!doctype html>
       rawTask.baidu_share = Array.isArray(rawTask.baidu_share) ? rawTask.baidu_share : [];
       rawTask.douyin_download = Array.isArray(rawTask.douyin_download) ? rawTask.douyin_download : [];
       rawTask.subtitle_extract = Array.isArray(rawTask.subtitle_extract) ? rawTask.subtitle_extract : [];
+      rawTask.visual_subtitle_extract = Array.isArray(rawTask.visual_subtitle_extract) ? rawTask.visual_subtitle_extract : [];
       rawTask.auto_clip = Array.isArray(rawTask.auto_clip) ? rawTask.auto_clip : [];
       return rawTask;
     }
@@ -2806,6 +2871,7 @@ HTML_PAGE = """<!doctype html>
         baidu_share: (task.baidu_share || []).length,
         douyin_download: (task.douyin_download || []).length,
         subtitle_extract: (task.subtitle_extract || []).length,
+        visual_subtitle_extract: (task.visual_subtitle_extract || []).length,
         auto_clip: (task.auto_clip || []).length
       };
     }
@@ -2925,7 +2991,8 @@ HTML_PAGE = """<!doctype html>
       badges.innerHTML = `
         <span class="status-pill status-idle">百度 ${summary.baidu_share || 0}</span>
         <span class="status-pill status-idle">抖音 ${summary.douyin_download || 0}</span>
-        <span class="status-pill status-idle">字幕 ${summary.subtitle_extract || 0}</span>
+            <span class="status-pill status-idle">音频字幕 ${summary.subtitle_extract || 0}</span>
+            <span class="status-pill status-idle">视觉字幕 ${summary.visual_subtitle_extract || 0}</span>
         <span class="status-pill status-idle">剪辑 ${summary.auto_clip || 0}</span>
         <span class="status-pill ${runtime.className}">${escapeHtml(runtime.label)}</span>
       `;
@@ -2956,7 +3023,8 @@ HTML_PAGE = """<!doctype html>
           <div class="meta">
             <span>百度 ${summary.baidu_share || 0}</span>
             <span>抖音 ${summary.douyin_download || 0}</span>
-            <span>字幕 ${summary.subtitle_extract || 0}</span>
+          <span>音频字幕 ${summary.subtitle_extract || 0}</span>
+          <span>视觉字幕 ${summary.visual_subtitle_extract || 0}</span>
             <span>剪辑 ${summary.auto_clip || 0}</span>
             <span>${total > 0 ? `共 ${total} 段任务` : "空白工作间"}</span>
           </div>
@@ -3024,6 +3092,9 @@ HTML_PAGE = """<!doctype html>
       if ((task.subtitle_extract || []).some(item => !hasText(item.input_glob) && !hasText(item.input_path) && !(Array.isArray(item.input_paths) && item.input_paths.length > 0))) {
         checks.push({ tone: "check-warn", title: "字幕任务缺输入", body: "subtitle_extract 至少要填 input_glob、input_path 或 input_paths。" });
       }
+      if ((task.visual_subtitle_extract || []).some(item => !hasText(item.input_glob) && !hasText(item.input_path) && !(Array.isArray(item.input_paths) && item.input_paths.length > 0))) {
+        checks.push({ tone: "check-warn", title: "视觉字幕任务缺输入", body: "visual_subtitle_extract 至少要填 input_glob、input_path 或 input_paths。" });
+      }
       if ((task.auto_clip || []).length === 0) {
         checks.push({ tone: "check-info", title: "还没配置自动剪辑", body: "想直接生成成片，就把 auto_clip 段补上。" });
       }
@@ -3074,7 +3145,8 @@ HTML_PAGE = """<!doctype html>
           <div class="meta">
             <span>百度 ${summary.baidu_share || 0}</span>
             <span>抖音 ${summary.douyin_download || 0}</span>
-            <span>字幕 ${summary.subtitle_extract || 0}</span>
+            <span>音频字幕 ${summary.subtitle_extract || 0}</span>
+            <span>视觉字幕 ${summary.visual_subtitle_extract || 0}</span>
             <span>剪辑 ${summary.auto_clip || 0}</span>
           </div>
         </div>
@@ -3246,7 +3318,7 @@ HTML_PAGE = """<!doctype html>
       task.baidu_share = [
         {
           share_url: "https://pan.baidu.com/s/请替换成你的原素材链接?pwd=提取码",
-          download_mode: "api",
+          download_mode: "official_client",
           target_filename: "episode01.mp4",
           output_subdir: "downloads/baidu",
           skip_existing: true
@@ -3262,13 +3334,20 @@ HTML_PAGE = """<!doctype html>
       task.subtitle_extract = [
         {
           input_glob: "downloads/douyin/*.mp4",
-          output_subdir: "subtitles",
-          temp_subdir: "temp/subtitle",
+          output_subdir: "subtitles/audio",
+          skip_existing: false
+        }
+      ];
+      task.visual_subtitle_extract = [
+        {
+          input_glob: "downloads/douyin/*.mp4",
+          output_subdir: "subtitles/visual",
+          temp_subdir: "temp/visual_subtitle",
           auto_detect_subtitle_area: true,
           language: "ch",
           mode: "accurate",
-          extract_frequency: 5,
-          probe_extract_frequency: 5,
+          extract_frequency: "auto",
+          probe_extract_frequency: "auto",
           generate_txt: true,
           skip_existing: true
         }
@@ -3277,7 +3356,7 @@ HTML_PAGE = """<!doctype html>
         task.auto_clip = [
           {
             reference_video_glob: "downloads/douyin/*.mp4",
-            reference_subtitle_glob: "subtitles/*.srt",
+            reference_subtitle_glob: "subtitles/visual/*.srt",
             source_dir: "downloads/baidu",
             output_subdir: "clips",
             temp_subdir: "temp/auto_clip",
@@ -3458,6 +3537,10 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, get_baidu_login_state())
                 return
 
+            if parsed.path == "/api/global-ai-settings":
+                self._send_json(HTTPStatus.OK, {"settings": read_global_ai_settings()})
+                return
+
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "task":
                 workspace_name = urllib.parse.unquote(parts[2])
                 self._send_json(HTTPStatus.OK, {"workspace": workspace_name, "task": get_workspace_task(workspace_name)})
@@ -3604,13 +3687,22 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {"ok": True, **result})
                 return
 
+            if parsed.path == "/api/global-ai-settings":
+                payload = self._read_json_body()
+                settings = write_global_ai_settings(payload)
+                self._send_json(HTTPStatus.OK, {"ok": True, "settings": settings})
+                return
+
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "workspaces" and parts[3] == "task":
                 workspace_name = urllib.parse.unquote(parts[2])
                 payload = self._read_json_body()
                 task = payload.get("task")
                 if not isinstance(task, dict):
                     raise ValueError("task must be a JSON object")
-                task_path = save_workspace_task(workspace_name, task)
+                global_ai_settings = payload.get("global_ai_settings")
+                if global_ai_settings is not None and not isinstance(global_ai_settings, dict):
+                    raise ValueError("global_ai_settings must be a JSON object")
+                task_path = save_workspace_task(workspace_name, task, global_ai_settings=global_ai_settings)
                 self._send_json(HTTPStatus.OK, {"ok": True, "task_path": str(task_path)})
                 return
 

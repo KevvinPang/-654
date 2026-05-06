@@ -4,18 +4,21 @@
     "baidu_share": 1,
     "douyin_download": 3,
     "subtitle_extract": 1,
+    "visual_subtitle_extract": 1,
     "auto_clip": 1
   },
   "settings": {
     "ai_api_key": "",
     "ai_api_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-    "ai_model": "doubao-seed-character-251128",
+    "ai_model": "doubao-seed-2-0-lite-260215",
     "tts_voice": "zh-CN-YunxiNeural",
     "tts_rate": "+8%",
     "enable_backup_tts": false,
     "azure_tts_key": "",
     "azure_tts_region": "",
-    "azure_tts_voice": ""
+    "azure_tts_voice": "",
+    "prefer_funasr_audio_subtitles": false,
+    "prefer_funasr_sentence_pauses": true
   },
   "baidu_share": [
     {
@@ -34,14 +37,21 @@
   ],
   "subtitle_extract": [
     {
-      "input_glob": "downloads/**/*.mp4",
-      "output_subdir": "subtitles",
-      "temp_subdir": "temp/subtitle",
+      "input_glob": "downloads/douyin/*.mp4",
+      "output_subdir": "subtitles/audio",
+      "skip_existing": false
+    }
+  ],
+  "visual_subtitle_extract": [
+    {
+      "input_glob": "downloads/douyin/*.mp4",
+      "output_subdir": "subtitles/visual",
+      "temp_subdir": "temp/visual_subtitle",
       "auto_detect_subtitle_area": true,
       "language": "ch",
       "mode": "accurate",
-      "extract_frequency": 5,
-      "probe_extract_frequency": 5,
+      "extract_frequency": "auto",
+      "probe_extract_frequency": "auto",
       "generate_txt": true,
       "skip_existing": true
     }
@@ -49,7 +59,7 @@
   "auto_clip": [
     {
       "reference_video_glob": "downloads/douyin/*.mp4",
-      "reference_subtitle_glob": "subtitles/*.srt",
+      "reference_subtitle_glob": "subtitles/visual/*.srt",
       "source_dir": "downloads/baidu",
       "output_subdir": "clips",
       "temp_subdir": "temp/auto_clip",

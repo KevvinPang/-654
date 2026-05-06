@@ -3,3 +3,4 @@ Pillow
 edge-tts
 opencv-python
 numpy
+jieba

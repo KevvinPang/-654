@@ -12,11 +12,11 @@
     button,input,textarea,select{font:inherit}button{border:0;border-radius:14px;padding:10px 15px;background:var(--accent);color:#fff;font-weight:800;cursor:pointer;box-shadow:0 9px 18px rgba(8,120,95,.18);transition:transform .16s ease,box-shadow .16s ease,background .16s ease,opacity .16s ease}button:hover:not(:disabled){transform:translateY(-2px);background:var(--accent-strong);box-shadow:var(--shadow-tight)}button:active:not(:disabled){transform:translateY(1px) scale(.985);box-shadow:0 4px 10px rgba(8,120,95,.15)}button:disabled{cursor:not-allowed;opacity:.55;box-shadow:none}button.secondary{background:#edf4f1;color:var(--ink);box-shadow:none}button.secondary:hover:not(:disabled){background:#e0ebe6}button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(8,120,95,.25);box-shadow:none}button.danger{background:var(--bad);box-shadow:0 9px 18px rgba(197,69,59,.15)}button.danger-soft{background:var(--bad-soft);color:var(--bad);box-shadow:none}button.loading{position:relative;color:transparent!important;pointer-events:none}button.loading::after{content:"";position:absolute;left:calc(50% - 8px);top:calc(50% - 8px);width:16px;height:16px;border-radius:999px;border:2px solid rgba(255,255,255,.55);border-top-color:#fff;animation:spin .7s linear infinite}
     input,textarea,select{width:100%;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink);padding:11px 12px;outline:none;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}textarea{min-height:112px;resize:vertical;line-height:1.55}input:hover,textarea:hover,select:hover{border-color:var(--line-strong)}input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(8,120,95,.10)}input[type="checkbox"]{width:18px;height:18px;padding:0;accent-color:var(--accent)}input:disabled{background:#f3f6f4;color:#94a09b}
     .app{max-width:1480px;margin:0 auto;padding:22px}.topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;margin-bottom:18px}.brand-lockup{display:flex;align-items:center;gap:22px;min-width:0}.brand-logo{width:144px;height:144px;object-fit:contain;flex:none;filter:drop-shadow(0 18px 34px rgba(20,26,24,.22))}.eyebrow{color:var(--accent);font-size:12px;letter-spacing:.16em;font-weight:900}h1,h2,h3{margin:0;letter-spacing:-.03em}h1{margin-top:4px;font-size:clamp(28px,4vw,42px)}h2{font-size:20px}h3{font-size:16px}.top-actions,.actions,.row,.checks,.chips{display:flex;flex-wrap:wrap;gap:9px;align-items:center}.top-actions{justify-content:flex-end}.server-chip{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.82);padding:9px 12px;color:var(--muted);font-size:13px}
-    .layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;align-items:start}.sidebar{position:sticky;top:18px;display:grid;gap:14px}.main{display:grid;gap:14px}.panel{border:1px solid rgba(226,232,228,.95);border-radius:var(--radius);background:rgba(255,255,255,.93);box-shadow:var(--shadow);padding:18px}.panel-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.section-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}.num{display:inline-flex;width:30px;height:30px;align-items:center;justify-content:center;border-radius:11px;background:var(--ink);color:#fff;font-weight:900;font-size:13px}.muted,.hint,.empty{color:var(--muted);font-size:13px;line-height:1.6}.hint{margin-top:-2px}.empty{border:1px dashed var(--line-strong);border-radius:16px;padding:14px;background:var(--surface-soft)}
-    .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.stack{display:grid;gap:12px}.field{display:grid;gap:7px}.field span,.check span{font-size:13px;font-weight:900}.field>.actions>input,.field>.actions>select{flex:1 1 240px;min-width:0}.check{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}.card{border:1px solid var(--line);border-radius:20px;background:var(--surface-soft);padding:15px}.workspace-list,.job-list{display:grid;gap:10px}.workspace-card,.job-card{border:1px solid var(--line);border-radius:18px;background:#fff;padding:13px;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease,background .16s ease}.workspace-card{cursor:pointer}.workspace-card:hover{transform:translateY(-1px);border-color:var(--line-strong);box-shadow:0 12px 26px rgba(20,32,29,.08)}.workspace-card.active{border-color:rgba(8,120,95,.5);background:linear-gradient(180deg,#fff 0%,#f2fbf7 100%);box-shadow:inset 4px 0 0 var(--accent)}.workspace-card h3,.job-card h3{margin:8px 0}.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;background:#edf2ef;color:var(--muted);font-size:12px;font-weight:900}.pill.good{background:rgba(33,131,74,.12);color:var(--good)}.pill.warn{background:rgba(167,101,29,.13);color:var(--warn)}.pill.bad{background:rgba(197,69,59,.12);color:var(--bad)}.pill.run{background:var(--accent-soft);color:var(--accent)}
+    .layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;align-items:start}.sidebar{position:sticky;top:18px;display:grid;gap:14px;max-height:calc(100vh - 36px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px}.main{display:grid;gap:14px}.panel{border:1px solid rgba(226,232,228,.95);border-radius:var(--radius);background:rgba(255,255,255,.93);box-shadow:var(--shadow);padding:18px}.panel-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.section-title{display:flex;align-items:center;gap:10px;margin-bottom:14px}.num{display:inline-flex;width:30px;height:30px;align-items:center;justify-content:center;border-radius:11px;background:var(--ink);color:#fff;font-weight:900;font-size:13px}.muted,.hint,.empty{color:var(--muted);font-size:13px;line-height:1.6}.hint{margin-top:-2px}.empty{border:1px dashed var(--line-strong);border-radius:16px;padding:14px;background:var(--surface-soft)}
+    .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}.grid2>.card,.grid2>.panel,.grid3>.card,.grid3>.panel{align-self:start}.stack{display:grid;gap:12px}.field{display:grid;gap:7px}.field span,.check span{font-size:13px;font-weight:900}.field>.actions>input,.field>.actions>select{flex:1 1 240px;min-width:0}.check{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}.card{border:1px solid var(--line);border-radius:20px;background:var(--surface-soft);padding:15px}.workspace-list,.job-list{display:grid;gap:10px}.workspace-card,.job-card{border:1px solid var(--line);border-radius:18px;background:#fff;padding:13px;transition:border-color .16s ease,transform .16s ease,box-shadow .16s ease,background .16s ease}.workspace-card{cursor:pointer}.workspace-card:hover{transform:translateY(-1px);border-color:var(--line-strong);box-shadow:0 12px 26px rgba(20,32,29,.08)}.workspace-card.active{border-color:rgba(8,120,95,.5);background:linear-gradient(180deg,#fff 0%,#f2fbf7 100%);box-shadow:inset 4px 0 0 var(--accent)}.workspace-card h3,.job-card h3{margin:8px 0}.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;background:#edf2ef;color:var(--muted);font-size:12px;font-weight:900}.pill.good{background:rgba(33,131,74,.12);color:var(--good)}.pill.warn{background:rgba(167,101,29,.13);color:var(--warn)}.pill.bad{background:rgba(197,69,59,.12);color:var(--bad)}.pill.run{background:var(--accent-soft);color:var(--accent)}
 .file-picker{border:1px solid var(--line);border-radius:18px;background:#fff;min-height:120px;padding:8px;display:grid;gap:7px;overflow:auto}.file-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;border-radius:13px;padding:9px 10px;background:var(--surface-soft);transition:background .16s ease,transform .16s ease}.file-row:hover{background:var(--accent-soft);transform:translateX(1px)}.file-row strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-row small{display:block;color:var(--muted);margin-top:2px}.input-list{display:grid;gap:10px}.link-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}.link-row-main{display:grid;gap:8px}.link-row-options{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.link-row button{min-width:72px}.textarea-compact{min-height:96px}.baidu-folder{border:1px solid var(--line);border-radius:16px;background:#fff;padding:6px 10px}.baidu-folder-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none;padding:5px 2px;font-weight:800}.baidu-folder-summary::-webkit-details-marker{display:none}.baidu-folder-name{display:flex;align-items:center;gap:8px}.baidu-folder-name::before{content:"▸";font-size:12px;color:var(--accent);transition:transform .16s ease}.baidu-folder[open]>.baidu-folder-summary .baidu-folder-name::before{transform:rotate(90deg)}.baidu-folder-children{display:grid;gap:8px;padding:8px 0 4px 14px;margin-left:8px;border-left:1px solid var(--line)}.baidu-tree-file{margin-left:4px}.baidu-folder-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.baidu-folder-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.baidu-folder-tools button{padding:7px 10px;border-radius:11px;font-size:12px;font-weight:800}.baidu-folder-status{font-size:12px;color:var(--muted);font-weight:700}
     pre{margin:0;max-height:350px;overflow:auto;white-space:pre-wrap;word-break:break-word;border-radius:18px;background:#10201b;color:#f4fbf8;padding:14px;font-family:var(--mono);font-size:12px;line-height:1.55}#toastHost{position:fixed;top:18px;right:18px;z-index:20;display:grid;gap:10px;width:min(380px,calc(100vw - 36px));pointer-events:none}.toast{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.97);box-shadow:var(--shadow-tight);padding:12px 14px;font-size:13px;line-height:1.55;animation:toastIn .22s ease both}.toast.success{border-color:rgba(33,131,74,.24);color:var(--good)}.toast.error{border-color:rgba(197,69,59,.24);color:var(--bad)}.toast.info{color:var(--accent)}
-    @keyframes spin{to{transform:rotate(360deg)}}@keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}@media (max-width:1180px){.topbar,.layout,.grid2,.grid3{grid-template-columns:1fr}.sidebar{position:static}.top-actions{justify-content:flex-start}.brand-lockup{gap:16px}.brand-logo{width:100px;height:100px}}
+    @keyframes spin{to{transform:rotate(360deg)}}@keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}@media (max-width:1180px){.topbar,.layout,.grid2,.grid3{grid-template-columns:1fr}.sidebar{position:static;max-height:none;overflow:visible;padding-right:0}.top-actions{justify-content:flex-start}.brand-lockup{gap:16px}.brand-logo{width:100px;height:100px}}
     .layout{grid-template-columns:330px minmax(0,1fr);transition:grid-template-columns .18s ease}
     .layout.sidebar-collapsed{grid-template-columns:88px minmax(0,1fr)}
     .sidebar{transition:width .18s ease}
@@ -79,7 +79,8 @@
     .runtime-diag-actions button{padding:8px 11px;border-radius:12px;font-size:12px}
     .job-card.active{border-color:rgba(8,120,95,.35);box-shadow:0 12px 24px rgba(8,120,95,.08);background:linear-gradient(180deg,#fff 0%,#f3faf7 100%)}
     .panel-emphasis{animation:panelPulse 1.05s ease}
-    .upload-note{margin-top:6px}
+    .hint:empty{display:none}
+    .upload-note{margin-top:2px;padding:8px 10px;border-radius:14px;background:#fff;color:var(--accent);font-weight:800;line-height:1.45}
     .fallback-list{display:grid;gap:10px}
     .fallback-row{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.45fr) minmax(0,1fr) auto;gap:10px;align-items:end}
     .fallback-row .field{margin:0}
@@ -94,12 +95,9 @@
     .bgm-card>*{position:relative}
     .bgm-mode-select{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(8,120,95,.18);border-radius:18px;background:rgba(255,255,255,.78)}
     .bgm-mode-select select{background:#fff}
-    .bgm-status{padding:12px 13px;border-radius:18px;background:rgba(255,255,255,.76);border:1px solid rgba(8,120,95,.14);color:var(--muted);font-size:13px;line-height:1.65}
-    .bgm-status strong{display:block;color:var(--ink);font-size:14px;margin-bottom:3px}
-    .bgm-mode-none .bgm-active-only,.bgm-mode-none .bgm-manual-only,.bgm-mode-none .bgm-online-only,.bgm-mode-none .bgm-advanced-only{display:none}
-    .bgm-mode-auto .bgm-manual-only,.bgm-mode-local_auto .bgm-manual-only,.bgm-mode-online_auto .bgm-manual-only{display:none}
-    .bgm-mode-manual .bgm-auto-only,.bgm-mode-manual .bgm-online-only{display:none}
-    .bgm-mode-local_auto .bgm-online-only{display:none}
+    .bgm-mode-none .bgm-active-only,.bgm-mode-none .bgm-manual-only,.bgm-mode-none .bgm-advanced-only{display:none}
+    .bgm-mode-auto .bgm-manual-only,.bgm-mode-local_auto .bgm-manual-only{display:none}
+    .bgm-mode-manual .bgm-auto-only{display:none}
     .bgm-advanced{border:1px dashed rgba(8,120,95,.26);border-radius:18px;background:rgba(255,255,255,.56);padding:10px 12px}
     .bgm-advanced summary{cursor:pointer;font-weight:900;color:var(--accent);list-style:none}
     .bgm-advanced summary::-webkit-details-marker{display:none}
@@ -236,23 +234,20 @@
                 <label class="field">
                   <span>单文件并行分段数</span>
                   <input id="baiduDownloadThreads" type="number" min="1" max="16" value="4">
-                  <div class="hint">同一个视频会拆成几段同时下载。`4` 表示一条视频最多 4 段并行，网络不稳时可以降到 `1-2`。</div>
                 </label>
                 <label class="check" style="align-self:end">
                   <input id="baiduSkipExisting" type="checkbox" checked>
                   <span>已有文件跳过</span>
                 </label>
               </div>
-              <div class="grid2" style="margin-top:12px">
+              <div style="margin-top:12px">
                 <label class="field">
                   <span>下载模式</span>
                   <select id="baiduDownloadMode">
-                    <option value="api">工具直连下载</option>
                     <option value="official_client">交给官方百度网盘客户端</option>
+                    <option value="api">工具直连下载</option>
                   </select>
-                  <div class="hint">选择“官方客户端”后，会先交给百度网盘客户端下载，再在客户端下载完成后自动搬运到当前工作间目录，不会再停在网页。</div>
                 </label>
-                <div class="hint" style="align-self:end">工具直连下载会直接落到你填写的目录；官方客户端模式会先走百度网盘客户端默认下载目录，再自动搬运回工作间目录。</div>
               </div>
               <div id="baiduFilePicker" class="file-picker"></div>
               <div class="card stack" style="padding:12px">
@@ -269,7 +264,6 @@
                 <span>当前工作间已导入原素材</span>
                 <div id="sourceAssetList" class="file-picker"></div>
               </label>
-              <div class="hint">先点“登录百度”，在弹出的专用窗口里登录后把那个窗口关掉，再开始处理。工具直连下载时，如果填写绝对目录，会自动新建“工作间名”子文件夹；官方客户端模式则会在客户端下载完成后自动搬运回来。</div>
             </div>
 
             <div class="card stack">
@@ -303,7 +297,6 @@
                 <span>当前工作间已导入参考视频</span>
                 <div id="referenceAssetList" class="file-picker"></div>
               </label>
-              <div class="hint">默认下载到当前工作间里的 `downloads/douyin`。如果你填绝对路径，也会自动创建“工作间名”子文件夹。</div>
             </div>
           </div>
 
@@ -314,13 +307,7 @@
                 <button class="secondary" type="button" onclick="openLocalFilePicker('sourceVideoUploadInput')">浏览本地视频</button>
                 <button class="secondary" type="button" onclick="openLocalFilePicker('sourceFolderUploadInput')">选择视频文件夹</button>
               </div>
-              <div class="hint upload-note">浏览后会把选中的原素材直接导入当前工作间的 `downloads/baidu`，不用手填路径。</div>
               <div id="sourceImportStatus" class="hint upload-note">当前工作间还没有导入原素材，可直接点击上方按钮浏览导入。</div>
-              <label class="field">
-                <span>本地视频或文件夹路径</span>
-                <textarea id="localSourcePaths" placeholder="E:\样片&#10;E:\素材\第01集.mp4"></textarea>
-              </label>
-              <button class="secondary" type="button" onclick="importLocalPaths('source','localSourcePaths',this)">按路径导入原素材</button>
             </div>
             <div class="card stack">
               <h3>导入本地参考视频</h3>
@@ -328,13 +315,7 @@
                 <button class="secondary" type="button" onclick="openLocalFilePicker('referenceVideoUploadInput')">浏览本地视频</button>
                 <button class="secondary" type="button" onclick="openLocalFilePicker('referenceFolderUploadInput')">选择视频文件夹</button>
               </div>
-              <div class="hint upload-note">浏览后会把选中的参考视频直接导入当前工作间的 `downloads/douyin`。</div>
               <div id="referenceImportStatus" class="hint upload-note">当前工作间还没有导入参考视频，可直接点击上方按钮浏览导入。</div>
-              <label class="field">
-                <span>本地视频或文件夹路径</span>
-                <textarea id="localReferencePaths" placeholder="E:\爆款参考&#10;E:\参考视频\video.mp4"></textarea>
-              </label>
-              <button class="secondary" type="button" onclick="importLocalPaths('reference','localReferencePaths',this)">按路径导入参考视频</button>
             </div>
           </div>
         </section>
@@ -349,24 +330,8 @@
                   <input id="clipOutputRoot" type="text" placeholder="例如：E:\成片输出">
                   <button class="secondary" type="button" onclick="pickFolderForInput('clipOutputRoot',this)">选择文件夹</button>
                 </div>
-                <div class="hint">成片会自动输出到你填写的目录，并新建一个以工作间命名的文件夹。</div>
               </label>
               <div id="clipOutputPreview" class="muted">未设置时沿用工作间内部默认 clips 目录。</div>
-            </div>
-            <div class="card stack">
-              <h3>成片模式</h3>
-              <label class="check"><input id="forceNoNarrationMode" type="checkbox"><span>无解说模式</span></label>
-              <div class="hint">勾选后不再生成解说 TTS，只保留帧匹配、对白与最终合成，适合参考视频本身没有解说的情况。</div>
-              <label class="field">
-                <span>解说时原素材音量占比</span>
-                <input id="narrationBackgroundPercent" type="number" min="0" max="100" step="1" value="3">
-                <div class="hint">单位是解说声音量的百分比。比如 `15` 表示解说段保留 15% 的原素材底音。视觉字幕提取入口已移除，但字幕区域识别模块仍会继续用于字幕遮挡与烧录。</div>
-              </label>
-              <label class="field">
-                <span>账号水印文字</span>
-                <input id="outputWatermarkText" type="text" placeholder="例如：抖音号@你的账号">
-                <div class="hint">留空则不加。填写后会以低透明度在成片上方区域缓慢移动烧录，适合做账号水印。</div>
-              </label>
             </div>
           </div>
           <div class="grid2" style="margin-top:14px">
@@ -379,25 +344,18 @@
                 <label class="field">
                   <span>BGM 模式</span>
                   <select id="bgmSourceMode" onchange="updateBgmModeUi()">
-                    <option value="auto">自动匹配参考视频 BGM（推荐）</option>
-                    <option value="local_auto">只用本地曲库自动匹配</option>
-                    <option value="online_auto">只用 Jamendo 联网匹配</option>
+                    <option value="auto">智能匹配参考 BGM（推荐）</option>
+                    <option value="local_auto">只用本地曲库匹配</option>
                     <option value="manual">手动指定一个 BGM</option>
                     <option value="none">不使用 BGM</option>
                   </select>
                 </label>
                 <span id="bgmModePill" class="pill good">自动</span>
               </div>
-              <div id="bgmModeStatus" class="bgm-status"></div>
+              <input id="bgmVolumePercent" type="hidden" value="12">
               <label class="field bgm-manual-only">
                 <span>已选 BGM</span>
                 <select id="bgmAudioSelect"></select>
-                <div class="hint">只有“手动指定”模式会读取这里；其他模式会忽略这个选择。</div>
-              </label>
-              <label class="field bgm-active-only">
-                <span>BGM 音量占比</span>
-                <input id="bgmVolumePercent" type="number" min="0" max="100" step="1" value="12">
-                <div class="hint">按最终成片主声音量的大致百分比混入，默认较轻，避免压住解说和对白。</div>
               </label>
               <details class="bgm-advanced bgm-advanced-only">
                 <summary>高级设置</summary>
@@ -405,17 +363,10 @@
                   <label class="field bgm-auto-only">
                     <span>风格补充词</span>
                     <input id="bgmSearchQuery" type="text" placeholder="可留空，系统会优先分析参考视频 BGM">
-                    <div class="hint">不是必填项。只在参考视频音频特征不够明确时作为辅助关键词。</div>
-                  </label>
-                  <label class="field bgm-online-only">
-                    <span>Jamendo Client ID</span>
-                    <input id="bgmJamendoClientId" type="password" placeholder="联网曲库需要，可留空只用本地曲库">
-                    <div class="hint">联网模式使用。未填写时不会联网下载；自动模式会退回本地曲库。</div>
                   </label>
                   <label class="field bgm-auto-only">
-                    <span>LX Music 下载目录 / 外部 BGM 目录</span>
-                    <textarea id="bgmExternalDirs" placeholder="C:\Users\24995\Desktop\LX-BGM&#10;D:\BGM合集"></textarea>
-                    <div class="hint">每行一个文件夹。可把 LX Music 的下载路径填到这里，自动匹配时会和当前工作间 BGM 一起按参考视频风格筛选。</div>
+                    <span>本地 BGM 曲库目录（全工作间通用）</span>
+                    <textarea id="bgmExternalDirs" placeholder="D:\BGM库&#10;D:\BGM合集"></textarea>
                   </label>
                   <button class="secondary bgm-auto-only" type="button" onclick="pickFolderForInput('bgmExternalDirs',this)">选择外部 BGM 目录</button>
                   <div class="actions">
@@ -423,50 +374,44 @@
                     <button class="secondary" type="button" onclick="openLocalFilePicker('bgmFolderUploadInput')">导入音频文件夹</button>
                   </div>
                   <div id="bgmImportStatus" class="hint upload-note">当前工作间还没有导入 BGM，可直接点击上方按钮浏览导入。</div>
-                  <label class="field">
-                    <span>本地音频或文件夹路径</span>
-                    <textarea id="localBgmPaths" placeholder="E:\BGM\bgm01.mp3&#10;E:\BGM合集"></textarea>
-                  </label>
-                  <button class="secondary" type="button" onclick="importLocalPaths('bgm','localBgmPaths',this)">按路径导入 BGM</button>
                 </div>
               </details>
               <div id="bgmAssetList" class="file-picker bgm-active-only"></div>
             </div>
             <div class="card stack">
-              <h3>输出补充说明</h3>
-              <div class="muted">封面会在成片输出时一起复制到最终输出目录，并沿用当前工作间同名文件前缀。BGM 默认按参考视频音频风格自动匹配；选择“不使用 BGM”时会明确跳过所有搜索和混音。</div>
+              <h3>成片模式</h3>
+              <label class="check"><input id="forceNoNarrationMode" type="checkbox"><span>无解说模式</span></label>
+              <input id="narrationBackgroundPercent" type="hidden" value="3">
+              <label class="field">
+                <span>账号水印文字</span>
+                <input id="outputWatermarkText" type="text" placeholder="例如：抖音号@你的账号">
+              </label>
             </div>
           </div>
-          <div class="grid3" style="margin-top:14px">
+          <div class="grid2" style="margin-top:14px">
             <div class="card stack">
-              <h3>AI 设置</h3>
+              <h3>AI 设置（全工作间通用）</h3>
               <label class="check"><input id="enableAiNarrationRewrite" type="checkbox" checked><span>启用 AI 轻改写</span></label>
-              <div class="hint">关闭后会保留 OCR 错字复核和音色种子检测，但不再对解说词做 AI 轻改写。</div>
               <label class="field"><span>API Key</span><input id="aiApiKey" type="text"></label>
-              <label class="field"><span>主模型</span><input id="aiModel" type="text" value="doubao-seed-character-251128"></label>
+              <label class="field"><span>主模型</span><input id="aiModel" type="text" value="doubao-seed-2-0-lite-260215"></label>
               <label class="field"><span>API 地址</span><input id="aiApiUrl" type="text" value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"></label>
+              <div id="apiTestStatus" class="hint"></div>
               <div class="field">
                 <span>备用模型</span>
                 <div id="aiFallbackModelList" class="fallback-list"></div>
                 <div id="aiFallbackModelEmpty" class="muted">未添加备用模型时，仅使用主模型。</div>
                 <div class="fallback-toolbar">
                   <button id="addFallbackModelButton" class="secondary" type="button" onclick="addFallbackModelRow()">添加备用模型</button>
-                  <button class="secondary" type="button" onclick="saveCurrentWorkspace(true,this)">保存 AI 设置</button>
+                  <button class="secondary" type="button" onclick="saveGlobalAiSettings(this)">保存全局 AI 设置</button>
                   <button class="secondary" type="button" onclick="testAiApi(this)">测试主模型</button>
                 </div>
-                <div id="apiTestStatus" class="hint">可点击“测试 API”验证当前主模型与备用模型链路。</div>
               </div>
-              <div class="muted">当前外接 AI 只用于 OCR 错字复核、轻改写和音色种子检测；字幕分类、停顿与大部分流程判断都走本地。</div>
             </div>
             <div class="card stack">
               <h3>画面处理</h3>
               <label class="check"><input id="autoEnableRandomEpisodeFlip" type="checkbox" checked><span>随机剧集翻转</span></label>
               <label class="field"><span>翻转比例</span><input id="autoRandomEpisodeFlipRatio" type="number" min="0" max="1" step="0.05" value="0.4"></label>
               <label class="check"><input id="autoEnableRandomVisualFilter" type="checkbox" checked><span>随机画面滤镜</span></label>
-            </div>
-            <div class="card stack">
-              <h3>当前模式说明</h3>
-              <div class="muted">当前工作间默认走 FunASR 主导的音频 SRT 与停顿逻辑，外接 AI 默认保留 OCR 错字复核、轻改写和音色种子检测。参考视频如果完全没有解说，可直接勾选上面的“无解说模式”。</div>
             </div>
           </div>
         </section>
@@ -492,7 +437,6 @@
               </div>
             </div>
             <pre id="logOutput">暂无运行日志。</pre>
-            <div class="hint log-note">这里展示的是中文解释版实时日志，原始日志仍会完整写入工作间日志文件。</div>
           </div>
         </section>
       </main>
@@ -507,8 +451,8 @@
   <input id="bgmFolderUploadInput" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,audio/*" webkitdirectory directory multiple hidden onchange="uploadLocalFiles(this,'bgm')">
 
   <script>
-const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-character-251128",ai_fallback_models:[],prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_source_mode:"auto",bgm_search_query:"",bgm_online_provider:"jamendo",bgm_jamendo_client_id:"",bgm_external_dirs:[],bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
-    let latestStatus=null,currentWorkspace="",currentTask=null,selectedWorkspaces=new Set(),activeJobId="",baiduFiles=[],baiduSavedEntries=[],baiduListingUrl="",selectedBaiduKeys=new Set(),baiduExpandedFolders=new Set(),baiduLoginState=null,baiduListingPending=false,toastCounter=0,sidebarCollapsed=false,workspaceFocusTimer=null,lastSystemNoticeId="";
+const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-2-0-lite-260215",ai_fallback_models:[],prefer_funasr_audio_subtitles:false,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_source_mode:"auto",bgm_search_query:"",bgm_external_dirs:["D:\\BGM库"],bgm_chromaprint_fpcalc_path:"",bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
+    let latestStatus=null,currentWorkspace="",currentTask=null,selectedWorkspaces=new Set(),activeJobId="",baiduFiles=[],baiduSavedEntries=[],baiduListingUrl="",selectedBaiduKeys=new Set(),baiduExpandedFolders=new Set(),baiduLoginState=null,baiduListingPending=false,baiduCacheAutosaveTimer=null,toastCounter=0,sidebarCollapsed=false,workspaceFocusTimer=null,lastSystemNoticeId="";
     const baiduOfficialDiagnosisCache=new Map();
     const $=id=>document.getElementById(id);
     const esc=value=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
@@ -529,8 +473,8 @@ function normalizeDisplayText(value,workspaceName=""){const repaired=repairText(
     function toggleSidebar(forceCollapse=null){sidebarCollapsed=typeof forceCollapse==="boolean"?forceCollapse:!sidebarCollapsed;saveSidebarState();applySidebarState()}
     function collapseSidebarAfterRun(){if(!isDesktopLayout())return;sidebarCollapsed=true;saveSidebarState();applySidebarState()}
 function focusWorkspaceEditor(){const panel=$("currentWorkspaceName")?.closest(".panel");if(!panel)return;panel.scrollIntoView({behavior:"smooth",block:"start"});panel.classList.remove("panel-emphasis");window.clearTimeout(workspaceFocusTimer);void panel.offsetWidth;panel.classList.add("panel-emphasis");workspaceFocusTimer=window.setTimeout(()=>panel.classList.remove("panel-emphasis"),1100);const focusTarget=$("baiduShareUrl")||panel.querySelector("input,textarea,select,button");if(focusTarget){try{focusTarget.focus({preventScroll:true})}catch(error){focusTarget.focus()}}}
-    const STAGE_ORDER=["baidu_share","douyin_download","subtitle_extract","auto_clip"];
-    const STAGE_LABELS={baidu_share:"原素材下载",douyin_download:"参考视频下载",subtitle_extract:"音频字幕提取",auto_clip:"改写与剪辑"};
+const STAGE_ORDER=["baidu_share","douyin_download","subtitle_extract","visual_subtitle_extract","auto_clip"];
+const STAGE_LABELS={baidu_share:"原素材下载",douyin_download:"参考视频下载",subtitle_extract:"音频字幕提取",visual_subtitle_extract:"视觉字幕提取",auto_clip:"改写与剪辑"};
     function jobWorkspaceMembers(job){const members=Array.isArray(job?.workspace_members)&&job.workspace_members.length?job.workspace_members:[job?.workspace];return members.map(item=>String(item||"").trim()).filter(Boolean)}
     function jobMatchesWorkspace(job,workspaceName){return jobWorkspaceMembers(job).includes(workspaceName)}
     function jobStatusLabel(status){return({running:"运行中",stopping:"停止中",completed:"已完成",failed:"失败",idle:"空闲"})[status]||String(status||"未知")}
@@ -579,13 +523,13 @@ function focusWorkspaceEditor(){const panel=$("currentWorkspaceName")?.closest("
       if(status==="stopping")return`停止中 · 第 ${progress.stageIndex}/${progress.totalStages} 步`;
       return`第 ${progress.stageIndex}/${progress.totalStages} 步`;
     }
-    function stageKeyFromScope(scope){const raw=String(scope||"").trim().toLowerCase();if(!raw)return"";if(raw==="baidu_share"||raw.startsWith("baidu_official")||raw.startsWith("baidu#")||raw==="baidu")return"baidu_share";if(raw==="douyin_download"||raw.startsWith("douyin#")||raw==="douyin")return"douyin_download";if(raw==="subtitle_extract"||raw.startsWith("subtitle#")||raw==="subtitle")return"subtitle_extract";if(raw==="auto_clip"||raw.startsWith("auto_clip#")||raw.startsWith("clip#")||raw==="clip")return"auto_clip";return""}
+function stageKeyFromScope(scope){const raw=String(scope||"").trim().toLowerCase();if(!raw)return"";if(raw==="baidu_share"||raw.startsWith("baidu_official")||raw.startsWith("baidu#")||raw==="baidu")return"baidu_share";if(raw==="douyin_download"||raw.startsWith("douyin#")||raw==="douyin")return"douyin_download";if(raw==="subtitle_extract"||raw.startsWith("subtitle#")||raw==="subtitle")return"subtitle_extract";if(raw==="visual_subtitle_extract"||raw.startsWith("visual_subtitle#")||raw.startsWith("visual_subtitle")||raw==="visual_subtitle")return"visual_subtitle_extract";if(raw==="auto_clip"||raw.startsWith("auto_clip#")||raw.startsWith("clip#")||raw==="clip")return"auto_clip";return""}
     function parsePrefixedJson(text,prefix){if(!String(text||"").startsWith(prefix))return null;return safeJson(String(text||"").slice(prefix.length).trim())}
     function parseStageSummaryMessage(message){const text=String(message||"").trim();const matched=text.match(/^summary total=(\d+) success=(\d+) failed=(\d+) skipped=(\d+)$/);if(matched)return{total:Number(matched[1]),success:Number(matched[2]),failed:Number(matched[3]),skipped:Number(matched[4]),noTasks:false};if(text==="no tasks")return{total:0,success:0,failed:0,skipped:0,noTasks:true};return null}
     function parseLogParts(line,workspaceName=""){const raw=repairText(line,workspaceName);const matched=raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[([A-Z]+)\](?: \[([^\]]+)\])? (.*)$/);if(!matched)return{timestamp:"",level:"",scope:"",message:raw,raw};return{timestamp:matched[1],level:matched[2],scope:matched[3]||"",message:matched[4],raw}}
     function scopeLabel(scope){
       const raw=String(scope||"").trim();
-      const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin:"抖音下载",subtitle:"音频字幕提取",auto_clip:"自动剪辑",clip:"自动剪辑",baidu_share:"原素材下载",douyin_download:"参考视频下载",subtitle_extract:"音频字幕提取"};
+const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin:"抖音下载",subtitle:"音频字幕提取",visual_subtitle:"视觉字幕提取",auto_clip:"自动剪辑",clip:"自动剪辑",baidu_share:"原素材下载",douyin_download:"参考视频下载",subtitle_extract:"音频字幕提取",visual_subtitle_extract:"视觉字幕提取"};
       const matched=raw.match(/^([a-z_]+)#(\d+)(?::(.+))?$/i);
       if(!matched)return labels[raw]||repairText(raw);
       const base=labels[matched[1]]||matched[1];
@@ -866,8 +810,8 @@ function focusWorkspaceEditor(){const panel=$("currentWorkspaceName")?.closest("
       return{status:"idle",className:"idle",label:"空闲",badge:"未启动",detail:"还没有启动记录。",preview:"等待启动后显示实时摘要。",progress:emptyProgressState(),job:null};
     }
 
-    function baseTask(name){return{workspace_name:name||"",concurrency:{baidu_share:1,douyin_download:3,subtitle_extract:1,auto_clip:1},settings:{...DEFAULT_SETTINGS},baidu_share:[],douyin_download:[],subtitle_extract:[],auto_clip:[{reference_video_glob:"downloads/douyin/*",reference_subtitle_glob:"subtitles/audio/*.srt",source_dir:"downloads/baidu",output_subdir:"clips",temp_subdir:"temp/auto_clip",title:"{workspace_name}_{reference_stem}",match_all_references:true,skip_existing:false,keep_temp:false}]}}
-    function normalizeTask(task,name){const base=baseTask(name),source=task||{},merged={...base,...source};merged.workspace_name=name||merged.workspace_name||"";merged.concurrency={...base.concurrency,...(source.concurrency||{})};merged.settings={...base.settings,...(source.settings||{})};if(!Array.isArray(merged.settings.ai_fallback_models))merged.settings.ai_fallback_models=[];merged.baidu_share=Array.isArray(merged.baidu_share)?merged.baidu_share:[];merged.douyin_download=Array.isArray(merged.douyin_download)?merged.douyin_download:[];merged.subtitle_extract=Array.isArray(merged.subtitle_extract)?merged.subtitle_extract:[];merged.auto_clip=Array.isArray(merged.auto_clip)&&merged.auto_clip.length?merged.auto_clip:base.auto_clip;return merged}
+function baseTask(name){return{workspace_name:name||"",concurrency:{baidu_share:1,douyin_download:3,subtitle_extract:1,visual_subtitle_extract:1,auto_clip:1},settings:{...DEFAULT_SETTINGS},baidu_share:[],douyin_download:[],subtitle_extract:[],visual_subtitle_extract:[],auto_clip:[{reference_video_glob:"downloads/douyin/*",reference_subtitle_glob:"subtitles/visual/*.srt",source_dir:"downloads/baidu",output_subdir:"clips",temp_subdir:"temp/auto_clip",title:"{workspace_name}_{reference_stem}",match_all_references:true,skip_existing:false,keep_temp:false}]}}
+function normalizeTask(task,name){const base=baseTask(name),source=task||{},merged={...base,...source};merged.workspace_name=name||merged.workspace_name||"";merged.concurrency={...base.concurrency,...(source.concurrency||{})};merged.settings={...base.settings,...(source.settings||{})};if(!Array.isArray(merged.settings.ai_fallback_models))merged.settings.ai_fallback_models=[];merged.baidu_share=Array.isArray(merged.baidu_share)?merged.baidu_share:[];merged.douyin_download=Array.isArray(merged.douyin_download)?merged.douyin_download:[];merged.subtitle_extract=Array.isArray(merged.subtitle_extract)?merged.subtitle_extract:[];merged.visual_subtitle_extract=Array.isArray(merged.visual_subtitle_extract)?merged.visual_subtitle_extract:[];merged.auto_clip=Array.isArray(merged.auto_clip)&&merged.auto_clip.length?merged.auto_clip:base.auto_clip;return merged}
     function setValue(id,value){$(id).value=value??""}function setChecked(id,value){$(id).checked=!!value}
     async function api(path,options={}){const headers={...(options.headers||{})};if(options.body&&!headers["Content-Type"])headers["Content-Type"]="application/json";let response;try{response=await fetch(path,{cache:options.cache||"no-store",...options,headers})}catch(error){const rawMessage=String(error?.message||error||"").trim(),lowerMessage=rawMessage.toLowerCase(),friendlyMessage=(lowerMessage.includes("failed to fetch")||lowerMessage.includes("networkerror"))?"无法连接本地控制台服务。可能是控制台还没启动、已经自动关闭，或者当前页面不是通过控制台地址打开。请优先用桌面快捷方式重新启动。":(rawMessage||"无法连接本地控制台服务。");throw new Error(friendlyMessage)}const contentType=response.headers.get("content-type")||"";const payload=contentType.includes("application/json")?await response.json():{};if(!response.ok)throw new Error(payload.error||`请求失败：${response.status}`);return payload}
     async function withBusy(button,callback){if(!button)return await callback();button.disabled=true;button.classList.add("loading");try{return await callback()}finally{button.disabled=false;button.classList.remove("loading")}}
@@ -890,7 +834,11 @@ function focusWorkspaceEditor(){const panel=$("currentWorkspaceName")?.closest("
     function clearDouyinLinks(){setDouyinLinks([])}
 const BAIDU_VIDEO_EXTENSIONS=new Set([".mp4",".mkv",".mov",".avi",".m4v"]);
 const BAIDU_IMAGE_EXTENSIONS=new Set([".jpg",".jpeg",".png",".webp",".bmp"]);
+function normalizeBaiduListingFile(item={}){return{name:String(item.name||item.server_filename||item.target_filename||"").trim(),size:Number(item.size||0)||0,fs_id:String(item.fs_id||item.target_fsid||"").trim(),path:String(item.path||item.target_path||"").trim()}}
 function baiduFileKey(file){const fsid=String(file.fs_id??"").trim();if(fsid)return`fsid:${fsid}`;const path=String(file.path??"").trim();if(path)return`path:${path}`;const name=String(file.name||file.server_filename||"").trim();return`name:${name}`}
+function normalizeBaiduListingCache(cache,shareUrl=""){if(!cache||typeof cache!=="object")return null;const cacheUrl=String(cache.share_url||"").trim(),expectedUrl=String(shareUrl||"").trim();if(expectedUrl&&cacheUrl&&cacheUrl!==expectedUrl)return null;const files=Array.isArray(cache.files)?cache.files.map(normalizeBaiduListingFile).filter(item=>item.name||item.path||item.fs_id):[];if(!files.length)return null;const selectedKeys=Array.isArray(cache.selected_keys)?cache.selected_keys.map(item=>String(item||"").trim()).filter(Boolean):[];const expandedFolders=Array.isArray(cache.expanded_folders)?cache.expanded_folders.map(item=>String(item||"").trim()).filter(Boolean):[];return{share_url:cacheUrl||expectedUrl,files,selected_keys:selectedKeys,expanded_folders:expandedFolders,updated_at:String(cache.updated_at||"").trim()}}
+function currentBaiduListingCache(shareUrl=$("baiduShareUrl")?.value.trim()||""){const files=(baiduFiles.length?baiduFiles:baiduSavedEntries).map(normalizeBaiduListingFile).filter(item=>item.name||item.path||item.fs_id);if(!shareUrl||!files.length)return null;return{share_url:shareUrl,files,selected_keys:Array.from(selectedBaiduKeys),expanded_folders:Array.from(baiduExpandedFolders),updated_at:new Date().toISOString()}}
+function scheduleBaiduCacheAutosave(){if(!currentWorkspace||baiduListingPending||!$("baiduShareUrl")?.value.trim()||!selectedBaiduKeys.size)return;if(baiduCacheAutosaveTimer)window.clearTimeout(baiduCacheAutosaveTimer);baiduCacheAutosaveTimer=window.setTimeout(()=>{baiduCacheAutosaveTimer=null;saveCurrentWorkspace(false,null).catch(()=>{})},800)}
 function baiduPathSegments(file){const fallbackName=normalizeDisplayText(file.name||file.server_filename||"",currentWorkspace).trim();const path=normalizeDisplayText(file.path??"",currentWorkspace).trim();if(!path||isLikelyBrokenText(path))return[fallbackName].filter(Boolean);const parts=path.split("/").filter(Boolean).map(part=>normalizeDisplayText(part,currentWorkspace).trim()).filter(Boolean);return(parts.length>1?parts.slice(1):parts).filter(Boolean)}
 function createBaiduTreeNode(name,id){return{name,id,folders:new Map(),files:[]}}
 function baiduFileExtension(file){const raw=String(file.path||file.name||file.server_filename||"").trim().toLowerCase();const matched=raw.match(/\.[a-z0-9]+$/i);return matched?matched[0]:""}
@@ -904,7 +852,7 @@ function collectBaiduNodeFiles(node,bucket=[]){if(!node)return bucket;for(const 
 function baiduTreeSource(){return baiduFiles.length?baiduFiles:baiduSavedEntries}
 function findBaiduFileByKey(key){return[...baiduFiles,...baiduSavedEntries].find(item=>baiduFileKey(item)===key)||null}
 function withFolderActionEvent(event){if(event){event.preventDefault();event.stopPropagation()}}
-function applyBaiduFolderSelection(folderId,checked){const root=buildBaiduTree(baiduTreeSource()),folder=findBaiduFolderNode(root,folderId);if(!folder)return;for(const file of collectBaiduNodeFiles(folder)){if(detectBaiduFileKind(file)!=="video")continue;const key=baiduFileKey(file);if(checked)selectedBaiduKeys.add(key);else selectedBaiduKeys.delete(key)}renderBaiduFiles()}
+function applyBaiduFolderSelection(folderId,checked){const root=buildBaiduTree(baiduTreeSource()),folder=findBaiduFolderNode(root,folderId);if(!folder)return;for(const file of collectBaiduNodeFiles(folder)){if(detectBaiduFileKind(file)!=="video")continue;const key=baiduFileKey(file);if(checked)selectedBaiduKeys.add(key);else selectedBaiduKeys.delete(key)}renderBaiduFiles();scheduleBaiduCacheAutosave()}
 function selectBaiduFolder(event,folderId){withFolderActionEvent(event);applyBaiduFolderSelection(folderId,true)}
 function clearBaiduFolder(event,folderId){withFolderActionEvent(event);applyBaiduFolderSelection(folderId,false)}
 async function setWorkspaceCoverByKey(encodedKey,button){try{const key=decodeURIComponent(encodedKey||""),file=findBaiduFileByKey(key);if(!file)throw new Error("没有找到要设为封面的图片。");await setWorkspaceCoverFromBaiduFile(file,button)}catch(error){toast(error.message||String(error),"error")}}
@@ -913,10 +861,10 @@ function renderBaiduFileNode(file){const key=baiduFileKey(file),name=normalizeDi
 function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.folders.values()).sort((a,b)=>normalizeDisplayText(a.name,currentWorkspace).localeCompare(normalizeDisplayText(b.name,currentWorkspace),"zh-CN"));const files=[...node.files].sort((a,b)=>normalizeDisplayText(a._treeName||a.name||"",currentWorkspace).localeCompare(normalizeDisplayText(b._treeName||b.name||"",currentWorkspace),"zh-CN"));const folderHtml=folders.map(folder=>{const open=baiduExpandedFolders.has(folder.id),folderName=normalizeDisplayText(folder.name,currentWorkspace),totalCount=baiduFolderVideoCount(folder),selectedCount=baiduFolderSelectedCount(folder);return`<details class="baidu-folder" data-folder-id="${esc(folder.id)}" ${open?"open":""} ontoggle="toggleBaiduFolder(this)"><summary class="baidu-folder-summary"><span class="baidu-folder-name">${esc(folderName)}</span><span class="baidu-folder-meta"><span class="baidu-folder-status">${selectedCount}/${totalCount} 已选</span><span class="pill">${totalCount} 个视频</span><span class="baidu-folder-tools"><button class="secondary" type="button" onclick="selectBaiduFolder(event,'${esc(folder.id)}')" title="一键选中这个文件夹里的全部视频">选中文件夹内容</button><button class="secondary" type="button" onclick="clearBaiduFolder(event,'${esc(folder.id)}')" title="清空这个文件夹里的已选视频">取消文件夹内容</button></span></span></summary><div class="baidu-folder-children">${renderBaiduTreeChildren(folder,depth+1)}</div></details>`}).join("");const fileHtml=files.map(renderBaiduFileNode).join("");return`${folderHtml}${fileHtml}`}
     function renderBaiduLoginState(){const node=$("baiduLoginStatus");if(!node)return;if(!baiduLoginState){node.className="pill warn";node.textContent="百度未检查";return}if(baiduLoginState.profile_in_use){node.className="pill warn";node.textContent="登录窗口未关闭";return}if(baiduLoginState.logged_in){node.className="pill good";node.textContent="百度已登录";return}node.className="pill warn";node.textContent="百度未登录"}
     function renderBaiduFiles(){const picker=$("baiduFilePicker"),shareUrl=$("baiduShareUrl").value.trim();$("baiduSelectedCount").textContent=`${selectedBaiduKeys.size} 个视频`;renderBaiduLoginState();if(!shareUrl){picker.innerHTML=`<div class="empty">输入网盘链接后点击“提取内容”。</div>`;return}if(baiduListingPending){picker.innerHTML=`<div class="empty">正在重新提取网盘目录，请稍等。旧缓存已经隐藏，避免继续显示乱码或不完整的文件树。</div>`;return}if(!baiduFiles.length){if(baiduSavedEntries.length){const preview=baiduSavedEntries.slice(0,6).map(item=>repairText(item.name||item.target_filename||"",currentWorkspace)).filter(Boolean).join("、");picker.innerHTML=`<div class="empty">当前只有已保存的下载草稿，共 ${baiduSavedEntries.length} 项。为了显示完整中文目录和折叠文件夹，请点上面的“提取内容”重新读取网盘目录。${preview?`<div class="hint" style="margin-top:8px">已保存示例：${esc(preview)}</div>`:""}</div>`;return}picker.innerHTML=`<div class="empty">提取后会按文件夹折叠显示。视频可直接勾选下载，图片可点“设为封面”。</div>`;return}picker.innerHTML=renderBaiduTreeChildren(buildBaiduTree(baiduFiles))}
-    function toggleBaiduFolder(node){const folderId=node.dataset.folderId;if(!folderId)return;if(node.open)baiduExpandedFolders.add(folderId);else baiduExpandedFolders.delete(folderId)}
-    function toggleBaiduFile(input){const key=input.dataset.key;if(!key)return;input.checked?selectedBaiduKeys.add(key):selectedBaiduKeys.delete(key);renderBaiduFiles()}
-    function selectAllBaiduFiles(){for(const file of (baiduFiles.length?baiduFiles:baiduSavedEntries)){if(detectBaiduFileKind(file)!=="video")continue;selectedBaiduKeys.add(baiduFileKey(file))}renderBaiduFiles()}
-    function clearBaiduSelection(){selectedBaiduKeys.clear();renderBaiduFiles()}
+    function toggleBaiduFolder(node){const folderId=node.dataset.folderId;if(!folderId)return;if(node.open)baiduExpandedFolders.add(folderId);else baiduExpandedFolders.delete(folderId);scheduleBaiduCacheAutosave()}
+    function toggleBaiduFile(input){const key=input.dataset.key;if(!key)return;input.checked?selectedBaiduKeys.add(key):selectedBaiduKeys.delete(key);renderBaiduFiles();scheduleBaiduCacheAutosave()}
+    function selectAllBaiduFiles(){for(const file of (baiduFiles.length?baiduFiles:baiduSavedEntries)){if(detectBaiduFileKind(file)!=="video")continue;selectedBaiduKeys.add(baiduFileKey(file))}renderBaiduFiles();scheduleBaiduCacheAutosave()}
+    function clearBaiduSelection(){selectedBaiduKeys.clear();renderBaiduFiles();scheduleBaiduCacheAutosave()}
     function openLocalFilePicker(inputId){if(!currentWorkspace){toast("请先选择工作间。","error");return}const input=$(inputId);if(!input)return;input.value="";input.click()}
     async function uploadLocalFiles(input,kind){const files=Array.from(input?.files||[]);if(!files.length)return;if(!currentWorkspace){toast("请先选择工作间。","error");input.value="";return}const kindLabels={source:"原素材",reference:"参考视频",bgm:"BGM"},kindLabel=kindLabels[kind]||"文件";try{for(const file of files){const response=await fetch(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/upload-file`,{method:"POST",headers:{"Content-Type":"application/octet-stream","X-Upload-Kind":kind,"X-Upload-Name":encodeURIComponent(file.name||"upload.bin")},body:file});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||`上传失败：${file.name}`)}await loadStatus(true);toast(`已上传 ${files.length} 个${kindLabel}。`,"success")}catch(error){toast(error.message||String(error),"error")}finally{input.value=""}}
     function workspaceAssetSummary(name=currentWorkspace){return(latestStatus?.workspaces||[]).find(item=>item.name===name)?.asset_summary||{}}
@@ -926,8 +874,8 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     function formatImportStatus(label,section,emptyText){const count=assetSectionCount(section);if(!count)return emptyText;const recent=assetSectionRecent(section);return recent.length?`当前工作间已导入 ${count} 个${label}，最近：${recent.join("、")}`:`当前工作间已导入 ${count} 个${label}。`}
     function formatBytes(value){const size=Number(value||0);if(!Number.isFinite(size)||size<=0)return"";if(size<1024)return`${size} B`;if(size<1024**2)return`${(size/1024).toFixed(size>=10*1024?0:1)} KB`;if(size<1024**3)return`${(size/1024**2).toFixed(size>=10*1024**2?0:1)} MB`;return`${(size/1024**3).toFixed(1)} GB`}
     function renderWorkspaceAssetPicker(nodeId,section,emptyText){const node=$(nodeId);if(!node)return;const items=assetSectionItems(section);if(!items.length){node.innerHTML=`<div class="empty">${esc(emptyText)}</div>`;return}const hiddenCount=Math.max(0,Number(section?.hidden_count||0));node.innerHTML=`${items.map(item=>{const relative=normalizeDisplayText(item?.relative_path||item?.name||"",currentWorkspace),name=normalizeDisplayText(item?.name||relative.split(/[\\/]/).pop()||"",currentWorkspace),sizeText=formatBytes(item?.size),meta=relative&&relative!==name?relative:"已在当前工作间";return`<div class="file-row"><span class="pill good">文件</span><div><strong title="${esc(name)}">${esc(name)}</strong><small title="${esc(relative||meta)}">${esc(meta)}</small></div><span class="pill">${esc(sizeText||"已导入")}</span></div>`}).join("")}${hiddenCount?`<div class="hint">还有 ${hiddenCount} 个文件未展开显示。</div>`:""}`}
-    function normalizeBgmMode(mode){const value=String(mode||DEFAULT_SETTINGS.bgm_source_mode).trim().toLowerCase();if(["none","manual","local_auto","online_auto","auto"].includes(value))return value;if(["local","local-auto"].includes(value))return"local_auto";if(["online","online-auto"].includes(value))return"online_auto";return"auto"}
-    function updateBgmModeUi(){const mode=normalizeBgmMode($("bgmSourceMode")?.value),card=$("bgmCard"),pill=$("bgmModePill"),status=$("bgmModeStatus"),audioSelect=$("bgmAudioSelect"),volume=$("bgmVolumePercent"),query=$("bgmSearchQuery"),jamendo=$("bgmJamendoClientId"),externalDirs=$("bgmExternalDirs");if(card)card.className=`card stack bgm-card bgm-mode-${mode}`;if($("bgmSourceMode"))$("bgmSourceMode").value=mode;if(audioSelect)audioSelect.disabled=mode!=="manual";if(volume)volume.disabled=mode==="none";if(query)query.disabled=mode==="none"||mode==="manual";if(jamendo)jamendo.disabled=!(mode==="auto"||mode==="online_auto");if(externalDirs)externalDirs.disabled=mode==="none"||mode==="manual"||mode==="online_auto";const details={auto:["自动匹配","优先分析参考视频 BGM 风格，联网搜索 Jamendo；没有 Key 或联网失败时，自动回退当前工作间与外部 BGM 目录。","good"],local_auto:["本地自动","分析参考视频 BGM 风格后，在当前工作间 BGM 曲库和外部 BGM 目录中挑选最接近的音频。","good"],online_auto:["联网自动","分析参考视频 BGM 风格后，只从 Jamendo 联网搜索；没有 Client ID 时不会加 BGM。","warn"],manual:["手动指定","只使用下面选中的一个本地 BGM 文件；不会联网，也不会自动换歌。","warn"],none:["不使用","本次成片明确不加 BGM，联网搜索、本地曲库和手动选择都会被忽略。","bad"]}[mode]||[];if(pill){pill.className=`pill ${details[2]||"good"}`;pill.textContent=details[0]||"自动"}if(status)status.innerHTML=`<strong>${esc(details[0]||"自动匹配")}</strong>${esc(details[1]||"")}`}
+    function normalizeBgmMode(mode){const value=String(mode||DEFAULT_SETTINGS.bgm_source_mode).trim().toLowerCase();if(["none","manual","local_auto","auto"].includes(value))return value;if(["local","local-auto","online","online_auto","online-auto"].includes(value))return"local_auto";return"auto"}
+    function updateBgmModeUi(){const mode=normalizeBgmMode($("bgmSourceMode")?.value),card=$("bgmCard"),pill=$("bgmModePill"),audioSelect=$("bgmAudioSelect"),volume=$("bgmVolumePercent"),query=$("bgmSearchQuery"),externalDirs=$("bgmExternalDirs");if(card)card.className=`card stack bgm-card bgm-mode-${mode}`;if($("bgmSourceMode"))$("bgmSourceMode").value=mode;if(audioSelect)audioSelect.disabled=mode!=="manual";if(volume)volume.disabled=mode==="none";if(query)query.disabled=mode==="none"||mode==="manual";if(externalDirs)externalDirs.disabled=mode==="none"||mode==="manual";const details={auto:["本地曲库自动","good"],local_auto:["本地自动","good"],manual:["手动指定","warn"],none:["不使用","bad"]}[mode]||[];if(pill){pill.className=`pill ${details[1]||"good"}`;pill.textContent=details[0]||"自动"}}
     function renderBgmAssetOptions(section,selectedPath=""){const select=$("bgmAudioSelect");if(!select)return;const normalizedSelected=String(selectedPath||"").trim(),items=assetSectionItems(section),availablePaths=new Set(items.map(item=>String(item?.relative_path||"").trim()).filter(Boolean));let options=`<option value="">未选择文件</option>`;for(const item of items){const relative=normalizeDisplayText(item?.relative_path||item?.name||"",currentWorkspace),name=normalizeDisplayText(item?.name||relative.split(/[\\/]/).pop()||"",currentWorkspace),sizeText=formatBytes(item?.size);options+=`<option value="${esc(relative)}">${esc(sizeText?`${name} · ${sizeText}`:name)}</option>`}if(normalizedSelected&&!availablePaths.has(normalizedSelected))options+=`<option value="${esc(normalizedSelected)}">${esc(normalizedSelected)}</option>`;select.innerHTML=options;select.value=normalizedSelected||"";updateBgmModeUi()}
     function renderCoverPreviewFromSettings(settings={}){const panel=$("coverPreviewPanel");if(!panel)return;const coverPath=String(settings?.cover_image_path||"").trim(),coverName=String(settings?.cover_image_name||"").trim()||coverPath.split(/[\\/]/).pop()||"封面";if(!currentWorkspace||!coverPath){panel.className="empty";panel.textContent=currentWorkspace?"还没有选中封面。提取网盘内容后，找到图片并点击“设为封面”。":"请先选择工作间。";return}const previewUrl=`/api/workspaces/${encodeURIComponent(currentWorkspace)}/cover-preview?path=${encodeURIComponent(coverPath)}`;panel.className="";panel.innerHTML=`<div class="stack"><img src="${previewUrl}" alt="${esc(coverName)}" style="width:100%;max-height:260px;object-fit:contain;border:1px solid var(--line);border-radius:16px;background:#fff"><div class="muted">当前封面：${esc(coverName)}</div></div>`}
     async function refreshCoverPreview(button=null){if(!currentWorkspace){toast("请先选择工作间。","error");return}await withBusy(button,async()=>{await loadTask();toast("已刷新封面预览。","success")}).catch(error=>toast(error.message,"error"))}
@@ -937,12 +885,14 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     function inferClipOutputRoot(outputSubdir,workspaceName){const value=String(outputSubdir||"").trim();if(!value||value==="clips")return"";const normalized=value.replace(/[\\/]+$/,"");const parts=normalized.split(/[\\/]/).filter(Boolean);if(parts.length&&parts[parts.length-1]===workspaceName){const index=Math.max(normalized.lastIndexOf("\\"),normalized.lastIndexOf("/"));return index>=0?normalized.slice(0,index):""}return normalized}
     function normalizeFallbackModelItem(item={}){const model=String(item?.ai_model||item?.model||"").trim(),apiUrl=String(item?.ai_api_url||item?.api_url||"").trim(),apiKey=String(item?.ai_api_key||item?.api_key||"").trim();return{model,api_url:apiUrl,api_key:apiKey}}
     function updateFallbackModelEmpty(){const list=$("aiFallbackModelList"),empty=$("aiFallbackModelEmpty");if(!list||!empty)return;empty.style.display=list.children.length?"none":"block"}
-    function addFallbackModelRow(item={}){const normalized=normalizeFallbackModelItem(item),row=document.createElement("div");row.className="fallback-row";row.innerHTML=`<label class="field"><span>模型名</span><input type="text" data-fallback-model placeholder="例如：doubao-seed-character-251128" value="${esc(normalized.model)}"></label><label class="field"><span>API 地址</span><input type="text" data-fallback-api-url placeholder="留空则沿用主 API 地址" value="${esc(normalized.api_url)}"></label><label class="field"><span>API Key</span><input type="text" data-fallback-api-key placeholder="留空则沿用主 API Key" value="${esc(normalized.api_key)}"></label><div class="fallback-actions"><button class="secondary" type="button" onclick="testFallbackModelApi(this)">测试</button><button class="secondary" type="button" onclick="removeFallbackModelRow(this)">删除</button></div><div class="hint fallback-status" data-fallback-test-status>可单独测试这一条备用模型链路。</div>`;$("aiFallbackModelList").appendChild(row);updateFallbackModelEmpty();return row}
+    function addFallbackModelRow(item={}){const normalized=normalizeFallbackModelItem(item),row=document.createElement("div");row.className="fallback-row";row.innerHTML=`<label class="field"><span>模型名</span><input type="text" data-fallback-model placeholder="例如：doubao-seed-2-0-lite-260215" value="${esc(normalized.model)}"></label><label class="field"><span>API 地址</span><input type="text" data-fallback-api-url placeholder="留空则沿用主 API 地址" value="${esc(normalized.api_url)}"></label><label class="field"><span>API Key</span><input type="text" data-fallback-api-key placeholder="留空则沿用主 API Key" value="${esc(normalized.api_key)}"></label><div class="fallback-actions"><button class="secondary" type="button" onclick="testFallbackModelApi(this)">测试</button><button class="secondary" type="button" onclick="removeFallbackModelRow(this)">删除</button></div><div class="hint fallback-status" data-fallback-test-status>可单独测试这一条备用模型链路。</div>`;$("aiFallbackModelList").appendChild(row);updateFallbackModelEmpty();return row}
     function removeFallbackModelRow(button){button.closest(".fallback-row")?.remove();updateFallbackModelEmpty()}
     function setFallbackModels(items){const list=$("aiFallbackModelList");if(!list)return;list.innerHTML="";for(const item of (items||[]).map(normalizeFallbackModelItem).filter(item=>item.model))addFallbackModelRow(item);updateFallbackModelEmpty()}
     function readFallbackModels(){return Array.from($("aiFallbackModelList")?.querySelectorAll(".fallback-row")||[]).map(row=>{const model=row.querySelector("[data-fallback-model]")?.value.trim()||"",apiUrl=row.querySelector("[data-fallback-api-url]")?.value.trim()||"",apiKey=row.querySelector("[data-fallback-api-key]")?.value.trim()||"";if(!model)return null;const item={model};if(apiUrl)item.api_url=apiUrl;if(apiKey)item.api_key=apiKey;return item}).filter(Boolean)}
+    function collectAiSettings(){return{ai_api_key:$("aiApiKey").value.trim(),ai_model:$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,ai_api_url:$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,ai_fallback_models:readFallbackModels(),disable_ai_subtitle_review:false,disable_ai_narration_rewrite:!$("enableAiNarrationRewrite").checked}}
     function readPathList(id){return String($(id)?.value||"").split(/\r?\n/).map(item=>item.trim()).filter(Boolean)}
-    function setAiTestStatus(message="",type=""){const node=$("apiTestStatus");if(!node)return;node.textContent=message||"可点击“测试 API”验证当前主模型与备用模型链路。";node.style.color=type==="error"?"var(--bad)":type==="success"?"var(--good)":type==="info"?"var(--accent)":""}
+    function setAiTestStatus(message="",type=""){const node=$("apiTestStatus");if(!node)return;node.textContent=message||"";node.style.color=type==="error"?"var(--bad)":type==="success"?"var(--good)":type==="info"?"var(--accent)":""}
+    async function saveGlobalAiSettings(button=null){await withBusy(button,async()=>{const settings=collectAiSettings();await api("/api/global-ai-settings",{method:"POST",body:JSON.stringify(settings)});if(currentTask)currentTask.settings={...(currentTask.settings||{}),...settings};toast("全局 AI 设置已保存，切换工作间后会自动沿用。","success")}).catch(error=>toast(error.message||String(error),"error"))}
     async function testAiApi(button=null){const apiKey=$("aiApiKey").value.trim(),apiModel=$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,apiUrl=$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url;if(!apiKey){const message="请先填写 API Key。";setAiTestStatus(message,"error");toast(message,"error");return}setAiTestStatus("正在测试当前主模型与备用模型链路，请稍等。","info");await withBusy(button,async()=>{const data=await api("/api/test-ai",{method:"POST",body:JSON.stringify({ai_api_key:apiKey,ai_model:apiModel,ai_api_url:apiUrl,ai_fallback_models:readFallbackModels()})});const label=data.active_label||data.active_model||apiModel,detail=data.used_fallback?`${label}（已切换到备用模型）`:label,message=`AI 连接成功：${detail}`;setAiTestStatus(message,"success");toast(message,"success")}).catch(error=>{const message=error.message||String(error);setAiTestStatus(message,"error");toast(message,"error")})}
     function setFallbackTestStatus(row,message="",type=""){const node=row?.querySelector("[data-fallback-test-status]");if(!node)return;node.textContent=message||"可单独测试这一条备用模型链路。";node.style.color=type==="error"?"var(--bad)":type==="success"?"var(--good)":type==="info"?"var(--accent)":""}
     async function testFallbackModelApi(button){const row=button?.closest(".fallback-row");if(!row)return;const model=row.querySelector("[data-fallback-model]")?.value.trim()||"",apiUrl=row.querySelector("[data-fallback-api-url]")?.value.trim()||$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,apiKey=row.querySelector("[data-fallback-api-key]")?.value.trim()||$("aiApiKey").value.trim();if(!model){const message="请先填写这一条备用模型名。";setFallbackTestStatus(row,message,"error");toast(message,"error");return}if(!apiKey){const message="请先填写可用于这条链路的 API Key。";setFallbackTestStatus(row,message,"error");toast(message,"error");return}setFallbackTestStatus(row,"正在测试这条备用模型链路，请稍等。","info");await withBusy(button,async()=>{const data=await api("/api/test-ai",{method:"POST",body:JSON.stringify({ai_api_key:apiKey,ai_model:model,ai_api_url:apiUrl,ai_fallback_models:[]})});const label=data.active_label||data.active_model||model,message=`连接成功：${label}`;setFallbackTestStatus(row,message,"success");toast(`备用模型连接成功：${label}`,"success")}).catch(error=>{const message=error.message||String(error);setFallbackTestStatus(row,message,"error");toast(message,"error")})}
@@ -952,15 +902,18 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       const normalized=normalizeTask(task,currentWorkspace),firstBaidu=one(normalized.baidu_share),firstDouyin=one(normalized.douyin_download),firstAutoClip={...baseTask(currentWorkspace).auto_clip[0],...one(normalized.auto_clip)},settings=normalized.settings||{};
       currentTask=normalized;
       const shareUrl=firstBaidu.share_url||"";
-      baiduListingUrl="";
-      baiduExpandedFolders=new Set();
-      baiduSavedEntries=normalized.baidu_share.map(item=>({name:item.target_filename||"",size:0,fs_id:item.target_fsid||"",path:item.target_path||""})).filter(item=>item.name||item.path||item.fs_id);
-      selectedBaiduKeys=new Set(baiduSavedEntries.map(item=>baiduFileKey(item)).filter(Boolean));
-      baiduFiles=[];
+      const cachedListing=normalizeBaiduListingCache(normalized.baidu_share_listing_cache,shareUrl);
+      baiduListingUrl=cachedListing?.share_url||"";
+      baiduSavedEntries=normalized.baidu_share.map(normalizeBaiduListingFile).filter(item=>item.name||item.path||item.fs_id);
+      baiduFiles=cachedListing?cachedListing.files:[];
+      const availableKeys=new Set((baiduFiles.length?baiduFiles:baiduSavedEntries).map(item=>baiduFileKey(item)).filter(Boolean)),savedKeys=baiduSavedEntries.map(item=>baiduFileKey(item)).filter(key=>availableKeys.has(key)),cachedKeys=(cachedListing?.selected_keys||[]).filter(key=>availableKeys.has(key));
+      selectedBaiduKeys=new Set(cachedKeys.length?cachedKeys:savedKeys);
+      if(cachedListing&&baiduFiles.length&&!selectedBaiduKeys.size)selectedBaiduKeys=new Set(baiduFiles.filter(item=>detectBaiduFileKind(item)==="video").map(item=>baiduFileKey(item)).filter(Boolean));
+      baiduExpandedFolders=cachedListing?.expanded_folders?.length?new Set(cachedListing.expanded_folders):(baiduFiles.length?collectDefaultOpenBaiduFolders(buildBaiduTree(baiduFiles)):new Set());
       setValue("baiduShareUrl",shareUrl);
       setValue("baiduOutputPath",firstBaidu.output_subdir||"downloads/baidu");
       setValue("baiduDownloadThreads",firstBaidu.download_threads||4);
-      setValue("baiduDownloadMode",firstBaidu.download_mode||"api");
+      setValue("baiduDownloadMode",firstBaidu.download_mode||"official_client");
       setChecked("baiduSkipExisting",firstBaidu.skip_existing!==false);
       renderBaiduFiles();
       setDouyinLinks(normalized.douyin_download.map(item=>({url:item.url||"",force_no_narration_mode:item.force_no_narration_mode===true})).filter(item=>item.url));
@@ -974,7 +927,6 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       setValue("outputWatermarkText",settings.output_watermark_text||DEFAULT_SETTINGS.output_watermark_text);
       setValue("bgmSourceMode",settings.bgm_source_mode||DEFAULT_SETTINGS.bgm_source_mode);
       setValue("bgmSearchQuery",settings.bgm_search_query||DEFAULT_SETTINGS.bgm_search_query);
-      setValue("bgmJamendoClientId",settings.bgm_jamendo_client_id||DEFAULT_SETTINGS.bgm_jamendo_client_id);
       setValue("bgmExternalDirs",Array.isArray(settings.bgm_external_dirs)?settings.bgm_external_dirs.join("\n"):(settings.bgm_external_dirs||""));
       setValue("bgmVolumePercent",settings.bgm_volume_percent??DEFAULT_SETTINGS.bgm_volume_percent);
       setChecked("enableAiNarrationRewrite",settings.disable_ai_narration_rewrite!==true);
@@ -995,25 +947,27 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     }
     function buildTask(){
       if(!currentWorkspace)throw new Error("请先新建或选择一个工作间。");
-      const task=normalizeTask(currentTask||{},currentWorkspace),shareUrl=$("baiduShareUrl").value.trim(),selectedKeys=Array.from(selectedBaiduKeys),baiduOutput=$("baiduOutputPath").value.trim()||"downloads/baidu",baiduThreads=asInt("baiduDownloadThreads",4),baiduMode=$("baiduDownloadMode").value||"api",douyinOutput=$("douyinOutputPath").value.trim()||"downloads/douyin",douyinItems=readDouyinLinkItems(),baiduLookup=new Map([...baiduSavedEntries,...baiduFiles].map(item=>[baiduFileKey(item),item]));
+      const task=normalizeTask(currentTask||{},currentWorkspace),shareUrl=$("baiduShareUrl").value.trim(),selectedKeys=Array.from(selectedBaiduKeys),baiduOutput=$("baiduOutputPath").value.trim()||"downloads/baidu",baiduThreads=asInt("baiduDownloadThreads",4),baiduMode=$("baiduDownloadMode").value||"official_client",douyinOutput=$("douyinOutputPath").value.trim()||"downloads/douyin",douyinItems=readDouyinLinkItems(),baiduLookup=new Map([...baiduSavedEntries,...baiduFiles].map(item=>[baiduFileKey(item),item]));
       if(shareUrl&&!selectedKeys.length)throw new Error("已填写网盘链接，请先提取内容并勾选要下载的视频。");
-      task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(key)||{};return{share_url:shareUrl,target_filename:String(matched.name||matched.server_filename||"").trim(),target_path:String(matched.path||"").trim(),target_fsid:String(matched.fs_id||"").trim(),output_subdir:baiduOutput,download_threads:baiduThreads,download_mode:baiduMode,skip_existing:$("baiduSkipExisting").checked}}):[];
+task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(key)||{};return{share_url:shareUrl,target_filename:String(matched.name||matched.server_filename||"").trim(),target_path:String(matched.path||"").trim(),target_fsid:String(matched.fs_id||"").trim(),target_size:Number(matched.size||0)||0,output_subdir:baiduOutput,download_threads:baiduThreads,download_mode:baiduMode,skip_existing:$("baiduSkipExisting").checked}}):[];
+      const baiduListingCache=currentBaiduListingCache(shareUrl);if(baiduListingCache)task.baidu_share_listing_cache=baiduListingCache;else delete task.baidu_share_listing_cache;
       task.douyin_download=douyinItems.map((item,index)=>({url:item.url,output_subdir:douyinOutput,with_watermark:$("douyinWithWatermark").checked,overwrite:$("douyinOverwrite").checked,filename_prefix:douyinReferencePrefix(index+1),force_no_narration_mode:item.force_no_narration_mode===true}));
-      const subtitleOutputSubdir="subtitles/audio";
+      const subtitleOutputSubdir="subtitles/audio",visualSubtitleOutputSubdir="subtitles/visual";
       task.subtitle_extract=douyinItems.length?douyinItems.map((item,index)=>({input_glob:joinPathText(douyinOutput,`${douyinReferencePrefix(index+1)}*`),output_subdir:subtitleOutputSubdir,skip_existing:false})):([{input_glob:"downloads/douyin/*",output_subdir:subtitleOutputSubdir,skip_existing:false}]);
-      const clipOutputRoot=$("clipOutputRoot").value.trim(),rawBgmMode=normalizeBgmMode($("bgmSourceMode").value),bgmAudioPath=$("bgmAudioSelect").value.trim(),bgmSourceMode=rawBgmMode==="manual"&&!bgmAudioPath?"none":rawBgmMode,autoClipBase={...baseTask(currentWorkspace).auto_clip[0],...one(task.auto_clip)},flipRatioValue=Number.parseFloat($("autoRandomEpisodeFlipRatio").value),flipRatio=Number.isFinite(flipRatioValue)?Math.max(0,Math.min(1,flipRatioValue)):.4;
-      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,ai_api_key:$("aiApiKey").value.trim(),ai_model:$("aiModel").value.trim()||DEFAULT_SETTINGS.ai_model,ai_api_url:$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,ai_fallback_models:readFallbackModels(),prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:!$("enableAiNarrationRewrite").checked,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmSourceMode==="manual"?bgmAudioPath:"",bgm_source_mode:bgmSourceMode,bgm_search_query:$("bgmSearchQuery").value.trim(),bgm_online_provider:"jamendo",bgm_jamendo_client_id:$("bgmJamendoClientId").value.trim(),bgm_external_dirs:readPathList("bgmExternalDirs"),bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
+      task.visual_subtitle_extract=douyinItems.length?douyinItems.map((item,index)=>({input_glob:joinPathText(douyinOutput,`${douyinReferencePrefix(index+1)}*`),output_subdir:visualSubtitleOutputSubdir,temp_subdir:"temp/visual_subtitle",auto_detect_subtitle_area:true,language:"ch",mode:"accurate",extract_frequency:"auto",probe_extract_frequency:"auto",generate_txt:true,skip_existing:true})):([{input_glob:"downloads/douyin/*",output_subdir:visualSubtitleOutputSubdir,temp_subdir:"temp/visual_subtitle",auto_detect_subtitle_area:true,language:"ch",mode:"accurate",extract_frequency:"auto",probe_extract_frequency:"auto",generate_txt:true,skip_existing:true}]);
+      const clipOutputRoot=$("clipOutputRoot").value.trim(),rawBgmMode=normalizeBgmMode($("bgmSourceMode").value),bgmAudioPath=$("bgmAudioSelect").value.trim(),bgmSourceMode=rawBgmMode==="manual"&&!bgmAudioPath?"none":rawBgmMode,autoClipBase={...baseTask(currentWorkspace).auto_clip[0],...one(task.auto_clip)},flipRatioValue=Number.parseFloat($("autoRandomEpisodeFlipRatio").value),flipRatio=Number.isFinite(flipRatioValue)?Math.max(0,Math.min(1,flipRatioValue)):.4,aiSettings=collectAiSettings();
+      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,...aiSettings,prefer_funasr_audio_subtitles:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmSourceMode==="manual"?bgmAudioPath:"",bgm_source_mode:bgmSourceMode,bgm_search_query:$("bgmSearchQuery").value.trim(),bgm_external_dirs:readPathList("bgmExternalDirs"),bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
       if(douyinItems.length){
-        task.auto_clip=douyinItems.map((item,index)=>{const prefix=douyinReferencePrefix(index+1),forceNoNarration=$("forceNoNarrationMode").checked||item.force_no_narration_mode===true,titleTemplate=douyinItems.length>1?`{workspace_name}_${prefix}{reference_stem}`:(autoClipBase.title||"{workspace_name}_{reference_stem}");return{...autoClipBase,reference_video_glob:joinPathText(douyinOutput,`${prefix}*`),reference_subtitle_glob:joinPathText(subtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:titleTemplate,match_all_references:false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:forceNoNarration}})
+        task.auto_clip=douyinItems.map((item,index)=>{const prefix=douyinReferencePrefix(index+1),forceNoNarration=$("forceNoNarrationMode").checked||item.force_no_narration_mode===true,titleTemplate=douyinItems.length>1?`{workspace_name}_${prefix}{reference_stem}`:(autoClipBase.title||"{workspace_name}_{reference_stem}");return{...autoClipBase,reference_video_glob:joinPathText(douyinOutput,`${prefix}*`),reference_subtitle_glob:joinPathText(visualSubtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:titleTemplate,match_all_references:false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:forceNoNarration}})
       }else{
-        task.auto_clip=[{...autoClipBase,reference_video_glob:autoClipBase.reference_video_glob||"downloads/douyin/*",reference_subtitle_glob:joinPathText(subtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:autoClipBase.title||"{workspace_name}_{reference_stem}",match_all_references:autoClipBase.match_all_references!==false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:$("forceNoNarrationMode").checked}];
+        task.auto_clip=[{...autoClipBase,reference_video_glob:autoClipBase.reference_video_glob||"downloads/douyin/*",reference_subtitle_glob:joinPathText(visualSubtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:autoClipBase.title||"{workspace_name}_{reference_stem}",match_all_references:autoClipBase.match_all_references!==false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:$("forceNoNarrationMode").checked}];
       }
-      task.concurrency={...task.concurrency,baidu_share:asInt("concurrencyBaidu",1),douyin_download:asInt("concurrencyDouyin",3),subtitle_extract:1,auto_clip:asInt("concurrencyAutoClip",1)};
+      task.concurrency={...task.concurrency,baidu_share:asInt("concurrencyBaidu",1),douyin_download:asInt("concurrencyDouyin",3),subtitle_extract:1,visual_subtitle_extract:1,auto_clip:asInt("concurrencyAutoClip",1)};
       return task
     }
     async function refreshBaiduLoginState(button=null,silent=true){await withBusy(button,async()=>{baiduLoginState=await api("/api/baidu/login-status");renderBaiduLoginState();if(!silent){if(baiduLoginState.profile_in_use)toast("百度专用登录窗口还开着，关闭后再提取或开始处理。","info");else if(baiduLoginState.logged_in)toast("百度专用窗口已登录，可以继续。","success");else toast("百度专用窗口还没登录。","error")}}).catch(error=>{if(!silent)toast(error.message,"error")})}
     async function openBaiduLogin(button){await withBusy(button,async()=>{const data=await api("/api/baidu/open-login",{method:"POST",body:JSON.stringify({})});baiduLoginState=data.login_state||null;renderBaiduLoginState();if(data.already_open)toast("百度专用登录窗口已经打开，先在里面完成登录并关闭。","info");else if(baiduLoginState&&baiduLoginState.logged_in)toast("检测到百度专用窗口已经有登录态，可直接开始处理。","success");else toast("已打开百度专用登录窗口，请在里面完成登录后关闭，再开始处理。","success")}).catch(error=>toast(error.message,"error"))}
-    async function extractBaiduFiles(button){const shareUrl=$("baiduShareUrl").value.trim();if(!shareUrl){toast("请先填写百度网盘链接。","error");return}baiduListingPending=true;baiduListingUrl=shareUrl;baiduFiles=[];selectedBaiduKeys=new Set();baiduExpandedFolders.clear();renderBaiduFiles();toast("正在提取网盘内容，请稍等，不要重复点击。","info");await withBusy(button,async()=>{const data=await api("/api/baidu/list-share",{method:"POST",body:JSON.stringify({share_url:shareUrl})});baiduFiles=(data.files||[]).map(item=>({name:String(item.name||item.server_filename||"").trim(),size:item.size||0,fs_id:item.fs_id||"",path:String(item.path||"").trim()})).filter(item=>item.name);baiduExpandedFolders=collectDefaultOpenBaiduFolders(buildBaiduTree(baiduFiles));baiduSavedEntries=[...baiduFiles];selectedBaiduKeys=new Set(baiduFiles.filter(item=>detectBaiduFileKind(item)==="video").map(item=>baiduFileKey(item)));await refreshBaiduLoginState(null,true);renderBaiduFiles();const videoCount=baiduFiles.filter(item=>detectBaiduFileKind(item)==="video").length,imageCount=baiduFiles.filter(item=>detectBaiduFileKind(item)==="image").length;toast(`已提取 ${videoCount} 个视频、${imageCount} 张图片，视频默认已全选。`,"success")}).catch(error=>{baiduFiles=[];toast(error.message,"error")}).finally(()=>{baiduListingPending=false;renderBaiduFiles()})}
+    async function extractBaiduFiles(button){const shareUrl=$("baiduShareUrl").value.trim();if(!shareUrl){toast("请先填写百度网盘链接。","error");return}baiduListingPending=true;baiduListingUrl=shareUrl;baiduFiles=[];selectedBaiduKeys=new Set();baiduExpandedFolders.clear();renderBaiduFiles();toast("正在提取网盘内容，请稍等，不要重复点击。","info");await withBusy(button,async()=>{const data=await api("/api/baidu/list-share",{method:"POST",body:JSON.stringify({share_url:shareUrl})});baiduFiles=(data.files||[]).map(normalizeBaiduListingFile).filter(item=>item.name);baiduExpandedFolders=collectDefaultOpenBaiduFolders(buildBaiduTree(baiduFiles));baiduSavedEntries=[...baiduFiles];selectedBaiduKeys=new Set(baiduFiles.filter(item=>detectBaiduFileKind(item)==="video").map(item=>baiduFileKey(item)).filter(Boolean));await refreshBaiduLoginState(null,true);renderBaiduFiles();if(currentWorkspace&&selectedBaiduKeys.size)await saveCurrentWorkspace(false,null).catch(()=>{});const videoCount=baiduFiles.filter(item=>detectBaiduFileKind(item)==="video").length,imageCount=baiduFiles.filter(item=>detectBaiduFileKind(item)==="image").length;toast(`已提取 ${videoCount} 个视频、${imageCount} 张图片，视频默认已全选并保存到当前工作间。`,"success")}).catch(error=>{baiduFiles=[];toast(error.message,"error")}).finally(()=>{baiduListingPending=false;renderBaiduFiles()})}
     function statusClass(status){if(status==="completed")return"good";if(status==="failed")return"bad";if(status==="stopping")return"warn";if(status==="idle"||!status)return"idle";return"run"}
     function formatTime(value){return value?new Date(value*1000).toLocaleString("zh-CN"):"-"}
     function shortPathName(value){const parts=String(value||"").split(/[\\/]/).filter(Boolean);return parts.length?parts[parts.length-1]:String(value||"")}
@@ -1138,10 +1092,10 @@ async function loadStatus(silent=true,button=null){await withBusy(button,async()
     async function reloadCurrentTask(button=null){if(!currentWorkspace){toast("请先选择工作间。","error");return}await withBusy(button,async()=>{await loadTask();toast("已重新载入当前配置。","success")}).catch(error=>toast(error.message,"error"))}
 function selectWorkspace(name,revealEditor=false){const nextWorkspace=decodeURIComponent(name),unchanged=nextWorkspace===currentWorkspace;currentWorkspace=nextWorkspace;selectedWorkspaces.add(currentWorkspace);if(revealEditor)focusWorkspaceEditor();if(unchanged){renderMeta();return}loadTask().then(()=>{loadStatus(true);if(revealEditor)focusWorkspaceEditor()}).catch(error=>toast(error.message,"error"))}
     function toggleWorkspace(input){const name=input.dataset.name;if(!name)return;input.checked?selectedWorkspaces.add(name):selectedWorkspaces.delete(name);renderWorkspaces()}
-    async function createWorkspace(button){await withBusy(button,async()=>{const name=$("newWorkspaceName").value.trim();if(!name)throw new Error("请先填写工作间名称。");const task=baseTask(name);await api(`/api/workspaces/${encodeURIComponent(name)}/task`,{method:"POST",body:JSON.stringify({task})});$("newWorkspaceName").value="";clearBaiduDiagnosisState(name);currentWorkspace=name;currentTask=task;selectedWorkspaces.add(name);populate(task);await loadStatus(true);toast(`已新建工作间：${name}`,"success")}).catch(error=>toast(error.message,"error"))}
+    async function createWorkspace(button){await withBusy(button,async()=>{const name=$("newWorkspaceName").value.trim();if(!name)throw new Error("请先填写工作间名称。");const task=baseTask(name);task.settings={...(task.settings||{}),...collectAiSettings()};await api(`/api/workspaces/${encodeURIComponent(name)}/task`,{method:"POST",body:JSON.stringify({task})});$("newWorkspaceName").value="";clearBaiduDiagnosisState(name);currentWorkspace=name;currentTask=task;selectedWorkspaces.add(name);populate(task);await loadStatus(true);toast(`已新建工作间：${name}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function renameCurrentWorkspace(button){await withBusy(button,async()=>{if(!currentWorkspace)throw new Error("请先选择要改名的工作间。");const oldName=currentWorkspace,nextRaw=window.prompt("请输入新的工作间名称。",oldName);if(nextRaw===null)return;const newName=String(nextRaw||"").trim();if(!newName)throw new Error("新的工作间名称不能为空。");if(newName===oldName){toast("工作间名称没有变化。","info");return}await saveCurrentWorkspace(false);const data=await api(`/api/workspaces/${encodeURIComponent(oldName)}/rename`,{method:"POST",body:JSON.stringify({new_name:newName})});clearBaiduDiagnosisState(oldName);selectedWorkspaces.delete(oldName);currentWorkspace=data.workspace||newName;selectedWorkspaces.add(currentWorkspace);currentTask=null;await loadStatus(true);await loadTask();toast(`已将工作间改名为：${currentWorkspace}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function deleteWorkspace(encodedName="",button=null){const workspace=encodedName?decodeURIComponent(encodedName):currentWorkspace;if(!workspace){toast("请先选择要删除的工作间。","error");return}if(!window.confirm(`确定删除工作间「${workspace}」吗？该工作间里的下载、字幕、日志和相关缓存都会一起删除。`))return;await withBusy(button,async()=>{const data=await api(`/api/workspaces/${encodeURIComponent(workspace)}/delete`,{method:"POST",body:JSON.stringify({})});clearBaiduDiagnosisState(workspace);selectedWorkspaces.delete(workspace);if(currentWorkspace===workspace){currentWorkspace="";currentTask=null;populate(baseTask(""))}await loadStatus(true);const cacheCount=Number(data.cleared_job_cache_count||0)+Number(data.cleared_external_log_count||0);toast(`已删除工作间：${workspace}${cacheCount?`，并清理 ${cacheCount} 项相关缓存`:""}`,"success")}).catch(error=>toast(error.message,"error"))}
-    async function saveCurrentWorkspace(showToast=true,button=null){return await withBusy(button,async()=>{const task=buildTask();await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/task`,{method:"POST",body:JSON.stringify({task})});currentTask=task;await loadStatus(true);if(showToast)toast(`已保存：${currentWorkspace}`,"success");return task}).catch(error=>{toast(error.message,"error");throw error})}
+    async function saveCurrentWorkspace(showToast=true,button=null){return await withBusy(button,async()=>{const task=buildTask(),global_ai_settings=collectAiSettings();await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/task`,{method:"POST",body:JSON.stringify({task,global_ai_settings})});currentTask=task;await loadStatus(true);if(showToast)toast(`已保存：${currentWorkspace}`,"success");return task}).catch(error=>{toast(error.message,"error");throw error})}
     async function saveAndRunCurrentWorkspace(button){await withBusy(button,async()=>{await saveCurrentWorkspace(false);clearBaiduDiagnosisState(currentWorkspace);const data=await api("/api/run-workspace",{method:"POST",body:JSON.stringify({workspace:currentWorkspace})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动：${currentWorkspace}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function runWorkspace(name,button=null){await withBusy(button,async()=>{const workspace=decodeURIComponent(name);clearBaiduDiagnosisState(workspace);const data=await api("/api/run-workspace",{method:"POST",body:JSON.stringify({workspace})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动：${workspace}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function runSelectedWorkspaces(button){await withBusy(button,async()=>{const workspaces=Array.from(selectedWorkspaces);if(!workspaces.length&&currentWorkspace)workspaces.push(currentWorkspace);if(!workspaces.length)throw new Error("请先勾选至少一个工作间。");if(currentWorkspace&&workspaces.includes(currentWorkspace))await saveCurrentWorkspace(false);for(const workspace of workspaces)clearBaiduDiagnosisState(workspace);const data=await api("/api/run-batch",{method:"POST",body:JSON.stringify({workspaces,workspace_parallel:asInt("workspaceParallel",2)})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动 ${workspaces.length} 个工作间。`,"success")}).catch(error=>toast(error.message,"error"))}
@@ -1157,7 +1111,7 @@ function selectWorkspace(name,revealEditor=false){const nextWorkspace=decodeURIC
     function sendUiSessionDisconnect(){const payload=JSON.stringify({session_id:uiSessionId});try{if(navigator.sendBeacon){const body=new Blob([payload],{type:"application/json"});navigator.sendBeacon("/api/ui-session/disconnect",body);return}}catch(error){}try{fetch("/api/ui-session/disconnect",{method:"POST",headers:{"Content-Type":"application/json"},body:payload,keepalive:true,cache:"no-store"})}catch(error){}}
     function startUiSessionHeartbeat(){touchUiSession();if(uiSessionHeartbeatTimer)window.clearInterval(uiSessionHeartbeatTimer);uiSessionHeartbeatTimer=window.setInterval(()=>touchUiSession(),5000)}
     $("clipOutputRoot").addEventListener("input",renderClipOutputPreview);
-    $("baiduShareUrl").addEventListener("input",()=>{const url=$("baiduShareUrl").value.trim();if(baiduListingUrl&&url!==baiduListingUrl){baiduListingUrl="";baiduFiles=[];baiduSavedEntries=[];selectedBaiduKeys.clear();baiduExpandedFolders.clear();renderBaiduFiles()}});
+    $("baiduShareUrl").addEventListener("input",()=>{const url=$("baiduShareUrl").value.trim();if(baiduListingUrl&&url!==baiduListingUrl){if(baiduCacheAutosaveTimer)window.clearTimeout(baiduCacheAutosaveTimer);baiduCacheAutosaveTimer=null;baiduListingUrl="";baiduFiles=[];baiduSavedEntries=[];selectedBaiduKeys.clear();baiduExpandedFolders.clear();renderBaiduFiles()}});
     function refreshDashboard(){loadStatus(true);refreshBaiduLoginState(null,true)}
     window.addEventListener("focus",()=>{refreshBaiduLoginState(null,true);touchUiSession()});
     window.addEventListener("pagehide",()=>sendUiSessionDisconnect());
