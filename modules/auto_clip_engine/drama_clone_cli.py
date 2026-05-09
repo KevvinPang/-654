@@ -75,6 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-file", type=Path)
     parser.add_argument("--reference-video", type=Path)
     parser.add_argument("--reference-subtitle", type=Path)
+    parser.add_argument("--reference-visual-subtitle", type=Path)
     parser.add_argument("--source-dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--title")
@@ -119,6 +120,7 @@ def parse_args() -> argparse.Namespace:
     job = _load_job_file(args.job_file) if args.job_file else {}
     args.reference_video = args.reference_video or _job_path(job, "reference_video")
     args.reference_subtitle = args.reference_subtitle or _job_path(job, "reference_subtitle")
+    args.reference_visual_subtitle = args.reference_visual_subtitle or _job_path(job, "reference_visual_subtitle")
     args.source_dir = args.source_dir or _job_path(job, "source_dir")
     args.output_dir = args.output_dir or _job_path(job, "output_dir")
     args.cover_image_path = args.cover_image_path or _job_path(job, "cover_image_path")
@@ -217,12 +219,20 @@ def main() -> None:
         subtitle_entries = parse_subtitle_content(subtitle_content, args.reference_subtitle.suffix)
         if not subtitle_entries and not bool(args.prefer_funasr_audio_subtitles):
             raise SystemExit("No subtitle entries were parsed from the reference subtitle file.")
+    visual_subtitle_entries = []
+    if args.reference_visual_subtitle is not None:
+        visual_subtitle_content = load_text_file(args.reference_visual_subtitle)
+        visual_subtitle_entries = parse_subtitle_content(
+            visual_subtitle_content,
+            args.reference_visual_subtitle.suffix,
+        )
 
     settings = CloneSettings(
         reference_video=args.reference_video,
         source_dir=args.source_dir,
         output_dir=args.output_dir,
         subtitle_entries=subtitle_entries,
+        visual_subtitle_entries=visual_subtitle_entries,
         output_stem=sanitize_stem(args.title),
         ai_api_key=args.ai_api_key,
         ai_model=args.ai_model,

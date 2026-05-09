@@ -388,7 +388,7 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
                 key: list(value) if isinstance(value, list) else value
                 for key, value in DEFAULT_GLOBAL_AI_SETTINGS.items()
             },
-            "prefer_funasr_audio_subtitles": False,
+            "prefer_funasr_audio_subtitles": True,
             "prefer_funasr_sentence_pauses": True,
             "force_no_narration_mode": False,
             "narration_background_percent": 3,
@@ -437,7 +437,7 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     task["settings"] = settings
     for key, value in DEFAULT_GLOBAL_AI_SETTINGS.items():
         settings.setdefault(key, list(value) if isinstance(value, list) else value)
-    settings.setdefault("prefer_funasr_audio_subtitles", False)
+    settings["prefer_funasr_audio_subtitles"] = True
     settings.setdefault("prefer_funasr_sentence_pauses", True)
     settings.setdefault("force_no_narration_mode", False)
     settings.setdefault("narration_background_percent", 3)
@@ -466,6 +466,9 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     for key in ("baidu_share", "douyin_download", "subtitle_extract", "visual_subtitle_extract"):
         if not isinstance(task.get(key), list):
             task[key] = []
+    for item in task.get("visual_subtitle_extract") or []:
+        if isinstance(item, dict):
+            item["skip_existing"] = False
     if not isinstance(task.get("baidu_share_listing_cache"), dict):
         task["baidu_share_listing_cache"] = {}
     raw_auto_clip_entries = task.get("auto_clip")
@@ -478,6 +481,10 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
             continue
         current = dict(item)
         current.setdefault("skip_existing", False)
+        reference_subtitle_glob = str(current.get("reference_subtitle_glob") or "").strip()
+        if reference_subtitle_glob in {"", "subtitles/visual/*.srt"}:
+            current["reference_subtitle_glob"] = "subtitles/audio/*.srt"
+        current.setdefault("reference_visual_subtitle_glob", "subtitles/visual/*.srt")
         auto_clip_entries.append(current)
     task["auto_clip"] = auto_clip_entries
     task["baidu_share"] = sanitize_baidu_share_entries(task.get("baidu_share") or [])
@@ -509,6 +516,9 @@ def migrate_legacy_workspace_task(payload: dict[str, Any]) -> tuple[dict[str, An
     if settings.get("disable_ai_narration_rewrite") is True:
         settings["disable_ai_narration_rewrite"] = False
         changed = True
+    if settings.get("prefer_funasr_audio_subtitles") is not True:
+        settings["prefer_funasr_audio_subtitles"] = True
+        changed = True
     narration_background_percent = settings.get("narration_background_percent")
     try:
         narration_background_percent_value = float(narration_background_percent)
@@ -520,6 +530,21 @@ def migrate_legacy_workspace_task(payload: dict[str, Any]) -> tuple[dict[str, An
     auto_clip_entries = task.get("auto_clip")
     if isinstance(auto_clip_entries, list):
         for item in auto_clip_entries:
+            if not isinstance(item, dict):
+                continue
+            if item.get("skip_existing", True):
+                item["skip_existing"] = False
+                changed = True
+            reference_subtitle_glob = str(item.get("reference_subtitle_glob") or "").strip()
+            if reference_subtitle_glob in {"", "subtitles/visual/*.srt"}:
+                item["reference_subtitle_glob"] = "subtitles/audio/*.srt"
+                changed = True
+            if not str(item.get("reference_visual_subtitle_glob") or "").strip():
+                item["reference_visual_subtitle_glob"] = "subtitles/visual/*.srt"
+                changed = True
+    visual_subtitle_entries = task.get("visual_subtitle_extract")
+    if isinstance(visual_subtitle_entries, list):
+        for item in visual_subtitle_entries:
             if not isinstance(item, dict):
                 continue
             if item.get("skip_existing", True):
@@ -3349,19 +3374,20 @@ HTML_PAGE = """<!doctype html>
           extract_frequency: "auto",
           probe_extract_frequency: "auto",
           generate_txt: true,
-          skip_existing: true
+          skip_existing: false
         }
       ];
       if (kind === "full") {
         task.auto_clip = [
           {
             reference_video_glob: "downloads/douyin/*.mp4",
-            reference_subtitle_glob: "subtitles/visual/*.srt",
+            reference_subtitle_glob: "subtitles/audio/*.srt",
+            reference_visual_subtitle_glob: "subtitles/visual/*.srt",
             source_dir: "downloads/baidu",
             output_subdir: "clips",
             temp_subdir: "temp/auto_clip",
             title: `${workspaceName}_final`,
-            skip_existing: true
+            skip_existing: false
           }
         ];
       }

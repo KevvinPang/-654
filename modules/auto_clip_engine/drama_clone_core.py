@@ -354,8 +354,13 @@ SPEECHBRAIN_DIALOGUE_RECOVERY_GAP_MIN = 0.00
 SPEECHBRAIN_DIALOGUE_RECOVERY_NARRATOR_MAX = 0.66
 FUNASR_MODEL_SOURCE = "iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
 SENSEVOICE_MODEL_SOURCE = "iic/SenseVoiceSmall"
+QWEN_ASR_MODEL_SOURCE = "Qwen/Qwen3-ASR-1.7B"
+QWEN_FORCED_ALIGNER_MODEL_SOURCE = "Qwen/Qwen3-ForcedAligner-0.6B"
 FUNASR_VAD_MODEL_SOURCE = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 FUNASR_PUNC_MODEL_SOURCE = "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
+QWEN_ASR_REQUEST_TIMEOUT_SECONDS = 7200
+QWEN_ASR_MIN_TOTAL_MEMORY_GB = 6.0
+QWEN_ASR_MIN_AVAILABLE_MEMORY_GB = 0.5
 FUNASR_REQUEST_TIMEOUT_SECONDS = 1800
 FUNASR_SENTENCE_MARGIN_SECONDS = 0.22
 FUNASR_SUPPLEMENT_MIN_DURATION_SECONDS = 0.42
@@ -523,6 +528,12 @@ MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE = 0.62
 MATCH_DIALOGUE_ASR_VERIFY_MARGIN = 0.06
 MATCH_DIALOGUE_ASR_VERIFY_LOW_IMPROVED_MIN_SCORE = 0.38
 MATCH_DIALOGUE_ASR_VERIFY_LOW_IMPROVEMENT = 0.12
+MATCH_DIALOGUE_ASR_VERIFY_MIN_AUDIO_GAIN = 0.09
+MATCH_DIALOGUE_ASR_VERIFY_STRONG_AUDIO_SCORE = 0.82
+MATCH_DIALOGUE_ASR_VERIFY_RERANK_MIN_AUDIO_GAIN = 0.12
+MATCH_DIALOGUE_ASR_VERIFY_RERANK_MAX_VISUAL_LOSS = 0.14
+MATCH_DIALOGUE_FINAL_RERANK_STABLE_VISUAL = 0.80
+MATCH_DIALOGUE_FINAL_RERANK_LOW_VISUAL = 0.58
 MATCH_DIALOGUE_BOUNDARY_ISLAND_MAX_SECONDS = 0.80
 MATCH_DIALOGUE_BOUNDARY_ISLAND_MIN_SOURCE_GAP_SECONDS = 0.72
 MATCH_DIALOGUE_BOUNDARY_ISLAND_MAX_VISUAL_LOSS = 0.20
@@ -908,6 +919,10 @@ SAFE_STRONG_TRANSITION_PREFIXES = (
     "\u7ed3\u679c",
     "\u539f\u6765",
     "\u8c01\u77e5",
+    "\u54ea\u6599",
+    "\u54ea\u77e5",
+    "\u5c82\u6599",
+    "\u8c01\u6599",
     "\u6ca1\u60f3\u5230",
 )
 NARRATION_ACTION_RE = re.compile(
@@ -1001,6 +1016,54 @@ def _first_existing_path(candidates: Sequence[Path]) -> Optional[Path]:
         if normalized.exists():
             return normalized.resolve()
     return None
+
+
+def _qwen_asr_resource_issue() -> str:
+    override = os.environ.get("SERVER_AUTO_CLIP_QWEN_ASR_FORCE", "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return ""
+    device = os.environ.get("SERVER_AUTO_CLIP_QWEN_ASR_DEVICE", "").strip().lower()
+    if device and device not in {"cpu", "auto"} and not device.startswith("cpu"):
+        return ""
+    total_gb = 0.0
+    available_gb = 0.0
+    try:
+        import psutil
+
+        memory = psutil.virtual_memory()
+        total_gb = max(total_gb, float(memory.total) / (1024.0 ** 3))
+        available_gb = max(available_gb, float(memory.available) / (1024.0 ** 3))
+    except Exception:
+        pass
+    if total_gb <= 0.0 or available_gb <= 0.0:
+        try:
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                total_gb = max(total_gb, float(status.ullTotalPhys) / (1024.0 ** 3))
+                available_gb = max(available_gb, float(status.ullAvailPhys) / (1024.0 ** 3))
+        except Exception:
+            return ""
+    if total_gb < QWEN_ASR_MIN_TOTAL_MEMORY_GB:
+        return f"physical memory {total_gb:.1f}GB < {QWEN_ASR_MIN_TOTAL_MEMORY_GB:.1f}GB"
+    if available_gb < QWEN_ASR_MIN_AVAILABLE_MEMORY_GB:
+        return f"available memory {available_gb:.1f}GB < {QWEN_ASR_MIN_AVAILABLE_MEMORY_GB:.1f}GB"
+    return ""
 
 
 @lru_cache(maxsize=1)
@@ -1121,6 +1184,54 @@ def resolve_sensevoice_runtime() -> Tuple[Optional[Path], Optional[Path]]:
         ]
     )
     return _first_existing_path(python_candidates), _first_existing_path(source_candidates)
+
+
+@lru_cache(maxsize=1)
+def resolve_qwen_asr_runtime() -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
+    home = Path.home()
+    python_candidates: List[Path] = []
+    model_candidates: List[Path] = []
+    aligner_candidates: List[Path] = []
+
+    for env_key in ("SERVER_AUTO_CLIP_QWEN_ASR_PYTHON", "QWEN_ASR_PYTHON"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            python_candidates.append(Path(raw_value))
+    for env_key in ("SERVER_AUTO_CLIP_QWEN_ASR_MODEL", "QWEN_ASR_MODEL"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            model_candidates.append(Path(raw_value))
+    for env_key in ("SERVER_AUTO_CLIP_QWEN_FORCED_ALIGNER_MODEL", "QWEN_FORCED_ALIGNER_MODEL"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if raw_value:
+            aligner_candidates.append(Path(raw_value))
+
+    python_candidates.extend(
+        [
+            Path(r"D:\AIModels\venvs\qwen-asr\Scripts\python.exe"),
+            Path(r"D:\AIModels\venvs\vibevoice-asr\Scripts\python.exe"),
+            Path(sys.executable),
+        ]
+    )
+    model_candidates.extend(
+        [
+            Path(r"D:\AIModels\models\Qwen3-ASR-1.7B"),
+            home / "Downloads" / "Qwen3-ASR-1.7B",
+            home / "Desktop" / "Qwen3-ASR-1.7B",
+        ]
+    )
+    aligner_candidates.extend(
+        [
+            Path(r"D:\AIModels\models\Qwen3-ForcedAligner-0.6B"),
+            home / "Downloads" / "Qwen3-ForcedAligner-0.6B",
+            home / "Desktop" / "Qwen3-ForcedAligner-0.6B",
+        ]
+    )
+    return (
+        _first_existing_path(python_candidates),
+        _first_existing_path(model_candidates),
+        _first_existing_path(aligner_candidates),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -1266,6 +1377,7 @@ class CloneSettings:
     source_dir: Path
     output_dir: Path
     subtitle_entries: List[SubtitleEntry]
+    visual_subtitle_entries: List[SubtitleEntry] = field(default_factory=list)
     output_stem: str = "output"
     ai_api_key: str = ""
     ai_model: str = DEFAULT_AI_MODEL
@@ -2255,6 +2367,118 @@ def rewrite_numeric_anchor_tokens(text: str) -> Tuple[str, ...]:
     if not normalized:
         return ()
     return tuple(AI_REWRITE_NUMERIC_ANCHOR_RE.findall(normalized))
+
+
+CHINESE_DIGIT_VALUE = {
+    "\u96f6": 0,
+    "\u3007": 0,
+    "\u4e00": 1,
+    "\u4e8c": 2,
+    "\u4e24": 2,
+    "\u4e09": 3,
+    "\u56db": 4,
+    "\u4e94": 5,
+    "\u516d": 6,
+    "\u4e03": 7,
+    "\u516b": 8,
+    "\u4e5d": 9,
+}
+CHINESE_UNIT_VALUE = {
+    "\u5341": 10,
+    "\u767e": 100,
+    "\u5343": 1000,
+    "\u4e07": 10000,
+    "\u4ebf": 100000000,
+}
+
+
+def chinese_number_text_to_int(text: str) -> Optional[int]:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return None
+    if normalized.isdigit():
+        return int(normalized)
+    if not re.fullmatch(r"[\u96f6\u3007\u4e00\u4e8c\u4e24\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e07\u4ebf]+", normalized):
+        return None
+    total = 0
+    section = 0
+    number = 0
+    for char in normalized:
+        if char in CHINESE_DIGIT_VALUE:
+            number = CHINESE_DIGIT_VALUE[char]
+            continue
+        unit = CHINESE_UNIT_VALUE.get(char)
+        if unit is None:
+            return None
+        if unit >= 10000:
+            section = (section + number) or 1
+            total += section * unit
+            section = 0
+            number = 0
+            continue
+        section += (number or 1) * unit
+        number = 0
+    return total + section + number
+
+
+NUMERIC_AMOUNT_TOKEN_RE = re.compile(
+    r"(?P<number>\d+|[\u96f6\u3007\u4e00\u4e8c\u4e24\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e07\u4ebf]+)"
+    r"(?P<unit>\u4e07|\u4ebf|\u5343|\u767e|\u5757|\u5143)"
+)
+CHINESE_NUMBER_TEXT_RE = re.compile(r"[\u96f6\u3007\u4e00\u4e8c\u4e24\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343\u4e07\u4ebf]+")
+
+
+def numeric_amount_tokens(text: str) -> Tuple[Tuple[int, str], ...]:
+    normalized = normalize_subtitle_text(text)
+    tokens: List[Tuple[int, str]] = []
+    for match in NUMERIC_AMOUNT_TOKEN_RE.finditer(normalized):
+        number_text = str(match.group("number") or "")
+        unit = str(match.group("unit") or "")
+        value = chinese_number_text_to_int(number_text)
+        if value is None:
+            continue
+        tokens.append((value, unit))
+    return tuple(tokens)
+
+
+def visual_numeric_amount_correction_is_safe(audio_text: str, visual_text: str) -> bool:
+    audio_amounts = numeric_amount_tokens(audio_text)
+    visual_amounts = numeric_amount_tokens(visual_text)
+    if not audio_amounts or audio_amounts != visual_amounts:
+        return False
+    audio_signature = subtitle_variant_signature(audio_text)
+    visual_signature = subtitle_variant_signature(visual_text)
+    if not audio_signature or not visual_signature:
+        return False
+    stripped_audio = NUMERIC_AMOUNT_TOKEN_RE.sub("#", audio_signature)
+    stripped_visual = NUMERIC_AMOUNT_TOKEN_RE.sub("#", visual_signature)
+    return difflib.SequenceMatcher(None, stripped_audio, stripped_visual).ratio() >= 0.72
+
+
+def visual_numeric_rewrite_correction_is_safe(audio_text: str, visual_text: str) -> bool:
+    normalized_audio = normalize_subtitle_text(audio_text)
+    normalized_visual = normalize_subtitle_text(visual_text)
+    if not normalized_audio or not normalized_visual:
+        return False
+
+    def _replace_chinese_number(match: re.Match[str]) -> str:
+        raw = str(match.group(0) or "")
+        value = chinese_number_text_to_int(raw)
+        return str(value) if value is not None else raw
+
+    audio_numeric = CHINESE_NUMBER_TEXT_RE.sub(_replace_chinese_number, normalized_audio)
+    audio_signature = subtitle_variant_signature(audio_numeric)
+    original_audio_signature = subtitle_variant_signature(normalized_audio)
+    visual_signature = subtitle_variant_signature(normalized_visual)
+    if not audio_signature or not visual_signature:
+        return False
+    if audio_signature == original_audio_signature:
+        return False
+    if not re.search(r"\d", visual_signature):
+        return False
+    if audio_signature == visual_signature:
+        return True
+    return difflib.SequenceMatcher(None, audio_signature, visual_signature).ratio() >= 0.86
 
 
 def split_ai_rewrite_pause_segments(text: str) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
@@ -5369,8 +5593,16 @@ def normalize_delivery_subtitle_timeline_for_fps(
     frame_step = 1.0 / float(fps) if float(fps or 0.0) > 1.0 else 0.0
     min_gap = max(DELIVERY_SUBTITLE_MIN_GAP_SECONDS, frame_step)
     min_duration = max(0.05, frame_step)
+    ordered_entries = sorted(
+        entries,
+        key=lambda item: (
+            max(0.0, float(item.start)),
+            max(0.0, float(item.end)),
+            int(item.index),
+        ),
+    )
     normalized_entries: List[SubtitleEntry] = []
-    for entry in entries:
+    for entry in ordered_entries:
         start = max(0.0, float(entry.start))
         end = max(start + min_duration, float(entry.end))
         if frame_step > 0.0:
@@ -5386,10 +5618,12 @@ def normalize_delivery_subtitle_timeline_for_fps(
         next_start = max(0.0, float(next_entry.start))
         end = float(entry.end)
         if end > next_start - min_gap:
-            clipped_end = max(float(entry.start) + min_duration, next_start - min_gap)
+            clipped_end = next_start - min_gap
             if frame_step > 0.0:
                 clipped_end = snap_time_down_to_grid(clipped_end, frame_step)
-                clipped_end = max(float(entry.start) + min_duration, clipped_end)
+            if clipped_end <= float(entry.start) + 0.01:
+                normalized_entries[index] = clone_subtitle_entry(entry, end=float(entry.start))
+                continue
             normalized_entries[index] = clone_subtitle_entry(entry, end=min(end, clipped_end))
     return normalized_entries
 
@@ -5885,7 +6119,15 @@ def isolated_visual_ocr_noise_text(text: str) -> bool:
         return False
     if re.fullmatch(r"[A-Za-z]", compact):
         return True
-    if re.fullmatch(r"[A-Za-z0-9|IlOo`'\".,:;~^_\-]{1,4}", compact) and re.search(r"[A-Za-z|IlOo]", compact):
+    if re.fullmatch(r"\d{1,2}", compact):
+        return True
+    if re.fullmatch(r"\d{1,2}[.,]\d", compact):
+        return True
+    if (
+        re.fullmatch(r"[A-Za-z0-9|IlOo`'\".,:;~^_\-]{1,4}", compact)
+        and re.search(r"[A-Za-z|IlOo]", compact)
+        and (re.search(r"\d", compact) or re.search(r"[|`'\".,:;~^_\-]", compact))
+    ):
         return True
     return bool(re.fullmatch(r"[|IlOo`'\".,:;~^_\-]{1,3}", compact))
 
@@ -5913,18 +6155,25 @@ def drop_isolated_visual_ocr_noise_entries(
 ) -> Tuple[List[SubtitleEntry], int]:
     if not entries:
         return [], 0
-    kept: List[SubtitleEntry] = []
-    dropped = 0
-    for index, entry in enumerate(entries):
-        previous_entry = entries[index - 1] if index > 0 else None
-        next_entry = entries[index + 1] if index + 1 < len(entries) else None
-        if isolated_visual_ocr_noise_entry(entry, previous_entry, next_entry):
-            dropped += 1
-            continue
-        kept.append(entry)
-    if dropped <= 0:
+    current_entries = list(entries)
+    total_dropped = 0
+    for _ in range(3):
+        kept: List[SubtitleEntry] = []
+        dropped = 0
+        for index, entry in enumerate(current_entries):
+            previous_entry = current_entries[index - 1] if index > 0 else None
+            next_entry = current_entries[index + 1] if index + 1 < len(current_entries) else None
+            if isolated_visual_ocr_noise_entry(entry, previous_entry, next_entry):
+                dropped += 1
+                continue
+            kept.append(entry)
+        if dropped <= 0:
+            break
+        current_entries = kept
+        total_dropped += dropped
+    if total_dropped <= 0:
         return list(entries), 0
-    return reindex_subtitle_entries(kept), dropped
+    return reindex_subtitle_entries(current_entries), total_dropped
 
 
 def watermark_like_text(text: str) -> bool:
@@ -5961,7 +6210,10 @@ def watermark_like_text(text: str) -> bool:
     )
     if any(keyword in normalized or keyword in lowered for keyword in keywords):
         return True
-    if re.search(r"第\s*\d+\s*[集话季]", normalized):
+    if re.search(
+        r"第\s*(?:\d+|[零〇一二两三四五六七八九十百千]+)\s*[集话季]",
+        normalized,
+    ):
         return True
     return False
 
@@ -7000,7 +7252,7 @@ def plan_tts_sentence_links_locally(
             and boundary_audio_pause <= zero_audio_pause_limit
             and gap <= max(REFERENCE_VISUAL_TTS_AUDIO_ZERO_WRAP_GAP_SECONDS, zero_subtitle_gap_limit)
         )
-        strong_boundary_visual_pause = (
+        visual_boundary_pause_hint = (
             prefer_sentence_pauses
             and boundary_visual_pause >= STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
         )
@@ -7013,19 +7265,23 @@ def plan_tts_sentence_links_locally(
             prefer_sentence_pauses
             and boundary_audio_pause >= STRICT_TTS_VISUAL_JOIN_AUDIO_BLOCK_MIN_SECONDS
         )
-        has_authoritative_visual_evidence = strong_boundary_visual_pause or visual_join_evidence
+        # Audio pause probes are the owner in strict mode.  Hard-subtitle OCR is
+        # still useful as a fallback, but it must not create a TTS pause when
+        # the reference audio/ASR boundary says the narration is continuous.
+        strong_boundary_visual_pause = visual_boundary_pause_hint and not has_boundary_audio_evidence
         strong_boundary_audio_pause = (
             prefer_sentence_pauses
             and boundary_audio_pause >= STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
-            and (not has_authoritative_visual_evidence or very_strong_boundary_audio_pause)
         )
         strong_boundary_pause = strong_boundary_audio_pause or strong_boundary_visual_pause
         weak_boundary_audio_pause = (
             prefer_sentence_pauses
             and boundary_audio_pause >= max(0.018, STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS * 0.42)
-            and not has_authoritative_visual_evidence
         )
-        visual_join_protects_boundary = visual_join_evidence and not very_strong_boundary_audio_pause
+        visual_join_protects_boundary = visual_join_evidence and (
+            not has_boundary_audio_evidence
+            or boundary_audio_pause < STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+        )
         visual_join_gap_limit = max(0.32, min(0.72, reference_gap * 4.0 + 0.24))
         seamless_boundary_audio = (
             has_boundary_audio_evidence
@@ -7033,6 +7289,16 @@ def plan_tts_sentence_links_locally(
             and gap <= max(0.05, min(0.10, reference_gap * 0.75 + 0.02))
         )
         current_text = normalize_subtitle_text(current.text)
+
+        if (
+            prefer_sentence_pauses
+            and has_boundary_audio_evidence
+            and boundary_audio_pause >= STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+        ):
+            join_map[current.index] = False
+            sentence_buffer = upcoming_text
+            continue
+
         pre_structural_required_join = requires_structural_tts_join(current_text, upcoming_text)
         local_join_limit = (
             min(0.30, max(0.10, reference_gap * 1.35 + 0.03))
@@ -7467,9 +7733,9 @@ def plan_strict_audio_tts_groups(
     if not entries:
         return [], {}
 
-    # Strict pause mode is visual-primary: reference hard subtitles own normal
-    # boundaries, while audio only fills missing visual evidence or cancels a
-    # visual wrap when the reference voice has effectively zero pause.
+    # Strict pause mode is audio-primary: reference audio owns real pauses.
+    # Hard-subtitle OCR only fills missing audio evidence or protects a visual
+    # wrap when the reference voice has effectively zero pause.
     strict_join_map: Dict[int, bool] = {entry.index: False for entry in entries[:-1]}
     planned_join_map = plan_tts_sentence_links_locally(
         entries,
@@ -8600,6 +8866,75 @@ def fps_to_float(raw: str) -> float:
             return 25.0
         return float(numerator) / float(denominator)
     return float(raw or 25.0)
+
+
+def choose_target_video_profile_from_source_jobs(
+    jobs: Sequence[SegmentJob],
+    video_processor: "VideoProcessor",
+    fallback_width: int,
+    fallback_height: int,
+) -> Tuple[int, int, float, str]:
+    weighted_sizes: Dict[Tuple[int, int], float] = {}
+    weighted_fps: Dict[Tuple[int, int], Dict[float, float]] = {}
+    probed_profiles: Dict[str, Tuple[int, int, float, float]] = {}
+    for job in jobs:
+        source_key = str(job.source_video)
+        if source_key not in probed_profiles:
+            try:
+                profile = video_processor.probe_video(Path(source_key))
+                source_width = int(profile.get("width", 0) or 0)
+                source_height = int(profile.get("height", 0) or 0)
+                source_duration = float(profile.get("video_duration", profile.get("duration", 0.0)) or 0.0)
+                source_fps = fps_to_float(str(profile.get("fps", "") or "0/0"))
+            except Exception:
+                source_width = 0
+                source_height = 0
+                source_duration = 0.0
+                source_fps = 0.0
+            probed_profiles[source_key] = (source_width, source_height, source_duration, source_fps)
+        source_width, source_height, source_duration, source_fps = probed_profiles[source_key]
+        if source_width < 480 or source_height < 480 or source_duration < 3.0:
+            continue
+        vote_duration = max(
+            0.0,
+            float(job.duration),
+        )
+        size_key = (source_width, source_height)
+        weighted_sizes[size_key] = weighted_sizes.get(size_key, 0.0) + vote_duration
+        if source_fps > 1.0:
+            fps_key = round(float(source_fps), 3)
+            fps_votes = weighted_fps.setdefault(size_key, {})
+            fps_votes[fps_key] = fps_votes.get(fps_key, 0.0) + vote_duration
+
+    if not weighted_sizes:
+        return int(fallback_width), int(fallback_height), 0.0, "reference fallback"
+    target_size, total_duration = max(
+        weighted_sizes.items(),
+        key=lambda item: (item[1], item[0][0] * item[0][1]),
+    )
+    fps_votes = weighted_fps.get(target_size) or {}
+    target_fps = 0.0
+    if fps_votes:
+        target_fps, _fps_duration = max(fps_votes.items(), key=lambda item: (item[1], item[0]))
+    total_vote = sum(weighted_sizes.values())
+    share = total_duration / total_vote if total_vote > 0 else 1.0
+    fps_note = f", {target_fps:.2f}fps" if target_fps > 1.0 else ""
+    return int(target_size[0]), int(target_size[1]), float(target_fps), f"source jobs {share:.0%} of matched duration{fps_note}"
+
+
+def choose_target_frame_size_from_source_jobs(
+    jobs: Sequence[SegmentJob],
+    video_processor: "VideoProcessor",
+    fallback_width: int,
+    fallback_height: int,
+) -> Tuple[int, int, str]:
+    width, height, _fps, reason = choose_target_video_profile_from_source_jobs(
+        jobs,
+        video_processor,
+        fallback_width,
+        fallback_height,
+    )
+    return width, height, reason
 
 
 def crop_box_ratio(
@@ -13189,6 +13524,87 @@ def join_funasr_sentence_entries_text(left: str, right: str, gap: float) -> str:
     return normalize_subtitle_text(join_narration_text(left_text, right_text, gap, allow_gap_pause=False))
 
 
+ASR_FRAGMENT_COMPOUND_WORDS = {
+    "\u4ed6\u4eec",
+    "\u5979\u4eec",
+    "\u6211\u4eec",
+    "\u4f60\u4eec",
+    "\u8001\u5b9e\u4eba",
+    "\u62d6\u62c9\u673a",
+    "\u8fdb\u6751",
+    "\u4ed6\u4eec\u5bb6",
+    "\u5979\u4eec\u5bb6",
+    "\u770b\u70ed\u95f9",
+    "\u770b\u4e0d\u60ef",
+    "\u65b0\u5ab3\u5987",
+    "\u4eca\u5929",
+    "\u62e6\u4f4f",
+    "\u65e0\u4eba\u6562\u60f9",
+}
+
+COMMON_SINGLE_CHAR_SURNAME_RE = re.compile(
+    r"[\u738b\u674e\u5f20\u5218\u9648\u6768\u8d75\u9ec4\u5468\u5434\u5f90\u5b59\u9a6c\u6731\u80e1\u6797\u90ed\u4f55\u7f57\u9ad8\u90d1\u6881\u8c22\u5b8b\u5510\u8bb8\u97e9\u66f9\u51af\u9093\u8427\u7a0b\u8521\u8881\u6f58\u4e8e\u8463\u4f59\u82cf\u53f6\u5415\u9b4f\u848b\u7530\u675c\u4e01\u6c88\u59dc\u8303\u6c5f\u5085\u949f\u5362\u6c6a\u6234\u5d14\u4efb\u9646\u5ed6\u59da\u65b9\u91d1\u90b1\u590f\u8c2d\u97e6\u8d3e\u90b9\u77f3\u718a\u5b5f\u79e6\u767d\u6c5f]$"
+)
+
+
+def audio_fragment_boundary_looks_unreadable(left_text: str, right_text: str) -> bool:
+    left = normalize_subtitle_text(left_text)
+    right = strip_leading_subtitle_punctuation(right_text)
+    if not left or not right or starts_with_strong_transition(right):
+        return False
+    left_core = strip_terminal_sentence_punctuation(left) or left
+    if not left_core:
+        return False
+    left_signature = subtitle_variant_signature(left_core)
+    right_signature = subtitle_variant_signature(right)
+    if not left_signature or not right_signature:
+        return False
+
+    for left_units in range(1, min(4, len(left_signature)) + 1):
+        left_tail = left_signature[-left_units:]
+        for right_units in range(1, min(3, len(right_signature)) + 1):
+            if left_tail + right_signature[:right_units] in ASR_FRAGMENT_COMPOUND_WORDS:
+                return True
+
+    right_head = right_signature[:1]
+    if right_head in {"\u4eec", "\u5bb6"}:
+        return True
+    if left_signature.endswith(("\u88ab\u4ed6", "\u88ab\u5979", "\u88ab\u6211", "\u88ab\u4f60")):
+        return True
+    if left_signature.endswith("\u7684\u8001\u5b9e") and right_signature.startswith("\u4eba"):
+        return True
+    if left_signature.endswith("\u8001\u5b9e") and right_signature.startswith("\u4eba"):
+        return True
+    if left_signature.endswith("\u62d6\u62c9") and right_signature.startswith("\u673a"):
+        return True
+    if left_signature.endswith("\u5c06\u8fdb") and right_signature.startswith("\u6751"):
+        return True
+    if left_signature.endswith("\u8fdb") and right_signature.startswith("\u6751"):
+        return True
+    if left_signature.endswith("\u770b") and right_signature.startswith("\u70ed\u95f9"):
+        return True
+    if left_signature.endswith("\u770b") and right_signature.startswith("\u4e0d"):
+        return True
+    if left_signature.endswith("\u65b0") and right_signature.startswith("\u5ab3\u5987"):
+        return True
+    if left_signature.endswith("\u4eca") and right_signature.startswith("\u5929"):
+        return True
+    if left_signature.endswith("\u62e6") and right_signature.startswith("\u4f4f"):
+        return True
+    if left_signature.endswith("\u65e0\u4eba\u6562") and right_signature.startswith("\u60f9"):
+        return True
+    if left_signature.endswith("\u4e0d") and right_signature.startswith(("\u60ef", "\u8fc7", "\u8d77", "\u4e86")):
+        return True
+    if (
+        len(left_signature) >= 2
+        and len(right_signature) >= 1
+        and COMMON_SINGLE_CHAR_SURNAME_RE.search(left_signature[-1:])
+        and re.search(r"(?:\u513f\u5b50|\u5973\u513f|\u5c11\u7237|\u8001\u677f|\u6751\u957f|\u6821\u957f|\u4e3b\u4efb|\u603b)$", left_signature[:-1])
+    ):
+        return True
+    return False
+
+
 def can_resplit_long_funasr_merge(text: str, duration: float) -> bool:
     normalized = normalize_subtitle_text(text)
     if not normalized:
@@ -13218,12 +13634,14 @@ def should_merge_funasr_sentence_entries(
 
     gap = max(0.0, float(upcoming.start) - float(current.end))
     merge_gap_limit = max(0.02, min(0.10, reference_gap * 0.90 + 0.02))
-    if gap > merge_gap_limit:
-        return False
-
     current_text = normalize_subtitle_text(current.text)
     upcoming_text = normalize_subtitle_text(upcoming.text)
     if not current_text or not upcoming_text:
+        return False
+    current_core = strip_terminal_sentence_punctuation(current_text) or current_text
+    unreadable_fragment_boundary = audio_fragment_boundary_looks_unreadable(current_core, upcoming_text)
+    extended_fragment_gap_limit = max(0.16, min(0.30, reference_gap + 0.12))
+    if gap > merge_gap_limit and not (unreadable_fragment_boundary and gap <= extended_fragment_gap_limit):
         return False
     current_dialogue_like = dialogue_like_text(current_text)
     upcoming_dialogue_like = dialogue_like_text(upcoming_text)
@@ -13237,7 +13655,6 @@ def should_merge_funasr_sentence_entries(
         or narration_fragment_candidate(upcoming_text)
         or starts_with_strong_transition(upcoming_text)
     )
-    current_core = strip_terminal_sentence_punctuation(current_text) or current_text
     if (
         current_dialogue_like != upcoming_dialogue_like
         and (current_dialogue_like or upcoming_dialogue_like)
@@ -13265,6 +13682,7 @@ def should_merge_funasr_sentence_entries(
         and not looks_like_short_funasr_audio_bridge(upcoming_text)
         and not probably_incomplete_text(current_core)
         and not looks_like_dangling_tts_tail(current_core)
+        and not unreadable_fragment_boundary
     ):
         return False
 
@@ -13285,6 +13703,7 @@ def should_merge_funasr_sentence_entries(
         and not continuation_like
         and not seamless_gap
         and not looks_like_funasr_subject_word_break(current_core, upcoming_text)
+        and not unreadable_fragment_boundary
     ):
         return False
     merged_text = join_funasr_sentence_entries_text(current_text, upcoming_text, gap)
@@ -13294,6 +13713,8 @@ def should_merge_funasr_sentence_entries(
 
     if current_dialogue_like and upcoming_dialogue_like:
         return gap <= max(0.03, min(0.06, reference_gap * 0.70 + 0.01))
+    if unreadable_fragment_boundary:
+        return True
     if continuation_like:
         return True
     if (probably_incomplete_text(current_core) or looks_like_dangling_tts_tail(current_core)) and (
@@ -13489,6 +13910,10 @@ def funasr_correction_touches_neighbor_boundary(
     next_norm = cleanup_rewrite_text(normalize_subtitle_text(next_visual_text))
 
     if next_norm:
+        if candidate_norm.startswith(source_norm):
+            extra_suffix = candidate_norm[len(source_norm) :]
+            if 0 < len(extra_suffix) <= 1:
+                return True
         if candidate_spills_into_neighbor_text(
             source_norm,
             candidate_norm,
@@ -13514,6 +13939,10 @@ def funasr_correction_touches_neighbor_boundary(
                     return True
 
     if previous_norm:
+        if candidate_norm.endswith(source_norm):
+            extra_prefix = candidate_norm[: -len(source_norm)]
+            if 0 < len(extra_prefix) <= 1:
+                return True
         if candidate_spills_into_neighbor_text(
             source_norm,
             candidate_norm,
@@ -13665,6 +14094,12 @@ def subtitle_variant_signature(text: str) -> str:
 
 
 VISUAL_PROTECTED_LATIN_TOKEN_RE = re.compile(r"(?<![A-Za-z])([A-Z]{2,6})(?![A-Za-z])")
+SEMANTIC_NUMERIC_ANCHOR_RE = re.compile(
+    r"(?:\u7b2c\d+|\d+(?:\u4e07|\u4ebf|\u5343|\u767e|\u5757|\u5143|\u89d2|\u5206|\u500d|"
+    r"\u5e74|\u6708|\u65e5|\u5929|\u96c6|\u8bdd|\u5b63|\u5c81|\u6b21|\u540d|\u4e2a|"
+    r"\u8f86|\u7c73|\u79d2))"
+)
+AUDIO_EXTENSION_WEAK_PARTICLE_RE = re.compile(r"^[\u554a\u5427\u5462\u5440\u561b\u5457\u54e6\u5594\u5566]+$")
 
 
 def protected_visual_latin_tokens_missing_from_candidate(visual_text: str, candidate_text: str) -> bool:
@@ -13676,6 +14111,29 @@ def protected_visual_latin_tokens_missing_from_candidate(visual_text: str, candi
         return False
     candidate_signature = subtitle_variant_signature(candidate_text)
     return any(token not in candidate_signature for token in tokens)
+
+
+def subtitle_text_has_semantic_numeric_anchor(text: str) -> bool:
+    signature = subtitle_variant_signature(text)
+    if not re.search(r"\d", signature):
+        return False
+    if SEMANTIC_NUMERIC_ANCHOR_RE.search(signature):
+        return True
+    return bool(CJK_RE.search(signature) and len(signature) >= 4)
+
+
+def audio_boundary_affix_looks_like_transition(text: str) -> bool:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return False
+    return bool(
+        starts_with_strong_transition(normalized)
+        or starts_with_narrative_transition_tail(normalized)
+        or starts_with_soft_continuation(normalized)
+        or starts_with_structural_continuation(normalized)
+        or NARRATION_CONNECTOR_RE.match(normalized)
+        or normalized in {"\u4e0d\u6599", "\u7136\u800c", "\u5374", "\u53c8"}
+    )
 
 
 def visual_text_has_ocr_noise(text: str) -> bool:
@@ -13729,6 +14187,9 @@ def visual_text_has_repeated_cjk_ocr_noise(text: str) -> bool:
     for match in re.finditer(r"([\u4e00-\u9fff])\1(?=[\u4e00-\u9fff])", signature):
         if match.group(1) in natural_repeat_chars:
             continue
+        next_char = signature[match.end() : match.end() + 1]
+        if next_char in {"\u7684", "\u5730", "\u5f97"}:
+            continue
         return True
     return False
 
@@ -13741,9 +14202,12 @@ def dedupe_repeated_cjk_ocr_noise(text: str) -> str:
 
     def _replace(match: re.Match[str]) -> str:
         char = match.group(1)
-        return char * 2 if char in natural_repeat_chars else char
+        next_char = match.group(2)
+        if char in natural_repeat_chars or next_char in {"\u7684", "\u5730", "\u5f97"}:
+            return char * 2
+        return char
 
-    return normalize_subtitle_text(re.sub(r"([\u4e00-\u9fff])\1(?=[\u4e00-\u9fff])", _replace, normalized))
+    return normalize_subtitle_text(re.sub(r"([\u4e00-\u9fff])\1(?=([\u4e00-\u9fff]))", _replace, normalized))
 
 
 def visual_text_has_repeated_phrase_ocr_noise(text: str) -> bool:
@@ -13757,9 +14221,28 @@ def dedupe_repeated_phrase_ocr_noise(text: str) -> str:
         return ""
     cleaned = normalized
     # OCR often duplicates a short word at a boundary, e.g. "第二天二天".
-    for unit_size in range(6, 1, -1):
+    signature_len = len(subtitle_variant_signature(normalized))
+    max_unit_size = min(24, max(6, signature_len // 2))
+    for unit_size in range(max_unit_size, 1, -1):
         pattern = rf"([\u4e00-\u9fff0-9０-９]{{{unit_size}}})\1"
         cleaned = re.sub(pattern, r"\1", cleaned)
+    return normalize_subtitle_text(cleaned)
+
+
+def dedupe_overlapped_phrase_ocr_noise(text: str) -> str:
+    normalized = normalize_subtitle_text(text)
+    if not normalized:
+        return ""
+    cleaned = normalized
+    # OCR/ASR sometimes repeats a suffix immediately after a longer token,
+    # e.g. "第一名一名男子". Only callers with audio support accept the change.
+    for unit_size in range(6, 1, -1):
+        pattern = (
+            rf"([\u4e00-\u9fff0-9\uff10-\uff19]{{1,8}})"
+            rf"([\u4e00-\u9fff0-9\uff10-\uff19]{{{unit_size}}})"
+            rf"\2(?=[\u4e00-\u9fff0-9\uff10-\uff19])"
+        )
+        cleaned = re.sub(pattern, r"\1\2", cleaned)
     return normalize_subtitle_text(cleaned)
 
 
@@ -13919,33 +14402,49 @@ def merge_funasr_text_with_visual_support(funasr_text: str, visual_text: str) ->
     visual_norm = str(metrics["candidate_norm"])
     if funasr_norm == visual_norm:
         return normalized_visual
-    if visual_norm and visual_norm in funasr_norm:
-        extra_units = len(funasr_norm) - len(visual_norm)
-        if 0 < extra_units <= max(3, int(math.ceil(len(visual_norm) * 0.35))):
-            return normalized_visual
-    if visual_norm and len(visual_norm) >= 4:
-        suffix_overlap = text_prefix_suffix_overlap(visual_norm, funasr_norm)
-        if (
-            suffix_overlap >= max(3, min(len(visual_norm), int(math.ceil(len(visual_norm) * 0.55))))
-            and len(funasr_norm) > suffix_overlap
-        ):
-            return normalized_visual
-        prefix_overlap = text_prefix_suffix_overlap(funasr_norm, visual_norm)
-        if (
-            prefix_overlap >= max(3, min(len(visual_norm), int(math.ceil(len(visual_norm) * 0.55))))
-            and len(funasr_norm) > prefix_overlap
-        ):
-            return normalized_visual
+    if (
+        not watermark_like_text(normalized_visual)
+        and (
+            visual_numeric_amount_correction_is_safe(normalized_funasr, normalized_visual)
+            or visual_numeric_rewrite_correction_is_safe(normalized_funasr, normalized_visual)
+        )
+    ):
+        return normalized_visual
+    if candidate_len < source_len:
+        return normalized_funasr
     if (
         len_delta > 0
         and bool(metrics["candidate_startswith_source"])
         and float(metrics["source_coverage"]) >= 0.96
         and float(metrics["candidate_coverage"]) >= 0.68
         and float(metrics["ratio"]) >= 0.72
-        and len_delta <= max(3, min(8, int(math.ceil(source_len * 0.55))))
+        and len_delta <= min(2, max(1, int(math.ceil(source_len * 0.12))))
         and not watermark_like_text(normalized_visual)
     ):
         return normalized_visual
+
+    # Audio SRT owns timing, but the visual SRT is usually better at tiny
+    # missing-character restorations such as "终爆发" -> "终于爆发".
+    if (
+        0 < len_delta <= max(2, int(math.ceil(source_len * 0.18)))
+        and float(metrics["source_coverage"]) >= 0.96
+        and float(metrics["candidate_coverage"]) >= 0.76
+        and float(metrics["ratio"]) >= 0.82
+        and int(metrics["first_source_index"]) <= 1
+        and int(metrics["first_candidate_index"]) <= 1
+        and not watermark_like_text(normalized_visual)
+        and not visual_text_has_ocr_noise(normalized_visual)
+        and not protected_visual_latin_tokens_missing_from_candidate(normalized_funasr, normalized_visual)
+    ):
+        return normalized_visual
+
+    if candidate_len > source_len and (
+        funasr_norm
+        and visual_norm
+        and not visual_norm.startswith(funasr_norm)
+        and funasr_norm not in visual_norm
+    ):
+        return normalized_funasr
 
     if float(metrics["ratio"]) < 0.90:
         return normalized_funasr
@@ -13959,6 +14458,66 @@ def merge_funasr_text_with_visual_support(funasr_text: str, visual_text: str) ->
     if float(metrics["ratio"]) >= 0.96:
         return normalized_visual
     return normalized_funasr
+
+
+def extract_visual_text_span_for_audio_correction(audio_text: str, visual_text: str) -> str:
+    normalized_audio = normalize_subtitle_text(audio_text)
+    normalized_visual = normalize_subtitle_text(visual_text)
+    if (
+        not normalized_audio
+        or not normalized_visual
+        or watermark_like_text(normalized_visual)
+        or visual_text_has_ocr_noise(normalized_visual)
+        or protected_visual_latin_tokens_missing_from_candidate(normalized_audio, normalized_visual)
+    ):
+        return ""
+
+    audio_signature = subtitle_variant_signature(normalized_audio)
+    visual_signature = subtitle_variant_signature(normalized_visual)
+    if len(audio_signature) < 3 or len(visual_signature) < 3:
+        return ""
+    if audio_signature == visual_signature:
+        return normalized_visual
+
+    matcher = difflib.SequenceMatcher(None, audio_signature, visual_signature)
+    blocks = [block for block in matcher.get_matching_blocks() if block.size > 0]
+    if not blocks:
+        return ""
+
+    shared = sum(block.size for block in blocks)
+    source_coverage = shared / max(1, len(audio_signature))
+    visual_coverage = shared / max(1, len(visual_signature))
+    if visual_coverage < 0.72 and source_coverage < 0.72:
+        return ""
+    if shared < max(3, int(round(min(len(audio_signature), len(visual_signature)) * 0.58))):
+        return ""
+
+    candidate_start = min(block.b for block in blocks)
+    candidate_end = max(block.b + block.size for block in blocks)
+    source_start = min(block.a for block in blocks)
+    source_end = max(block.a + block.size for block in blocks)
+    visual_tail = len(visual_signature) - candidate_end
+    source_tail = len(audio_signature) - source_end
+    if 0 < visual_tail <= 2 and source_tail <= 1:
+        candidate_end = len(visual_signature)
+    if candidate_end <= candidate_start:
+        return ""
+
+    candidate = funasr_slice_visible_range(normalized_visual, candidate_start, candidate_end)
+    candidate_signature = subtitle_variant_signature(candidate)
+    if not candidate_signature:
+        return ""
+    metrics = build_funasr_text_alignment_metrics(normalized_audio, candidate)
+    if (
+        float(metrics["candidate_coverage"]) < 0.76
+        and float(metrics["source_coverage"]) < 0.58
+    ):
+        return ""
+    if int(metrics["first_candidate_index"]) > 1 and source_start > 2:
+        return ""
+    if len(candidate_signature) - len(audio_signature) > max(4, int(round(len(audio_signature) * 0.45))):
+        return ""
+    return candidate
 
 
 def merge_visual_text_with_funasr_correction(
@@ -13996,6 +14555,18 @@ def merge_visual_text_with_funasr_correction(
         return normalized_visual
     if audio_candidate_rewrites_reliable_visual_unsafely(normalized_visual, normalized_funasr):
         return normalized_visual
+    visual_signature = subtitle_variant_signature(normalized_visual)
+    funasr_signature = subtitle_variant_signature(normalized_funasr)
+    if (
+        re.search(r"\d", visual_signature)
+        and funasr_signature
+        and funasr_signature != visual_signature
+        and subtitle_text_has_semantic_numeric_anchor(normalized_visual)
+    ):
+        visual_digit_tokens = tuple(re.findall(r"\d+", visual_signature))
+        funasr_digit_tokens = tuple(re.findall(r"\d+", funasr_signature))
+        if funasr_digit_tokens[: len(visual_digit_tokens)] != visual_digit_tokens:
+            return normalized_visual
 
     if audio_candidate_safely_extends_visual_text(
         normalized_visual,
@@ -14816,18 +15387,66 @@ def should_insert_funasr_sentence(
         overlap = max(0.0, min(sentence_entry.end, entry.end) - max(sentence_entry.start, entry.start))
         if overlap > 0:
             total_overlap += overlap
-        if abs(((entry.start + entry.end) * 0.5) - sentence_center) <= 0.45:
+        if overlap > 0 or abs(((entry.start + entry.end) * 0.5) - sentence_center) <= 0.45:
+            entry_norm = cleanup_rewrite_text(normalize_subtitle_text(entry.text))
+            if not entry_norm:
+                continue
+            entry_signature = subtitle_variant_signature(entry.text)
+            sentence_signature = subtitle_variant_signature(text)
+            if (
+                overlap >= max(0.06, min(0.24, duration * 0.35))
+                and subtitle_text_has_semantic_numeric_anchor(entry.text)
+                and sentence_signature
+                and sentence_signature != entry_signature
+            ):
+                entry_digit_tokens = tuple(re.findall(r"\d+", entry_signature))
+                sentence_digit_tokens = tuple(re.findall(r"\d+", sentence_signature))
+                if sentence_digit_tokens[: len(entry_digit_tokens)] != entry_digit_tokens:
+                    return False
+            if sentence_norm in entry_norm or entry_norm in sentence_norm:
+                best_similarity = max(
+                    best_similarity,
+                    min(len(sentence_norm), len(entry_norm)) / max(1, max(len(sentence_norm), len(entry_norm))),
+                )
             best_similarity = max(
                 best_similarity,
                 difflib.SequenceMatcher(
                     a=sentence_norm,
-                    b=cleanup_rewrite_text(normalize_subtitle_text(entry.text)),
+                    b=entry_norm,
                 ).ratio(),
             )
-    if total_overlap >= duration * FUNASR_SUPPLEMENT_COVERAGE_RATIO:
+    if total_overlap >= duration * FUNASR_SUPPLEMENT_COVERAGE_RATIO and best_similarity >= 0.72:
         return False
     if best_similarity >= 0.84:
         return False
+    overlapping_entries = [
+        entry
+        for entry in sorted(existing_entries, key=lambda item: (float(item.start), float(item.end), int(item.index)))
+        if max(0.0, min(sentence_entry.end, entry.end) - max(sentence_entry.start, entry.start)) > 0.04
+    ]
+    for window_size in range(2, min(4, len(overlapping_entries)) + 1):
+        for start_index in range(0, len(overlapping_entries) - window_size + 1):
+            window = overlapping_entries[start_index : start_index + window_size]
+            window_start = min(float(item.start) for item in window)
+            window_end = max(float(item.end) for item in window)
+            if window_end - window_start <= 0.0:
+                continue
+            if max(0.0, min(sentence_entry.end, window_end) - max(sentence_entry.start, window_start)) < duration * 0.50:
+                continue
+            combined_text = normalize_subtitle_text("".join(item.text for item in window))
+            combined_norm = cleanup_rewrite_text(combined_text)
+            if not combined_norm:
+                continue
+            metrics = build_funasr_text_alignment_metrics(text, combined_text)
+            if (
+                sentence_norm in combined_norm
+                or (
+                    float(metrics["source_coverage"]) >= 0.72
+                    and float(metrics["candidate_coverage"]) >= 0.52
+                    and float(metrics["ratio"]) >= 0.58
+                )
+            ):
+                return False
     return True
 
 
@@ -15039,9 +15658,10 @@ def audio_candidate_better_repairs_visual_text(visual_text: str, audio_text: str
     repeated_cjk_noise = visual_text_has_repeated_cjk_ocr_noise(visual_text)
     repeated_phrase_noise = visual_text_has_repeated_phrase_ocr_noise(visual_text)
     # A single adjacent repeated CJK character is often natural Chinese wording
-    # ("冷冷的", "慢慢地"). Do not let it alone justify replacing reliable visual
-    # subtitles with a shorter or homophone audio candidate.
-    has_noise = visual_text_has_ocr_noise(visual_text) or repeated_phrase_noise
+    # ("冷冷的", "慢慢地"), and phrase reduplication ("教训教训") is also common.
+    # Dedicated dedupe passes handle proven OCR repeats; do not let repetition
+    # alone justify replacing a reliable visual subtitle with a noisy ASR line.
+    has_noise = visual_text_has_ocr_noise(visual_text)
 
     variant_ratio = difflib.SequenceMatcher(None, visual_signature, audio_signature).ratio()
     best_ratio = max(ratio, variant_ratio)
@@ -15121,6 +15741,20 @@ def subtitle_signature_prefix_match(fragment: str, neighbor_signature: str, *, f
         coverage = len(set(fragment) & set(compare)) / max(1, min(len(set(fragment)), len(set(compare))))
         if ratio >= 0.72 and coverage >= 0.62:
             return True
+        if len(fragment) <= 4 and len(compare) >= len(fragment):
+            short_compare = compare[: len(fragment)] if from_start else compare[-len(fragment) :]
+            positional_matches = sum(
+                1 for left_char, right_char in zip(fragment, short_compare) if left_char == right_char
+            )
+            # Visual OCR may have one wrong character at a subtitle boundary
+            # ("竟有" vs "竞有"). Treat near-identical short affixes as owned by
+            # the neighboring visual line instead of appending them to this one.
+            if (
+                len(fragment) >= 2
+                and positional_matches >= max(1, len(fragment) - 1)
+                and difflib.SequenceMatcher(None, fragment, short_compare).ratio() >= 0.50
+            ):
+                return True
     return False
 
 
@@ -15173,6 +15807,44 @@ def visual_text_is_reliable_for_audio_boundary_guard(text: str) -> bool:
     )
 
 
+def reliable_visual_audio_extension_looks_like_boundary_pollution(visual_text: str, audio_text: str) -> bool:
+    if not visual_text_is_reliable_for_audio_boundary_guard(visual_text):
+        return False
+    source_signature = subtitle_variant_signature(visual_text)
+    candidate_signature = subtitle_variant_signature(audio_text)
+    if not source_signature or not candidate_signature or source_signature == candidate_signature:
+        return False
+
+    source_start = candidate_signature.find(source_signature)
+    if source_start < 0:
+        return False
+    extra_prefix = candidate_signature[:source_start]
+    extra_suffix = candidate_signature[source_start + len(source_signature) :]
+    extra_units = len(extra_prefix) + len(extra_suffix)
+    if (extra_prefix and audio_boundary_affix_looks_like_transition(extra_prefix)) or (
+        extra_suffix and audio_boundary_affix_looks_like_transition(extra_suffix)
+    ):
+        return True
+    if extra_units <= 2:
+        return False
+    if probably_incomplete_text(visual_text):
+        return False
+
+    metrics = build_funasr_text_alignment_metrics(visual_text, audio_text)
+    high_overlap = (
+        float(metrics["ratio"]) >= 0.74
+        and float(metrics["source_coverage"]) >= 0.92
+        and float(metrics["candidate_coverage"]) >= 0.55
+    )
+    moderate_extension = extra_units <= max(6, int(math.ceil(len(source_signature) * 0.60)))
+    if high_overlap and moderate_extension:
+        return True
+    return bool(
+        (extra_prefix and starts_with_strong_transition(extra_prefix))
+        or (extra_suffix and starts_with_strong_transition(extra_suffix))
+    )
+
+
 def audio_candidate_has_boundary_pollution(
     visual_text: str,
     audio_text: str,
@@ -15189,6 +15861,9 @@ def audio_candidate_has_boundary_pollution(
         return False
     previous_signature = subtitle_variant_signature(previous_visual_text)
     next_signature = subtitle_variant_signature(next_visual_text)
+
+    if reliable_visual_audio_extension_looks_like_boundary_pollution(visual_text, audio_text):
+        return True
 
     max_affix_units = max(2, min(8, int(math.ceil(len(source_signature) * 0.45))))
 
@@ -15210,7 +15885,7 @@ def audio_candidate_has_boundary_pollution(
         return False
 
     max_head_units = min(10, len(source_signature))
-    for head_units in range(max_head_units, 2, -1):
+    for head_units in range(max_head_units, 1, -1):
         head = source_signature[:head_units]
         source_start = candidate_signature.find(head)
         if source_start <= 0:
@@ -15221,7 +15896,7 @@ def audio_candidate_has_boundary_pollution(
         break
 
     max_tail_units = min(10, len(source_signature))
-    for tail_units in range(max_tail_units, 2, -1):
+    for tail_units in range(max_tail_units, 1, -1):
         tail = source_signature[-tail_units:]
         tail_start = candidate_signature.rfind(tail)
         if tail_start < 0:
@@ -15335,16 +16010,49 @@ def audio_candidate_safely_extends_visual_text(
     source_len = int(metrics["source_len"])
     candidate_len = int(metrics["candidate_len"])
     len_delta = candidate_len - source_len
-    if source_len < 4 or len_delta <= 0:
-        return False
-    if len_delta > max(6, int(math.ceil(source_len * 0.75))):
-        return False
-
     source_norm = str(metrics["source_norm"])
     candidate_norm = str(metrics["candidate_norm"])
     ratio = float(metrics["ratio"])
     source_coverage = float(metrics["source_coverage"])
     candidate_coverage = float(metrics["candidate_coverage"])
+    if len_delta <= 0:
+        return False
+    source_signature = subtitle_variant_signature(visual_clean)
+    candidate_signature = subtitle_variant_signature(audio_clean)
+    next_signature = subtitle_variant_signature(next_visual_text)
+    if source_signature and candidate_signature.startswith(source_signature):
+        extra_suffix = candidate_signature[len(source_signature) :]
+        if extra_suffix and next_signature and len(extra_suffix) <= 3:
+            return False
+    source_digit_tokens = tuple(re.findall(r"\d+", source_signature))
+    if source_digit_tokens and tuple(re.findall(r"\d+", candidate_signature)) != source_digit_tokens:
+        return False
+    if candidate_norm.startswith(source_norm):
+        extra_suffix = candidate_norm[len(source_norm) :]
+        if extra_suffix and AUDIO_EXTENSION_WEAK_PARTICLE_RE.fullmatch(extra_suffix):
+            return False
+    if source_len < 4:
+        if (
+            source_len == 2
+            and len_delta == 1
+            and candidate_norm.startswith(source_norm)
+            and re.fullmatch(r"第\d+", source_signature)
+            and source_coverage >= 0.98
+            and candidate_coverage >= 0.60
+            and ratio >= 0.78
+        ):
+            return True
+        return (
+            source_len >= 3
+            and len_delta <= 2
+            and candidate_norm.startswith(source_norm)
+            and source_coverage >= 0.98
+            and candidate_coverage >= 0.60
+            and ratio >= 0.78
+        )
+    if len_delta > max(6, int(math.ceil(source_len * 0.75))):
+        return False
+
     first_source_index = int(metrics["first_source_index"])
     first_candidate_index = int(metrics["first_candidate_index"])
 
@@ -15362,6 +16070,32 @@ def audio_candidate_safely_extends_visual_text(
     )
 
 
+def audio_support_for_candidate_crosses_visual_boundary(
+    candidate_text: str,
+    audio_entries: Sequence[SubtitleEntry],
+    boundary_time: float,
+    *,
+    tolerance_seconds: float = 0.12,
+) -> bool:
+    candidate_signature = subtitle_variant_signature(candidate_text)
+    if len(candidate_signature) < 4:
+        return False
+    for audio_entry in audio_entries:
+        if float(audio_entry.start) >= float(boundary_time):
+            continue
+        if float(audio_entry.end) <= float(boundary_time) + tolerance_seconds:
+            continue
+        audio_signature = subtitle_variant_signature(audio_entry.text)
+        if not audio_signature:
+            continue
+        if candidate_signature in audio_signature or audio_signature in candidate_signature:
+            return True
+        ratio = difflib.SequenceMatcher(None, candidate_signature, audio_signature).ratio()
+        if ratio >= 0.88:
+            return True
+    return False
+
+
 def repair_entries_with_audio_text_support(
     entries: Sequence[SubtitleEntry],
     audio_entries: Sequence[SubtitleEntry],
@@ -15374,13 +16108,13 @@ def repair_entries_with_audio_text_support(
     for index, entry in enumerate(entries):
         previous_text = entries[index - 1].text if index > 0 else ""
         next_text = entries[index + 1].text if index + 1 < len(entries) else ""
+        original_text = normalize_subtitle_text(entry.text)
         current_text = clean_visual_ocr_noise_text(entry.text)
         current_entry = clone_subtitle_entry(entry, text=current_text)
         current_score = audio_support_score_for_subtitle_text(current_entry, audio_entries)
         current_has_noise = (
             visual_text_has_ocr_noise(current_text)
             or visual_text_has_structural_ocr_noise(current_text)
-            or visual_text_has_repeated_phrase_ocr_noise(current_text)
             or visual_text_has_repeated_cjk_ocr_noise(current_text)
         )
         if visual_text_has_repeated_cjk_ocr_noise(current_text):
@@ -15389,7 +16123,7 @@ def repair_entries_with_audio_text_support(
                 current_text = deduped_text
                 current_entry = clone_subtitle_entry(entry, text=current_text)
                 current_score = audio_support_score_for_subtitle_text(current_entry, audio_entries)
-                current_has_noise = visual_text_has_ocr_noise(current_text) or visual_text_has_repeated_phrase_ocr_noise(current_text)
+                current_has_noise = visual_text_has_ocr_noise(current_text)
         if visual_text_has_repeated_phrase_ocr_noise(current_text):
             deduped_text = dedupe_repeated_phrase_ocr_noise(current_text)
             if audio_supports_deduped_visual_text(current_entry, deduped_text, audio_entries):
@@ -15397,6 +16131,16 @@ def repair_entries_with_audio_text_support(
                 current_entry = clone_subtitle_entry(entry, text=current_text)
                 current_score = audio_support_score_for_subtitle_text(current_entry, audio_entries)
                 current_has_noise = visual_text_has_ocr_noise(current_text) or visual_text_has_repeated_cjk_ocr_noise(current_text)
+        overlapped_deduped_text = dedupe_overlapped_phrase_ocr_noise(current_text)
+        if cleanup_rewrite_text(overlapped_deduped_text) != cleanup_rewrite_text(current_text):
+            if audio_supports_deduped_visual_text(current_entry, overlapped_deduped_text, audio_entries):
+                current_text = overlapped_deduped_text
+                current_entry = clone_subtitle_entry(entry, text=current_text)
+                current_score = audio_support_score_for_subtitle_text(current_entry, audio_entries)
+                current_has_noise = (
+                    visual_text_has_ocr_noise(current_text)
+                    or visual_text_has_repeated_cjk_ocr_noise(current_text)
+                )
         best_text = current_text
         best_score = current_score
         best_units = subtitle_display_units(current_text)
@@ -15442,9 +16186,18 @@ def repair_entries_with_audio_text_support(
                 re.search(r"\d", current_signature)
                 and candidate_signature
                 and candidate_signature != current_signature
-                and not current_has_noise
+                and subtitle_text_has_semantic_numeric_anchor(current_text)
             ):
-                continue
+                current_digit_tokens = tuple(re.findall(r"\d+", current_signature))
+                candidate_digit_tokens = tuple(re.findall(r"\d+", candidate_signature))
+                candidate_preserves_numeric_prefix = (
+                    candidate_safely_extends
+                    and candidate_signature.startswith(current_signature)
+                    and bool(current_digit_tokens)
+                    and candidate_digit_tokens[: len(current_digit_tokens)] == current_digit_tokens
+                )
+                if not candidate_preserves_numeric_prefix:
+                    continue
             if (
                 candidate_units > best_units
                 and not current_has_noise
@@ -15475,7 +16228,7 @@ def repair_entries_with_audio_text_support(
                 best_score = candidate_score
                 best_units = candidate_units
 
-        if cleanup_rewrite_text(best_text) != cleanup_rewrite_text(current_text):
+        if cleanup_rewrite_text(best_text) != cleanup_rewrite_text(original_text):
             fix_count += 1
         repaired_entries.append(clone_subtitle_entry(entry, text=best_text))
 
@@ -15531,11 +16284,17 @@ def repair_audio_tail_spillover_from_next_entry(
                 continue
 
             left_text = normalize_subtitle_text(left.text)
+            left_needs_tail_restoration = (
+                probably_incomplete_text(left_text)
+                or looks_like_dangling_tts_tail(left_text)
+                or visual_text_has_ocr_noise(left_text)
+                or visual_text_has_structural_ocr_noise(left_text)
+                or visual_text_has_repeated_phrase_ocr_noise(left_text)
+            )
             left_candidate_text = normalize_subtitle_text(left_text + prefix_text)
             if not audio_candidate_safely_extends_visual_text(
                 left_text,
                 left_candidate_text,
-                next_visual_text=remainder_text,
             ):
                 continue
             if not audio_candidate_better_repairs_visual_text(left_text, left_candidate_text):
@@ -15545,6 +16304,14 @@ def repair_audio_tail_spillover_from_next_entry(
             left_candidate = clone_subtitle_entry(left, text=left_candidate_text)
             left_candidate_score = audio_support_score_for_subtitle_text(left_candidate, audio_entries)
             if left_candidate_score + 0.01 < max(0.46, left_score + 0.015):
+                continue
+            if not left_needs_tail_restoration and left_candidate_score < left_score + 0.045:
+                continue
+            if audio_support_for_candidate_crosses_visual_boundary(
+                left_candidate_text,
+                audio_entries,
+                float(left.end),
+            ):
                 continue
 
             right_candidate = clone_subtitle_entry(right, text=remainder_text)
@@ -15893,6 +16660,8 @@ def collect_visual_support_text_for_funasr_entry(
 def split_funasr_entry_by_visual_timing(
     sentence_entry: SubtitleEntry,
     visual_entries: Sequence[SubtitleEntry],
+    *,
+    preserve_visual_boundaries: bool = False,
 ) -> List[SubtitleEntry]:
     sentence_text = normalize_subtitle_text(sentence_entry.text)
     sentence_duration = max(0.0, float(sentence_entry.end) - float(sentence_entry.start))
@@ -15909,10 +16678,14 @@ def split_funasr_entry_by_visual_timing(
     seen_signatures: set[Tuple[float, float, str]] = set()
     for visual_entry in visual_entries:
         overlap = subtitle_entry_overlap_seconds(sentence_entry, visual_entry)
+        visual_duration = max(0.01, float(visual_entry.end) - float(visual_entry.start))
+        overlap_ratio = overlap / visual_duration
         if overlap <= 0.0:
             visual_center = (float(visual_entry.start) + float(visual_entry.end)) * 0.5
             if not (padded_start <= visual_center <= padded_end):
                 continue
+        elif overlap < max(0.12, min(0.28, visual_duration * 0.24)) and overlap_ratio < 0.42:
+            continue
         text = normalize_subtitle_text(visual_entry.text)
         if not text or watermark_like_text(text):
             continue
@@ -15944,12 +16717,14 @@ def split_funasr_entry_by_visual_timing(
         current_units = funasr_visible_char_count(current_visual.text)
         next_units = funasr_visible_char_count(next_visual.text)
         gap = max(0.0, float(next_visual.start) - float(current_visual.end))
-        should_merge = (
-            current_duration < 0.70
-            or current_units < 6
-            or next_units < 5
-            or (gap <= 0.12 and current_duration < 1.10)
-        )
+        should_merge = False
+        if not preserve_visual_boundaries:
+            should_merge = (
+                current_duration < 0.70
+                or current_units < 6
+                or next_units < 5
+                or (gap <= 0.12 and current_duration < 1.10)
+            )
         if (
             should_merge
             and current_units >= 5
@@ -15972,7 +16747,7 @@ def split_funasr_entry_by_visual_timing(
         current_visual = next_visual
     merged_visual_entries.append(current_visual)
 
-    while len(merged_visual_entries) > 1:
+    while len(merged_visual_entries) > 1 and not preserve_visual_boundaries:
         last_visual = merged_visual_entries[-1]
         if (
             max(0.0, float(last_visual.end) - float(last_visual.start)) >= 0.70
@@ -15987,7 +16762,10 @@ def split_funasr_entry_by_visual_timing(
         )
         merged_visual_entries.pop()
 
-    while len(merged_visual_entries) > FUNASR_PRIMARY_SPLIT_TARGET_PARTS:
+    while (
+        len(merged_visual_entries) > FUNASR_PRIMARY_SPLIT_TARGET_PARTS
+        and not preserve_visual_boundaries
+    ):
         best_merge_index = min(
             range(len(merged_visual_entries) - 1),
             key=lambda idx: (
@@ -16052,6 +16830,14 @@ def split_funasr_entry_by_visual_timing(
         margin_seconds=0.0,
     )
     adjusted_texts = [normalize_subtitle_text(text) for text in assigned_texts]
+    sentence_signature = subtitle_variant_signature(sentence_text)
+    assigned_signature = subtitle_variant_signature("".join(adjusted_texts))
+    if (
+        len(sentence_signature) >= 4
+        and assigned_signature
+        and assigned_signature != sentence_signature
+    ):
+        return []
     for idx in range(len(adjusted_texts) - 1):
         left_text = adjusted_texts[idx]
         right_text = adjusted_texts[idx + 1]
@@ -16075,6 +16861,10 @@ def split_funasr_entry_by_visual_timing(
         normalized_audio_text = normalize_subtitle_text(audio_text)
         if not normalized_audio_text:
             continue
+        part_duration = max(0.01, float(part_entry.end) - float(part_entry.start))
+        part_units = funasr_visible_char_count(normalized_audio_text)
+        if part_units >= 5 and part_duration < max(0.34, part_units * 0.055):
+            return []
         merged_text = merge_funasr_text_with_visual_support(normalized_audio_text, part_entry.text)
         if not merged_text:
             continue
@@ -16187,6 +16977,57 @@ def visual_boundary_discourages_funasr_merge(
     return visual_gap >= 0.055 or ends_with_minor_sentence_pause(left_text) or ends_with_terminal_sentence_pause(left_text)
 
 
+def build_srt_visual_boundary_assist_maps(
+    audio_entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[Dict[int, float], Dict[int, bool]]:
+    audio_list = reindex_subtitle_entries(audio_entries)
+    visual_list = reindex_subtitle_entries(visual_entries)
+    if len(audio_list) < 2 or not visual_list:
+        return {}, {}
+
+    pause_map: Dict[int, float] = {}
+    join_map: Dict[int, bool] = {}
+    for current, upcoming in zip(audio_list, audio_list[1:]):
+        if current.entry_type != "narration" or upcoming.entry_type != "narration":
+            continue
+        current_visual_index = best_visual_support_index_for_funasr_entry(current, visual_list)
+        upcoming_visual_index = best_visual_support_index_for_funasr_entry(upcoming, visual_list)
+        if current_visual_index < 0 or upcoming_visual_index < 0:
+            continue
+        if current_visual_index == upcoming_visual_index:
+            join_map[int(current.index)] = True
+            continue
+        left_index = min(current_visual_index, upcoming_visual_index)
+        right_index = max(current_visual_index, upcoming_visual_index)
+        if right_index - left_index > 1:
+            pause_map[int(current.index)] = STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+            continue
+        left_visual = visual_list[left_index]
+        right_visual = visual_list[right_index]
+        visual_gap = max(0.0, float(right_visual.start) - float(left_visual.end))
+        left_text = normalize_subtitle_text(left_visual.text)
+        right_text = normalize_subtitle_text(right_visual.text)
+        combined_audio = join_narration_text(current.text, upcoming.text, 0.0, allow_gap_pause=False)
+        combined_visual = normalize_subtitle_text(left_text + right_text)
+        combined_metrics = build_funasr_text_alignment_metrics(combined_audio, combined_visual)
+        combined_support = (
+            float(combined_metrics["source_coverage"]) >= 0.72
+            and float(combined_metrics["candidate_coverage"]) >= 0.50
+            and float(combined_metrics["ratio"]) >= 0.55
+        )
+        if (
+            visual_gap <= 0.055
+            and combined_support
+            and not ends_with_minor_sentence_pause(left_text)
+            and not ends_with_terminal_sentence_pause(left_text)
+        ):
+            join_map[int(current.index)] = True
+        else:
+            pause_map[int(current.index)] = STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+    return pause_map, join_map
+
+
 def should_merge_funasr_entries_with_visual_grouping(
     current: SubtitleEntry,
     upcoming: SubtitleEntry,
@@ -16272,6 +17113,103 @@ def merge_funasr_entries_with_visual_grouping(
     return reindex_subtitle_entries(merged_entries), merge_count
 
 
+def visual_entry_supports_single_char_boundary_spillover(
+    left: SubtitleEntry,
+    right: SubtitleEntry,
+    prefix_text: str,
+    visual_entries: Sequence[SubtitleEntry],
+) -> bool:
+    left_text = normalize_subtitle_text(left.text)
+    prefix = normalize_subtitle_text(prefix_text)
+    if not left_text or not prefix or not CJK_RE.fullmatch(prefix):
+        return False
+    if ends_with_minor_sentence_pause(left_text) or ends_with_terminal_sentence_pause(left_text):
+        return False
+
+    left_units = funasr_visible_char_count(left_text)
+    tail_units = min(8, max(1, left_units))
+    left_tail = funasr_slice_visible_range(left_text, max(0, left_units - tail_units), left_units)
+    phrase_signature = subtitle_variant_signature(left_tail + prefix)
+    if len(phrase_signature) < 2:
+        return False
+
+    boundary_time = (float(left.end) + float(right.start)) * 0.5
+    for visual_entry in visual_entries:
+        visual_text = normalize_subtitle_text(visual_entry.text)
+        if not visual_text or watermark_like_text(visual_text):
+            continue
+        # The hard subtitle must itself straddle the audio boundary. Adjacent
+        # visual lines are not enough, otherwise "过去 / 王虎" becomes "过去王".
+        if float(visual_entry.start) > float(left.end) + 0.12:
+            continue
+        if float(visual_entry.end) < float(right.start) - 0.12:
+            continue
+        if not (float(visual_entry.start) - 0.08 <= boundary_time <= float(visual_entry.end) + 0.08):
+            continue
+        visual_signature = subtitle_variant_signature(visual_text)
+        if phrase_signature in visual_signature:
+            return True
+    return False
+
+
+def repair_audio_primary_single_char_boundary_spillover(
+    entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    repaired = reindex_subtitle_entries(entries)
+    if len(repaired) < 2 or not visual_entries:
+        return repaired, 0
+
+    fix_count = 0
+    for index in range(len(repaired) - 1):
+        left = repaired[index]
+        right = repaired[index + 1]
+        if left.entry_type != "narration" or right.entry_type != "narration":
+            continue
+        gap = max(0.0, float(right.start) - float(left.end))
+        if gap > 0.36:
+            continue
+        left_text = normalize_subtitle_text(left.text)
+        right_text = strip_leading_subtitle_punctuation(right.text)
+        if not left_text or not right_text:
+            continue
+        prefix = funasr_slice_visible_range(right_text, 0, 1)
+        remainder = strip_leading_subtitle_punctuation(
+            funasr_slice_visible_range(right_text, 1, funasr_visible_char_count(right_text))
+        )
+        if (
+            not prefix
+            or not remainder
+            or not CJK_RE.fullmatch(prefix)
+            or funasr_visible_char_count(remainder) < 2
+        ):
+            continue
+        right_after_prefix = normalize_subtitle_text(funasr_slice_visible_range(right_text, 1, 2))
+        left_core = strip_terminal_sentence_punctuation(left_text) or left_text
+        boundary_is_likely_split_word = (
+            right_text.startswith(prefix + "\u3002")
+            or right_text.startswith(prefix + "\uff0c")
+            or probably_incomplete_text(left_core)
+            or looks_like_dangling_tts_tail(left_core)
+            or (
+                funasr_visible_char_count(right_text) <= 6
+                and not NARRATION_SUBJECT_RE.fullmatch(prefix + right_after_prefix)
+            )
+        )
+        if not boundary_is_likely_split_word:
+            continue
+        if not visual_entry_supports_single_char_boundary_spillover(left, right, prefix, visual_entries):
+            continue
+
+        repaired[index] = clone_subtitle_entry(left, text=normalize_subtitle_text(left_text + prefix))
+        repaired[index + 1] = clone_subtitle_entry(right, text=remainder)
+        fix_count += 1
+
+    if fix_count <= 0:
+        return repaired, 0
+    return reindex_subtitle_entries(repaired), fix_count
+
+
 def preserve_precomputed_audio_subtitle_groups(
     precomputed_entries: Sequence[SubtitleEntry],
     repaired_entries: Sequence[SubtitleEntry],
@@ -16286,44 +17224,298 @@ def preserve_precomputed_audio_subtitle_groups(
     return grouped_entries, adjusted_count
 
 
+def split_visual_entries_by_audio_pause_boundaries(
+    visual_entries: Sequence[SubtitleEntry],
+    audio_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    visual_list = reindex_subtitle_entries(visual_entries)
+    audio_list = reindex_subtitle_entries(audio_entries)
+    if len(visual_list) < 1 or len(audio_list) < 2:
+        return visual_list, 0
+
+    split_entries: List[SubtitleEntry] = []
+    split_count = 0
+    for visual_entry in visual_list:
+        visual_text = normalize_subtitle_text(visual_entry.text)
+        if (
+            visual_entry.entry_type == "watermark"
+            or watermark_like_text(visual_text)
+            or funasr_visible_char_count(visual_text) < 6
+        ):
+            split_entries.append(visual_entry)
+            continue
+
+        entry_start = float(visual_entry.start)
+        entry_end = float(visual_entry.end)
+        entry_duration = max(0.01, entry_end - entry_start)
+        matched_audio = [
+            audio_entry
+            for audio_entry in audio_list
+            if audio_entry.entry_type == visual_entry.entry_type or visual_entry.entry_type == "narration"
+            if (
+                subtitle_entry_overlap_seconds(visual_entry, audio_entry) >= max(
+                    0.05,
+                    min(0.28, entry_duration * 0.20, max(0.08, float(audio_entry.end) - float(audio_entry.start)) * 0.30),
+                )
+                or entry_start - 0.10 <= (float(audio_entry.start) + float(audio_entry.end)) * 0.5 <= entry_end + 0.10
+            )
+        ]
+        if len(matched_audio) < 2:
+            split_entries.append(visual_entry)
+            continue
+
+        groups: List[List[SubtitleEntry]] = [[matched_audio[0]]]
+        for previous_audio, current_audio in zip(matched_audio, matched_audio[1:]):
+            audio_gap = max(0.0, float(current_audio.start) - float(previous_audio.end))
+            boundary_time = (float(previous_audio.end) + float(current_audio.start)) * 0.5
+            boundary_inside_visual = entry_start + 0.03 < boundary_time < entry_end - 0.03
+            if audio_gap >= FUNASR_AUDIO_SPLIT_MIN_GAP_SECONDS and boundary_inside_visual:
+                groups.append([current_audio])
+            else:
+                groups[-1].append(current_audio)
+        if len(groups) < 2:
+            split_entries.append(visual_entry)
+            continue
+
+        source_signature = "".join(
+            subtitle_variant_signature("".join(normalize_subtitle_text(item.text) for item in group))
+            for group in groups
+        )
+        visual_signature = subtitle_variant_signature(visual_text)
+        if len(source_signature) < 4 or len(visual_signature) < 4:
+            split_entries.append(visual_entry)
+            continue
+        matcher = difflib.SequenceMatcher(None, source_signature, visual_signature)
+        matching_units = sum(block.size for block in matcher.get_matching_blocks())
+        if (
+            matcher.ratio() < 0.72
+            or matching_units / max(1, len(source_signature)) < 0.70
+            or matching_units / max(1, len(visual_signature)) < 0.70
+        ):
+            split_entries.append(visual_entry)
+            continue
+
+        opcodes = matcher.get_opcodes()
+        source_boundaries = [0]
+        cursor = 0
+        for group in groups:
+            cursor += sum(_visible_signature_char_count(item.text) for item in group)
+            source_boundaries.append(cursor)
+        visual_boundaries = [
+            _signature_boundary_to_master_index(opcodes, boundary)
+            for boundary in source_boundaries
+        ]
+        if any(right <= left for left, right in zip(visual_boundaries, visual_boundaries[1:])):
+            split_entries.append(visual_entry)
+            continue
+
+        provisional: List[SubtitleEntry] = []
+        for group_index, group in enumerate(groups):
+            text_start = visual_boundaries[group_index]
+            text_end = visual_boundaries[group_index + 1]
+            segment_text = funasr_slice_visible_range(visual_text, text_start, text_end)
+            if not segment_text:
+                provisional = []
+                break
+            if group_index == 0:
+                segment_start = entry_start
+            else:
+                segment_start = max(entry_start, float(group[0].start))
+            if group_index == len(groups) - 1:
+                segment_end = entry_end
+            else:
+                segment_end = min(entry_end, float(group[-1].end))
+            if segment_end <= segment_start + 0.02:
+                boundary_time = (
+                    float(group[-1].end)
+                    + float(groups[min(group_index + 1, len(groups) - 1)][0].start)
+                ) * 0.5
+                segment_end = max(segment_start + 0.02, min(entry_end, boundary_time))
+            provisional.append(
+                SubtitleEntry(
+                    index=0,
+                    start=max(0.0, segment_start),
+                    end=max(segment_start + 0.02, segment_end),
+                    text=segment_text,
+                    entry_type=visual_entry.entry_type,
+                )
+            )
+
+        if len(provisional) < 2:
+            split_entries.append(visual_entry)
+            continue
+        split_entries.extend(provisional)
+        split_count += len(provisional) - 1
+
+    if split_count <= 0:
+        return visual_list, 0
+    return reindex_subtitle_entries(split_entries), split_count
+
+
 def build_primary_entries_from_funasr_and_visual(
     funasr_entries: Sequence[SubtitleEntry],
     visual_entries: Sequence[SubtitleEntry],
+    *,
+    allow_visual_split: bool = True,
+    allow_visual_merge: bool = True,
+    preserve_visual_splits: bool = False,
+    allow_boundary_text_repair: bool = True,
 ) -> Tuple[List[SubtitleEntry], int]:
     primary_entries = reindex_subtitle_entries(funasr_entries)
     if not primary_entries:
         return [], 0
 
     visual_fix_count = 0
-    primary_entries, visual_group_merge_count = merge_funasr_entries_with_visual_grouping(
-        primary_entries,
-        visual_entries,
-    )
-    if visual_group_merge_count:
-        visual_fix_count += visual_group_merge_count
+    if allow_visual_merge:
+        primary_entries, visual_group_merge_count = merge_funasr_entries_with_visual_grouping(
+            primary_entries,
+            visual_entries,
+        )
+        if visual_group_merge_count:
+            visual_fix_count += visual_group_merge_count
 
     merged_entries: List[SubtitleEntry] = []
     for entry in primary_entries:
-        split_entries = split_funasr_entry_by_visual_timing(entry, visual_entries)
-        if split_entries:
-            visual_fix_count += len(split_entries)
-            merged_entries.extend(split_entries)
-            continue
+        if allow_visual_split:
+            split_entries = split_funasr_entry_by_visual_timing(
+                entry,
+                visual_entries,
+                preserve_visual_boundaries=preserve_visual_splits,
+            )
+            if split_entries:
+                visual_fix_count += len(split_entries)
+                merged_entries.extend(split_entries)
+                continue
         visual_text = collect_visual_support_text_for_funasr_entry(entry, visual_entries)
-        merged_text = merge_funasr_text_with_visual_support(entry.text, visual_text) if visual_text else normalize_subtitle_text(entry.text)
+        merged_text = normalize_subtitle_text(entry.text)
+        if visual_text:
+            merged_text = merge_funasr_text_with_visual_support(entry.text, visual_text)
+            if cleanup_rewrite_text(merged_text) == cleanup_rewrite_text(normalize_subtitle_text(entry.text)):
+                visual_span_text = extract_visual_text_span_for_audio_correction(entry.text, visual_text)
+                if visual_span_text:
+                    merged_text = merge_funasr_text_with_visual_support(entry.text, visual_span_text)
         if cleanup_rewrite_text(merged_text) != cleanup_rewrite_text(normalize_subtitle_text(entry.text)):
             visual_fix_count += 1
         merged_entries.append(clone_subtitle_entry(entry, text=merged_text))
 
-    merged_entries, boundary_fix_count = repair_cross_entry_boundary_phrases(merged_entries)
-    if boundary_fix_count:
-        visual_fix_count += boundary_fix_count
-    merged_entries, short_bridge_fix_count = repair_isolated_short_bridge_entries(merged_entries)
-    if short_bridge_fix_count:
-        visual_fix_count += short_bridge_fix_count
-    merged_entries = merge_funasr_sentence_entries_by_audio_timing(merged_entries)
-    repaired_entries, _ = lightly_repair_subtitle_timeline(merged_entries, max_shift=0.35)
-    return reindex_subtitle_entries(repaired_entries), visual_fix_count
+    if allow_boundary_text_repair:
+        merged_entries, single_char_spillover_fix_count = repair_audio_primary_single_char_boundary_spillover(
+            merged_entries,
+            visual_entries,
+        )
+        if single_char_spillover_fix_count:
+            visual_fix_count += single_char_spillover_fix_count
+
+    if allow_boundary_text_repair:
+        merged_entries, boundary_fix_count = repair_cross_entry_boundary_phrases(merged_entries)
+        if boundary_fix_count:
+            visual_fix_count += boundary_fix_count
+        merged_entries, short_bridge_fix_count = repair_isolated_short_bridge_entries(merged_entries)
+        if short_bridge_fix_count:
+            visual_fix_count += short_bridge_fix_count
+    if (allow_visual_split and not preserve_visual_splits) or allow_visual_merge:
+        merged_entries = merge_funasr_sentence_entries_by_audio_timing(merged_entries)
+        repaired_entries, _ = lightly_repair_subtitle_timeline(merged_entries, max_shift=0.35)
+        return reindex_subtitle_entries(repaired_entries), visual_fix_count
+    return reindex_subtitle_entries(merged_entries), visual_fix_count
+
+
+def visual_subtitle_track_aligns_with_audio_text(
+    audio_entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> bool:
+    audio_signature = "".join(subtitle_variant_signature(entry.text) for entry in audio_entries)
+    visual_signature = "".join(subtitle_variant_signature(entry.text) for entry in visual_entries)
+    if len(audio_signature) < 4 or len(visual_signature) < 4:
+        return False
+    matcher = difflib.SequenceMatcher(None, audio_signature, visual_signature)
+    shared = sum(block.size for block in matcher.get_matching_blocks())
+    audio_coverage = shared / max(1, len(audio_signature))
+    visual_coverage = shared / max(1, len(visual_signature))
+    ratio = matcher.ratio()
+    if min(len(audio_signature), len(visual_signature)) < 12:
+        return bool(ratio >= 0.62 and audio_coverage >= 0.58 and visual_coverage >= 0.50)
+    return bool(ratio >= 0.22 or (audio_coverage >= 0.28 and visual_coverage >= 0.22))
+
+
+def visual_subtitle_track_is_safe_divergent_fallback(
+    audio_entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> bool:
+    visual_list = [
+        entry
+        for entry in reindex_subtitle_entries(visual_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    audio_list = [
+        entry
+        for entry in reindex_subtitle_entries(audio_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    if len(visual_list) < 8:
+        return False
+
+    visual_signature = "".join(subtitle_variant_signature(entry.text) for entry in visual_list)
+    audio_signature = "".join(subtitle_variant_signature(entry.text) for entry in audio_list)
+    if len(visual_signature) < 48 or len(audio_signature) < 24:
+        return False
+
+    visual_span = max(0.01, float(visual_list[-1].end) - float(visual_list[0].start))
+    audio_span = max(0.01, float(audio_list[-1].end) - float(audio_list[0].start)) if audio_list else visual_span
+    span_ratio = min(visual_span, audio_span) / max(visual_span, audio_span)
+    if span_ratio < 0.55:
+        return False
+
+    # A dense visual track extracted from the current frames is safer than an
+    # unrelated audio SRT when the two full text streams are essentially disjoint.
+    matcher = difflib.SequenceMatcher(None, audio_signature, visual_signature)
+    shared = sum(block.size for block in matcher.get_matching_blocks())
+    audio_coverage = shared / max(1, len(audio_signature))
+    visual_coverage = shared / max(1, len(visual_signature))
+    return bool(matcher.ratio() < 0.12 and audio_coverage < 0.16 and visual_coverage < 0.16)
+
+
+def build_dual_srt_audio_primary_display_entries(
+    audio_entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int, int, int]:
+    primary_entries = reindex_subtitle_entries(audio_entries)
+    if not primary_entries:
+        return [], 0, 0, 0
+
+    # In dual-SRT mode the audio SRT is the pause/content owner.  It has already
+    # gone through audio-side repair when generated; running local boundary
+    # merging again here can erase real reference pauses such as ".../王虎".
+    audio_fragment_fix_count = 0
+    if not visual_subtitle_track_aligns_with_audio_text(primary_entries, visual_entries):
+        if visual_subtitle_track_is_safe_divergent_fallback(primary_entries, visual_entries):
+            visual_fallback_entries = reindex_subtitle_entries(
+                [
+                    entry
+                    for entry in visual_entries
+                    if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+                ]
+            )
+            visual_fallback_entries, isolated_noise_count = drop_isolated_visual_ocr_noise_entries(
+                visual_fallback_entries
+            )
+            return visual_fallback_entries, audio_fragment_fix_count + isolated_noise_count, 0, 0
+        return primary_entries, audio_fragment_fix_count, 0, 0
+
+    working_entries, visual_fix_count = build_primary_entries_from_funasr_and_visual(
+        primary_entries,
+        visual_entries,
+        allow_visual_split=False,
+        allow_visual_merge=False,
+        preserve_visual_splits=True,
+        allow_boundary_text_repair=False,
+    )
+    before_noise_count = len(working_entries)
+    working_entries, isolated_noise_count = drop_isolated_visual_ocr_noise_entries(working_entries)
+    if len(working_entries) < before_noise_count and isolated_noise_count:
+        visual_fix_count += isolated_noise_count
+    visual_audio_split_count = 0
+    return working_entries, visual_fix_count + audio_fragment_fix_count, 0, visual_audio_split_count
 
 
 def _load_audio_transcription_payload(
@@ -16347,6 +17539,10 @@ def _load_audio_transcription_payload(
     request_path = cache_dir / f"request_{fingerprint}.json"
     output_path = cache_dir / f"output_{fingerprint}.json"
     if not output_path.exists():
+        error_path = output_path.with_suffix(output_path.suffix + ".error.json")
+        debug_path = output_path.with_suffix(output_path.suffix + ".debug.jsonl")
+        safe_unlink_file(error_path)
+        safe_unlink_file(debug_path)
         request_path.write_text(json.dumps(request_payload, ensure_ascii=False, indent=2), encoding="utf-8")
         result = run_subprocess_hidden(
             [
@@ -16368,7 +17564,29 @@ def _load_audio_transcription_payload(
         if result.returncode != 0 or not output_path.exists():
             safe_unlink_file(output_path)
             if log_func and failure_prefix:
-                detail = summarize_for_log((result.stderr or result.stdout or "").strip(), limit=220) or "helper failed"
+                detail = ""
+                try:
+                    if error_path.exists():
+                        error_payload = json.loads(error_path.read_text(encoding="utf-8"))
+                        if isinstance(error_payload, dict):
+                            error_type = str(error_payload.get("error_type") or "").strip()
+                            error_message = str(error_payload.get("error") or "").strip()
+                            detail = " ".join(part for part in (error_type, error_message) if part).strip()
+                    if not detail and debug_path.exists():
+                        debug_lines = [
+                            line.strip()
+                            for line in debug_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                            if line.strip()
+                        ]
+                        if debug_lines:
+                            detail = f"last stage {debug_lines[-1]}"
+                except (OSError, json.JSONDecodeError):
+                    detail = ""
+                if not detail and result.returncode not in (0, None):
+                    detail = f"helper exited with code {result.returncode}"
+                if not detail:
+                    detail = (result.stderr or result.stdout or "").strip()
+                detail = summarize_for_log(detail, limit=220) or "helper failed"
                 log_func(f"{failure_prefix}{detail}")
             return None
 
@@ -16387,7 +17605,10 @@ def _has_usable_audio_transcription(parsed: Optional[Dict[str, object]]) -> bool
 
 
 def _audio_transcription_label(engine_name: str) -> str:
-    if str(engine_name).strip().lower() == "sensevoice":
+    normalized = str(engine_name).strip().lower()
+    if normalized == "qwen_asr":
+        return "Qwen3-ASR"
+    if normalized == "sensevoice":
         return "SenseVoice"
     return "FunASR"
 
@@ -16401,7 +17622,119 @@ def repair_audio_first_sentence_entries(
     repaired = reindex_subtitle_entries(entries)
     repaired, boundary_fix_count = repair_cross_entry_boundary_phrases(repaired)
     repaired, short_bridge_fix_count = repair_isolated_short_bridge_entries(repaired)
-    return reindex_subtitle_entries(repaired), boundary_fix_count + short_bridge_fix_count
+    before_merge_signatures = [
+        (round(float(entry.start), 3), round(float(entry.end), 3), cleanup_rewrite_text(entry.text))
+        for entry in repaired
+    ]
+    repaired = merge_funasr_sentence_entries_by_audio_timing(repaired)
+    after_merge_signatures = [
+        (round(float(entry.start), 3), round(float(entry.end), 3), cleanup_rewrite_text(entry.text))
+        for entry in repaired
+    ]
+    merge_fix_count = 0 if before_merge_signatures == after_merge_signatures else 1
+    return reindex_subtitle_entries(repaired), boundary_fix_count + short_bridge_fix_count + merge_fix_count
+
+
+def _visible_signature_char_count(text: str) -> int:
+    return len(subtitle_variant_signature(text))
+
+
+def _signature_boundary_to_master_index(
+    opcodes: Sequence[Tuple[str, int, int, int, int]],
+    source_boundary: int,
+) -> int:
+    source_boundary = max(0, int(source_boundary))
+    last_target = 0
+    for tag, source_start, source_end, target_start, target_end in opcodes:
+        if source_boundary < source_start:
+            return last_target
+        if tag == "insert":
+            if source_boundary == source_start:
+                # Missing glyphs reported by the aligner belong to the
+                # preceding spoken span; this keeps audio timing unchanged.
+                return target_end
+            last_target = target_end
+            continue
+        if source_start <= source_boundary <= source_end:
+            if source_end <= source_start:
+                return target_end
+            ratio = (source_boundary - source_start) / max(1, source_end - source_start)
+            return int(round(target_start + ratio * (target_end - target_start)))
+        last_target = target_end
+    return last_target
+
+
+def repair_audio_entries_with_transcription_master_text(
+    entries: Sequence[SubtitleEntry],
+    master_text: str,
+) -> Tuple[List[SubtitleEntry], int]:
+    """Keep Qwen/ASR timing, but repair sentence_info text from top-level text."""
+    audio_entries = reindex_subtitle_entries(entries)
+    normalized_master = normalize_subtitle_text(master_text)
+    if not audio_entries or not normalized_master:
+        return audio_entries, 0
+
+    source_signature = "".join(subtitle_variant_signature(entry.text) for entry in audio_entries)
+    master_signature = subtitle_variant_signature(normalized_master)
+    if len(source_signature) < 8 or len(master_signature) < 8 or source_signature == master_signature:
+        return audio_entries, 0
+
+    length_delta = len(master_signature) - len(source_signature)
+    max_safe_delta = max(12, int(round(len(source_signature) * 0.12)))
+    if abs(length_delta) > max_safe_delta:
+        return audio_entries, 0
+
+    matcher = difflib.SequenceMatcher(None, source_signature, master_signature)
+    ratio = matcher.ratio()
+    source_coverage = sum(block.size for block in matcher.get_matching_blocks()) / max(1, len(source_signature))
+    master_coverage = sum(block.size for block in matcher.get_matching_blocks()) / max(1, len(master_signature))
+    if ratio < 0.90 or source_coverage < 0.88 or master_coverage < 0.88:
+        return audio_entries, 0
+
+    opcodes = matcher.get_opcodes()
+    repaired_entries: List[SubtitleEntry] = []
+    changed_count = 0
+    cursor = 0
+    for entry in audio_entries:
+        entry_units = _visible_signature_char_count(entry.text)
+        source_start = cursor
+        source_end = cursor + entry_units
+        cursor = source_end
+        target_start = _signature_boundary_to_master_index(opcodes, source_start)
+        target_end = _signature_boundary_to_master_index(opcodes, source_end)
+        if target_end <= target_start:
+            repaired_entries.append(entry)
+            continue
+        candidate_text = funasr_slice_visible_range(normalized_master, target_start, target_end)
+        candidate_text = strip_leading_subtitle_punctuation(candidate_text)
+        if not candidate_text:
+            repaired_entries.append(entry)
+            continue
+
+        current_signature = subtitle_variant_signature(entry.text)
+        candidate_signature = subtitle_variant_signature(candidate_text)
+        if not candidate_signature:
+            repaired_entries.append(entry)
+            continue
+        entry_match = difflib.SequenceMatcher(None, current_signature, candidate_signature)
+        entry_ratio = entry_match.ratio()
+        entry_delta = len(candidate_signature) - len(current_signature)
+        if abs(entry_delta) > max(6, int(round(max(1, len(current_signature)) * 0.25))):
+            repaired_entries.append(entry)
+            continue
+        if entry_ratio < 0.78 and current_signature not in candidate_signature and candidate_signature not in current_signature:
+            repaired_entries.append(entry)
+            continue
+
+        if cleanup_rewrite_text(candidate_text) != cleanup_rewrite_text(entry.text):
+            changed_count += 1
+            repaired_entries.append(clone_subtitle_entry(entry, text=candidate_text))
+        else:
+            repaired_entries.append(entry)
+
+    if changed_count <= 0:
+        return audio_entries, 0
+    return reindex_subtitle_entries(repaired_entries), changed_count
 
 
 def build_audio_first_entries_from_parsed_transcription(
@@ -16419,7 +17752,12 @@ def build_audio_first_entries_from_parsed_transcription(
         auxiliary_samples=auxiliary_samples,
         auxiliary_sample_rate=auxiliary_sample_rate,
     )
-    return repair_audio_first_sentence_entries(entries)
+    repaired_entries, repair_count = repair_audio_first_sentence_entries(entries)
+    repaired_entries, master_text_fix_count = repair_audio_entries_with_transcription_master_text(
+        repaired_entries,
+        str(parsed.get("text") or ""),
+    )
+    return repaired_entries, repair_count + master_text_fix_count
 
 
 def audio_transcription_entries_cover_text(
@@ -16648,21 +17986,70 @@ def run_audio_first_transcription(
     *,
     log_func: Optional[Callable[[str], None]] = None,
     log_name: str = "音频补漏",
+    use_qwen: bool = True,
 ) -> Optional[Dict[str, object]]:
     helper_path = Path(__file__).with_name("funasr_transcribe_helper.py")
-    if not helper_path.exists():
+    qwen_helper_path = Path(__file__).with_name("qwen_asr_transcribe_helper.py")
+    if not helper_path.exists() and not qwen_helper_path.exists():
         if log_func:
             log_func(f"  {log_name}不可用：helper 缺失")
         return None
 
+    qwen_python, qwen_model_path, qwen_aligner_path = resolve_qwen_asr_runtime()
     funasr_python, funasr_source = resolve_funasr_runtime()
     sensevoice_python, sensevoice_source = resolve_sensevoice_runtime()
-    attempts: List[Tuple[str, Optional[Path], Dict[str, object]]] = []
+    attempts: List[Tuple[str, Optional[Path], Path, str, int, Dict[str, object]]] = []
+    qwen_disabled = (
+        not use_qwen
+        or os.environ.get("SERVER_AUTO_CLIP_QWEN_ASR_DISABLE", "").strip().lower() in {"1", "true", "yes", "on"}
+    )
+    qwen_resource_issue = _qwen_asr_resource_issue()
+    if (
+        qwen_helper_path.exists()
+        and qwen_python is not None
+        and qwen_model_path is not None
+        and qwen_aligner_path is not None
+        and not qwen_disabled
+        and not qwen_resource_issue
+    ):
+        attempts.append(
+            (
+                "qwen_asr",
+                qwen_python,
+                qwen_helper_path,
+                "qwen_asr",
+                QWEN_ASR_REQUEST_TIMEOUT_SECONDS,
+                {
+                    "audio_path": str(audio_path),
+                    "engine": "qwen_asr",
+                    "model": QWEN_ASR_MODEL_SOURCE,
+                    "model_path": str(qwen_model_path),
+                    "aligner": QWEN_FORCED_ALIGNER_MODEL_SOURCE,
+                    "aligner_path": str(qwen_aligner_path) if qwen_aligner_path is not None else "",
+                    "language": "Chinese",
+                    "return_time_stamps": qwen_aligner_path is not None,
+                    "device_map": os.environ.get("SERVER_AUTO_CLIP_QWEN_ASR_DEVICE", "cpu").strip() or "cpu",
+                    "dtype": os.environ.get("SERVER_AUTO_CLIP_QWEN_ASR_DTYPE", "bfloat16").strip() or "bfloat16",
+                    "max_inference_batch_size": 1,
+                    "max_new_tokens": 2048,
+                },
+            )
+        )
+    elif qwen_helper_path.exists() and qwen_python is not None and qwen_model_path is not None and log_func:
+        if qwen_disabled and use_qwen:
+            log_func(f"  Qwen3-ASR {log_name} skipped: disabled by SERVER_AUTO_CLIP_QWEN_ASR_DISABLE")
+        elif qwen_aligner_path is None:
+            log_func(f"  Qwen3-ASR {log_name} skipped: forced aligner missing")
+        elif qwen_resource_issue:
+            log_func(f"  Qwen3-ASR {log_name} skipped: {qwen_resource_issue}")
     if sensevoice_python is not None and sensevoice_source is not None:
         attempts.append(
             (
                 "sensevoice",
                 sensevoice_python,
+                helper_path,
+                "funasr",
+                FUNASR_REQUEST_TIMEOUT_SECONDS,
                 {
                     "audio_path": str(audio_path),
                     "engine": "sensevoice",
@@ -16683,6 +18070,9 @@ def run_audio_first_transcription(
             (
                 "funasr",
                 funasr_python,
+                helper_path,
+                "funasr",
+                FUNASR_REQUEST_TIMEOUT_SECONDS,
                 {
                     "audio_path": str(audio_path),
                     "engine": "funasr",
@@ -16701,13 +18091,13 @@ def run_audio_first_transcription(
             log_func(f"  {log_name}不可用：运行时未就绪")
         return None
 
-    for engine_name, python_exe, payload in attempts:
+    for engine_name, python_exe, current_helper_path, cache_family, timeout_seconds, payload in attempts:
         parsed = _load_audio_transcription_payload(
             payload,
             python_exe=python_exe,
-            helper_path=helper_path,
-            cache_family="funasr",
-            timeout_seconds=FUNASR_REQUEST_TIMEOUT_SECONDS,
+            helper_path=current_helper_path,
+            cache_family=cache_family,
+            timeout_seconds=timeout_seconds,
             log_func=log_func,
             failure_prefix=f"  {_audio_transcription_label(engine_name)} {log_name}不可用：",
         )
@@ -17775,6 +19165,51 @@ def refine_duck_intervals_with_waveform(
     return refined
 
 
+def bridge_continuous_narration_duck_intervals(
+    duck_intervals: Sequence[Tuple[float, float]],
+    prepared_groups: Sequence[Dict[str, object]],
+    timeline_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[Tuple[float, float]], int, float]:
+    if len(duck_intervals) < 2 or len(prepared_groups) < 2:
+        return [(max(0.0, float(start)), max(float(start) + 0.01, float(end))) for start, end in duck_intervals], 0, 0.0
+
+    timeline_position_map = {entry.index: position for position, entry in enumerate(timeline_entries)}
+
+    def can_bridge_group_gap(current_group: Dict[str, object], next_group: Dict[str, object]) -> bool:
+        current_entries = [entry for entry in list(current_group.get("entries") or []) if isinstance(entry, SubtitleEntry)]
+        next_entries = [entry for entry in list(next_group.get("entries") or []) if isinstance(entry, SubtitleEntry)]
+        if not current_entries or not next_entries:
+            return False
+        if current_entries[-1].entry_type != "narration" or next_entries[0].entry_type != "narration":
+            return False
+        current_position = timeline_position_map.get(current_entries[-1].index)
+        next_position = timeline_position_map.get(next_entries[0].index)
+        if current_position is None or next_position is None or next_position <= current_position:
+            return False
+        for between_entry in timeline_entries[current_position + 1 : next_position]:
+            between_text = normalize_subtitle_text(between_entry.text)
+            if between_entry.entry_type == "watermark" or not between_text:
+                continue
+            return False
+        return True
+
+    bridged: List[Tuple[float, float]] = []
+    bridge_count = 0
+    bridge_total = 0.0
+    max_index = min(len(duck_intervals), len(prepared_groups))
+    for index, (raw_start, raw_end) in enumerate(duck_intervals):
+        start = max(0.0, float(raw_start))
+        end = max(start + 0.01, float(raw_end))
+        if index + 1 < max_index and can_bridge_group_gap(prepared_groups[index], prepared_groups[index + 1]):
+            next_start = max(0.0, float(duck_intervals[index + 1][0]))
+            if next_start > end + 0.01:
+                bridge_count += 1
+                bridge_total += next_start - end
+                end = next_start
+        bridged.append((start, end))
+    return bridged, bridge_count, bridge_total
+
+
 def build_speakerlab_similarity_map(
     audio_path: Path,
     entries: Sequence[SubtitleEntry],
@@ -18490,6 +19925,7 @@ class MatchAudioEvidence:
             segment_path,
             log_func=None,
             log_name="对白匹配文本校验",
+            use_qwen=False,
         )
         if parsed is None:
             self.segment_transcript_cache[cache_key] = ""
@@ -18970,6 +20406,24 @@ def reference_frame_in_dialogue_interval(
     return reference_frame_dialogue_interval_index(reference_frame, dialogue_intervals) >= 0
 
 
+def reference_frame_range_hits_dialogue_interval(
+    reference_frames: Sequence[ReferenceFrame],
+    start_index: int,
+    end_index: int,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]],
+) -> bool:
+    if not dialogue_intervals or not reference_frames:
+        return False
+    left = max(0, int(start_index))
+    right = min(len(reference_frames) - 1, int(end_index))
+    if right < left:
+        return False
+    for ref_index in range(left, right + 1):
+        if reference_frame_in_dialogue_interval(reference_frames[ref_index], dialogue_intervals):
+            return True
+    return False
+
+
 def reference_frame_dialogue_interval_index(
     reference_frame: ReferenceFrame,
     dialogue_intervals: Optional[Sequence[Tuple[float, float]]],
@@ -19289,6 +20743,19 @@ def retime_narration_runs_by_clean_audio_tail(
         )
         return strong_voice or weak_tail_voice
 
+    def has_tail_energy_after_boundary(start_time: float, end_time: float) -> bool:
+        left_time = max(0.0, float(start_time))
+        right_time = max(left_time, float(end_time))
+        left = max(0, int(math.floor(left_time * sample_rate)))
+        right = min(int(samples.size), int(math.ceil(right_time * sample_rate)))
+        if right <= left + max(16, int(sample_rate * 0.025)):
+            return False
+        segment = samples[left:right].astype(np.float32, copy=False)
+        if segment.size <= 0:
+            return False
+        rms = float(np.sqrt(np.mean(np.square(segment)) + 1e-10))
+        return rms >= 0.012
+
     index = 1
     while index < len(updated_entries):
         previous_entry = updated_entries[index - 1]
@@ -19340,6 +20807,11 @@ def retime_narration_runs_by_clean_audio_tail(
             is_speech_like = is_clean_tail_speech_like(profile)
             if bridge_subtitle_gap:
                 overlaps_boundary = float(profile.start) <= current_start + hop_seconds and profile_end >= previous_end - hop_seconds
+                if overlaps_boundary:
+                    overlaps_boundary = has_tail_energy_after_boundary(
+                        max(previous_end + 0.015, float(profile.start)),
+                        profile_end,
+                    )
             else:
                 overlaps_boundary = float(profile.start) <= current_start + hop_seconds and profile_end >= current_start - hop_seconds
             if not saw_overlap_speech:
@@ -20999,6 +22471,13 @@ def strengthen_audio_overrides_by_continuity(
     entries: Sequence[SubtitleEntry],
     overrides: Dict[int, Dict[str, object]],
 ) -> Tuple[Dict[int, Dict[str, object]], int]:
+    # Speaker labels must be decided by the sentence/window's own acoustic
+    # evidence.  Continuity bridging was useful as a fallback, but it can
+    # silently convert short dialogue/narration islands without fresh voice
+    # evidence, which makes speaker classification look "locally ruled" rather
+    # than audio-led.
+    return dict(overrides), 0
+
     if not entries or not overrides:
         return dict(overrides), 0
 
@@ -21186,6 +22665,11 @@ def stabilize_audio_classification_runs(
             and float(override.get("confidence", 0.0) or 0.0) >= 0.66
             for override in run_overrides
         )
+        run_has_audio_speaker_override = any(
+            override
+            and str(override.get("source") or "").startswith("audio_speaker")
+            for override in run_overrides
+        )
         short_dialogue_island_limit = AUDIO_CLASSIFICATION_SHORT_ISLAND_SECONDS
         if (
             left_type == "narration"
@@ -21211,6 +22695,7 @@ def stabilize_audio_classification_runs(
             and right_type == "narration"
             and not protected_dialogue
             and not credible_dialogue_override
+            and not run_has_audio_speaker_override
             and not mixed_dialogue_run
             and not has_original_text
         ):
@@ -21227,6 +22712,7 @@ def stabilize_audio_classification_runs(
             and protected_dialogue
             and not protected_narration
             and not credible_narration_override
+            and not run_has_audio_speaker_override
             and not has_strong_narration
             and not has_narration_transition_fragment
             and has_dialogue_text
@@ -21247,6 +22733,7 @@ def stabilize_audio_classification_runs(
             and subtitle_entry_gap(run_entries[-1], right_entry) <= 0.45
             and not protected_narration
             and not credible_narration_override
+            and not run_has_audio_speaker_override
             and not has_strong_narration
             and not has_narration_transition_fragment
             and not has_original_text
@@ -21271,6 +22758,7 @@ def stabilize_audio_classification_runs(
             and subtitle_entry_gap(left_entry, run_entries[0]) <= 0.20
             and not protected_narration
             and not credible_narration_override
+            and not run_has_audio_speaker_override
             and not has_strong_narration
             and not has_narration_transition_fragment
             and not has_original_text
@@ -21287,6 +22775,9 @@ def stabilize_audio_classification_runs(
     for index in range(1, len(stabilized) - 1):
         entry = stabilized[index]
         if entry.entry_type != "dialogue":
+            continue
+        entry_override = (override_meta or {}).get(entry.index)
+        if entry_override and str(entry_override.get("source") or "").startswith("audio_speaker"):
             continue
         protected_dialogue = audio_override_is_protected((override_meta or {}).get(entry.index), "dialogue")
         if protected_dialogue:
@@ -23029,10 +24520,17 @@ def build_processed_subtitles(
     prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
     audio_first_text_preserve_mode = prefer_funasr_audio_subtitles
     precomputed_funasr_input = bool(prefer_funasr_audio_subtitles and original_entries)
-    visual_entries = preserve_reference_timeline_entries([] if precomputed_funasr_input else original_entries)
+    auxiliary_visual_entries = preserve_reference_timeline_entries(
+        settings.visual_subtitle_entries if settings else []
+    )
+    dual_srt_visual_text_mode = bool(precomputed_funasr_input and auxiliary_visual_entries)
+    visual_entries = preserve_reference_timeline_entries(
+        auxiliary_visual_entries if precomputed_funasr_input else original_entries
+    )
     working_entries: List[SubtitleEntry] = list(visual_entries)
     funasr_entries: List[SubtitleEntry] = []
     funasr_primary_mode = False
+    dual_srt_visual_fallback_mode = False
     disable_ai_subtitle_review = bool(settings.disable_ai_subtitle_review) if settings else False
     disable_ai_narration_rewrite = bool(settings.disable_ai_narration_rewrite) if settings else False
     strict_audio_narration_preserve_mode = bool(
@@ -23040,7 +24538,11 @@ def build_processed_subtitles(
         and settings.prefer_funasr_audio_subtitles
         and settings.prefer_funasr_sentence_pauses
     )
-    strict_audio_rewrite_guard = strict_audio_narration_preserve_mode
+    strict_audio_rewrite_guard = bool(
+        settings
+        and settings.prefer_funasr_audio_subtitles
+        and settings.prefer_funasr_sentence_pauses
+    )
     force_no_narration_mode = bool(settings.force_no_narration_mode) if settings else False
     if force_no_narration_mode:
         if log_func:
@@ -23089,7 +24591,34 @@ def build_processed_subtitles(
             video_processor,
             log_func=log_func,
         )
-    if prefer_funasr_audio_subtitles and funasr_entries:
+    if dual_srt_visual_text_mode:
+        dual_srt_visual_fallback = bool(
+            not visual_subtitle_track_aligns_with_audio_text(funasr_entries, visual_entries)
+            and visual_subtitle_track_is_safe_divergent_fallback(funasr_entries, visual_entries)
+        )
+        dual_srt_visual_fallback_mode = dual_srt_visual_fallback
+        working_entries, visual_text_fix_count, visual_audio_add_count, visual_audio_split_count = (
+            build_dual_srt_audio_primary_display_entries(
+                funasr_entries,
+                visual_entries,
+            )
+        )
+        funasr_primary_mode = True
+        if log_func:
+            if dual_srt_visual_fallback:
+                log_func(
+                    "  Dual SRT safeguard: audio/visual subtitle streams diverged; "
+                    "using dense visual SRT as the clean display timeline and rejecting unrelated audio text "
+                    f"({len(working_entries)} visual entries, {visual_text_fix_count} cleanup fix(es))"
+                )
+            else:
+                log_func(
+                    "  Dual SRT audio-primary mode: audio SRT owns content/pause timing; "
+                    "visual SRT assists display splits and OCR corrections "
+                    f"({visual_audio_split_count} visual split(s), "
+                    f"{visual_text_fix_count} visual text fix(es), {visual_audio_add_count} audio supplement(s))"
+                )
+    elif prefer_funasr_audio_subtitles and funasr_entries:
         working_entries = reindex_subtitle_entries(funasr_entries)
         funasr_primary_mode = True
         if log_func and not precomputed_funasr_input:
@@ -23111,7 +24640,7 @@ def build_processed_subtitles(
     elif working_entries:
         if log_func:
             log_func("  Subtitle timeline preserved: using reference SRT timestamps as-is")
-        if funasr_entries:
+        if funasr_entries and not dual_srt_visual_text_mode:
             working_entries, funasr_fix_count, funasr_add_count = refine_reference_entries_with_funasr(
                 working_entries,
                 funasr_entries,
@@ -23161,13 +24690,27 @@ def build_processed_subtitles(
     if log_func and correction_count:
         log_func(f"  Full-text OCR review: {correction_count} entries corrected")
 
-    working_entries, local_phrase_fix_count = repair_contextual_ocr_phrases(working_entries)
-    if log_func and local_phrase_fix_count:
-        log_func(f"  Context phrase repair: {local_phrase_fix_count} entries corrected")
-    working_entries, full_text_ocr_fix_count = repair_full_text_ocr_consistency(working_entries)
-    if log_func and full_text_ocr_fix_count:
-        log_func(f"  Full-text consistency OCR repair: {full_text_ocr_fix_count} entries corrected")
-    if funasr_entries and prefer_funasr_audio_subtitles and not funasr_primary_mode:
+    if strict_audio_narration_preserve_mode:
+        local_phrase_fix_count = 0
+        full_text_ocr_fix_count = 0
+        if log_func:
+            log_func(
+                "  Audio-first strict subtitle mode: skipped local OCR phrase/global text repairs; "
+                "audio transcript text remains the primary source"
+            )
+    else:
+        working_entries, local_phrase_fix_count = repair_contextual_ocr_phrases(working_entries)
+        if log_func and local_phrase_fix_count:
+            log_func(f"  Context phrase repair: {local_phrase_fix_count} entries corrected")
+        working_entries, full_text_ocr_fix_count = repair_full_text_ocr_consistency(working_entries)
+        if log_func and full_text_ocr_fix_count:
+            log_func(f"  Full-text consistency OCR repair: {full_text_ocr_fix_count} entries corrected")
+    if (
+        funasr_entries
+        and prefer_funasr_audio_subtitles
+        and not funasr_primary_mode
+        and not dual_srt_visual_text_mode
+    ):
         working_entries, funasr_second_fix_count, funasr_second_add_count = refine_reference_entries_with_funasr(
             working_entries,
             funasr_entries,
@@ -23183,9 +24726,12 @@ def build_processed_subtitles(
         if log_func and full_text_fix_after_funasr:
             log_func(f"  FunASR 后全文一致性修正：{full_text_fix_after_funasr} 条")
 
-    working_entries, boundary_phrase_fix_count = repair_cross_entry_boundary_phrases(working_entries)
-    if log_func and boundary_phrase_fix_count:
-        log_func(f"  Cross-entry phrase repair: {boundary_phrase_fix_count} boundaries corrected")
+    if strict_audio_narration_preserve_mode:
+        boundary_phrase_fix_count = 0
+    else:
+        working_entries, boundary_phrase_fix_count = repair_cross_entry_boundary_phrases(working_entries)
+        if log_func and boundary_phrase_fix_count:
+            log_func(f"  Cross-entry phrase repair: {boundary_phrase_fix_count} boundaries corrected")
 
     local_classification = classify_entries_locally(working_entries)
     classified_map: Dict[int, Dict[str, str]] = {
@@ -23253,13 +24799,20 @@ def build_processed_subtitles(
             "  Mixed reported-speech audio pre-split: "
             f"{audio_ready_mixed_split_count} tail dialogue(s) exposed for speaker verification"
         )
-    audio_overrides = build_audio_classification_overrides(
-        cleaned_entries,
-        reference_video,
-        ai_generator=ai_generator,
-        video_processor=video_processor,
-        log_func=log_func,
-    )
+    if dual_srt_visual_fallback_mode:
+        audio_overrides = {}
+        if log_func:
+            log_func(
+                "  Audio speaker classification skipped: dual SRT safeguard rejected the audio subtitle stream"
+            )
+    else:
+        audio_overrides = build_audio_classification_overrides(
+            cleaned_entries,
+            reference_video,
+            ai_generator=ai_generator,
+            video_processor=video_processor,
+            log_func=log_func,
+        )
     if audio_overrides:
         cleaned_entries = apply_audio_classification_overrides(
             cleaned_entries,
@@ -23274,17 +24827,25 @@ def build_processed_subtitles(
         video_processor=video_processor,
         log_func=log_func,
     )
-    cleaned_entries, visual_ocr_fix_count = apply_reference_subtitle_ocr_corrections(
-        cleaned_entries,
-        reference_video,
-        video_processor,
-        log_func=log_func,
-    )
-    if prefer_funasr_audio_subtitles and log_func and visual_ocr_fix_count:
-        log_func(
-            "  Audio-first visual OCR text assist: "
-            f"{visual_ocr_fix_count} high-confidence hard-subtitle correction(s)"
+    visual_ocr_fix_count = 0
+    if strict_audio_narration_preserve_mode:
+        if log_func:
+            log_func(
+                "  Audio-first strict subtitle mode: skipped hard-subtitle OCR text correction; "
+                "visual subtitles remain pause/display aids only"
+            )
+    else:
+        cleaned_entries, visual_ocr_fix_count = apply_reference_subtitle_ocr_corrections(
+            cleaned_entries,
+            reference_video,
+            video_processor,
+            log_func=log_func,
         )
+        if prefer_funasr_audio_subtitles and log_func and visual_ocr_fix_count:
+            log_func(
+                "  Audio-first visual OCR text assist: "
+                f"{visual_ocr_fix_count} high-confidence hard-subtitle correction(s)"
+            )
     cleaned_entries, pre_rewrite_mixed_split_count = split_mixed_reported_speech_entries(cleaned_entries)
     if log_func and pre_rewrite_mixed_split_count:
         log_func(
@@ -23447,10 +25008,13 @@ def build_processed_subtitles(
             )
             for entry in working_entries
         ]
-    final_entries, final_context_fix_count = repair_contextual_ocr_phrases(final_entries)
-    if log_func and final_context_fix_count:
-        log_func(f"  Final subtitle contextual repair: {final_context_fix_count} entries corrected")
-    if prefer_funasr_audio_subtitles:
+    if strict_audio_narration_preserve_mode:
+        final_context_fix_count = 0
+    else:
+        final_entries, final_context_fix_count = repair_contextual_ocr_phrases(final_entries)
+        if log_func and final_context_fix_count:
+            log_func(f"  Final subtitle contextual repair: {final_context_fix_count} entries corrected")
+    if prefer_funasr_audio_subtitles and not strict_audio_narration_preserve_mode:
         final_entries, _visual_spillover_fix_count = repair_reference_visual_cross_entry_spillover(
             final_entries,
             reference_video,
@@ -25570,6 +27134,66 @@ def dialogue_visual_audio_replacement_allowed(
     )
 
 
+def dialogue_candidate_warrants_asr_verify(
+    *,
+    current_discontinuities: int,
+    proposed_discontinuities: int,
+    current_avg_visual: float,
+    proposed_avg_visual: float,
+    current_avg_audio: float,
+    proposed_avg_audio: float,
+    audio_confident: bool,
+    force_for_boundary: bool = False,
+) -> bool:
+    if not audio_confident:
+        return False
+    audio_gain = proposed_avg_audio - current_avg_audio
+    if proposed_avg_audio < MATCH_DIALOGUE_AUDIO_OVERRIDE_MIN_SCORE:
+        return False
+    if proposed_avg_visual < MATCH_DIALOGUE_AUDIO_ASSIST_MIN_VISUAL:
+        return False
+    if proposed_discontinuities < current_discontinuities:
+        return (
+            audio_gain >= MATCH_DIALOGUE_ASR_VERIFY_MIN_AUDIO_GAIN
+            or proposed_avg_audio >= MATCH_DIALOGUE_ASR_VERIFY_STRONG_AUDIO_SCORE
+        )
+    if force_for_boundary:
+        return (
+            audio_gain >= MATCH_DIALOGUE_ASR_VERIFY_MIN_AUDIO_GAIN
+            and proposed_avg_visual >= current_avg_visual - MATCH_DIALOGUE_BOUNDARY_ISLAND_MAX_VISUAL_LOSS
+        )
+    return (
+        proposed_discontinuities <= current_discontinuities
+        and audio_gain >= MATCH_DIALOGUE_ASR_VERIFY_RERANK_MIN_AUDIO_GAIN
+        and proposed_avg_visual >= current_avg_visual - MATCH_DIALOGUE_ASR_VERIFY_RERANK_MAX_VISUAL_LOSS
+    )
+
+
+def dialogue_window_warrants_final_audio_rerank(
+    path: Sequence[Dict[str, object]],
+    *,
+    discontinuities: int,
+    avg_visual: float,
+    avg_audio: float,
+    audio_count: int,
+) -> bool:
+    if not path or audio_count <= 0:
+        return False
+    audio_confident = audio_count >= dialogue_audio_required_count(len(path))
+    if not audio_confident:
+        return False
+    if discontinuities > 0:
+        return True
+    if avg_audio >= MATCH_DIALOGUE_AUDIO_VERIFY_GOOD:
+        return False
+    if avg_visual < MATCH_DIALOGUE_FINAL_RERANK_LOW_VISUAL:
+        return True
+    # Visually stable dialogue can still be the wrong repeated shot.  Keep the
+    # safety net narrow: only rescan windows whose current audio clearly does
+    # not sound like the reference dialogue.
+    return avg_visual < MATCH_DIALOGUE_FINAL_RERANK_STABLE_VISUAL and avg_audio < MATCH_DIALOGUE_AUDIO_VERIFY_BAD
+
+
 def format_dialogue_asr_score(score: Optional[float]) -> str:
     if score is None:
         return "--"
@@ -25626,6 +27250,43 @@ def dialogue_asr_text_replacement_allowed(
     ):
         return False, current_text_score, proposed_text_score
     return True, current_text_score, proposed_text_score
+
+
+def dialogue_short_relocation_needs_text_confirmation(
+    reference_frames: Sequence[ReferenceFrame],
+    ref_indices: Sequence[int],
+    current_window: Sequence[Dict[str, object]],
+    proposed_window: Sequence[Dict[str, object]],
+    frame_interval: float,
+    *,
+    current_discontinuities: int,
+    proposed_discontinuities: int,
+    current_avg_audio: float,
+    proposed_avg_audio: float,
+) -> bool:
+    if not ref_indices or not current_window or not proposed_window:
+        return False
+    if len(ref_indices) != len(current_window) or len(ref_indices) != len(proposed_window):
+        return False
+    reference_start = float(reference_frames[ref_indices[0]].timestamp)
+    reference_end = float(reference_frames[ref_indices[-1]].timestamp) + max(0.1, float(frame_interval))
+    if reference_end - reference_start > 1.35:
+        return False
+    if current_discontinuities > 0 or proposed_discontinuities > 0:
+        return False
+    if current_avg_audio < MATCH_DIALOGUE_AUDIO_VERIFY_BAD:
+        return False
+    if proposed_avg_audio >= 0.88 and proposed_avg_audio >= current_avg_audio + 0.16:
+        return False
+
+    current_first = current_window[0].get("sample")
+    proposed_first = proposed_window[0].get("sample")
+    if not isinstance(current_first, FrameSample) or not isinstance(proposed_first, FrameSample):
+        return False
+    if current_first.video_path != proposed_first.video_path:
+        return True
+    source_jump = abs(float(proposed_first.timestamp) - float(current_first.timestamp))
+    return source_jump >= max(4.0, max(0.1, float(frame_interval)) * 8.0)
 
 
 def append_dialogue_candidate_at_position(
@@ -26153,6 +27814,17 @@ def repair_dialogue_match_path_continuity(
         )
         if not should_replace:
             continue
+        needs_text_confirmation = dialogue_short_relocation_needs_text_confirmation(
+            reference_frames,
+            ref_indices,
+            current_window,
+            proposed_window,
+            frame_interval,
+            current_discontinuities=current_discontinuities,
+            proposed_discontinuities=proposed_discontinuities,
+            current_avg_audio=current_avg_audio,
+            proposed_avg_audio=proposed_avg_audio,
+        )
         asr_allowed, current_text_score, proposed_text_score = dialogue_asr_text_replacement_allowed(
             reference_frames=reference_frames,
             ref_indices=ref_indices,
@@ -26161,6 +27833,16 @@ def repair_dialogue_match_path_continuity(
             frame_interval=frame_interval,
             audio_evidence=audio_evidence,
         )
+        if needs_text_confirmation and proposed_text_score is None:
+            if log_func and asr_logged < 6:
+                log_func(
+                    "  Final dialogue short relocation rejected without ASR text "
+                    f"ref {float(reference_frames[ref_indices[0]].timestamp):.1f}-"
+                    f"{float(reference_frames[ref_indices[-1]].timestamp):.1f}s: "
+                    f"audio {current_avg_audio:.2f}->{proposed_avg_audio:.2f}"
+                )
+                asr_logged += 1
+            continue
         if not asr_allowed:
             if log_func and asr_logged < 6:
                 log_func(
@@ -26338,8 +28020,15 @@ def repair_final_dialogue_match_continuity(
             current_window,
             frame_interval,
         )
-        has_audio_rerank = audio_evidence is not None and audio_evidence.enabled
-        if current_discontinuities <= 0 and not has_audio_rerank:
+        current_avg_visual = sum(float(item.get("visual", 0.0) or 0.0) for item in current_window) / len(current_window)
+        current_avg_audio, current_audio_count = dialogue_path_audio_average(current_window)
+        if not dialogue_window_warrants_final_audio_rerank(
+            current_window,
+            discontinuities=current_discontinuities,
+            avg_visual=current_avg_visual,
+            avg_audio=current_avg_audio,
+            audio_count=current_audio_count,
+        ):
             continue
 
         proposed_window = find_best_contiguous_dialogue_sequence_path(
@@ -26420,9 +28109,7 @@ def repair_final_dialogue_match_continuity(
             frame_interval,
             attempt=3,
         )
-        current_avg_visual = sum(float(item.get("visual", 0.0) or 0.0) for item in current_window) / len(current_window)
         proposed_avg_visual = sum(float(item.get("visual", 0.0) or 0.0) for item in proposed_window) / len(proposed_window)
-        current_avg_audio, current_audio_count = dialogue_path_audio_average(current_window)
         proposed_avg_audio, proposed_audio_count = dialogue_path_audio_average(proposed_window)
         should_replace = dialogue_visual_audio_replacement_allowed(
             current_window=current_window,
@@ -26439,6 +28126,17 @@ def repair_final_dialogue_match_continuity(
             proposed_audio_count=proposed_audio_count,
         )
         if not should_replace:
+            continue
+        if not dialogue_candidate_warrants_asr_verify(
+            current_discontinuities=current_discontinuities,
+            proposed_discontinuities=proposed_discontinuities,
+            current_avg_visual=current_avg_visual,
+            proposed_avg_visual=proposed_avg_visual,
+            current_avg_audio=current_avg_audio,
+            proposed_avg_audio=proposed_avg_audio,
+            audio_confident=dialogue_audio_is_confident(current_window, current_audio_count)
+            and dialogue_audio_is_confident(proposed_window, proposed_audio_count),
+        ):
             continue
         asr_allowed, current_text_score, proposed_text_score = dialogue_asr_text_replacement_allowed(
             reference_frames=reference_frames,
@@ -26645,6 +28343,32 @@ def repair_final_dialogue_boundary_source_islands(
             current_visual - MATCH_DIALOGUE_BOUNDARY_ISLAND_MAX_VISUAL_LOSS,
         ):
             return False
+        current_audio_window = annotate_dialogue_path_audio_similarity(
+            reference_frames,
+            ref_indices,
+            window,
+            audio_evidence,
+        )
+        proposed_window = annotate_dialogue_path_audio_similarity(
+            reference_frames,
+            ref_indices,
+            proposed_window,
+            audio_evidence,
+        )
+        current_audio, current_audio_count = dialogue_path_audio_average(current_audio_window)
+        proposed_audio, proposed_audio_count = dialogue_path_audio_average(proposed_window)
+        if not dialogue_candidate_warrants_asr_verify(
+            current_discontinuities=len(build_runs(current_audio_window)) - 1,
+            proposed_discontinuities=len(build_runs(proposed_window)) - 1,
+            current_avg_visual=current_visual,
+            proposed_avg_visual=proposed_visual,
+            current_avg_audio=current_audio,
+            proposed_avg_audio=proposed_audio,
+            audio_confident=dialogue_audio_is_confident(current_audio_window, current_audio_count)
+            and dialogue_audio_is_confident(proposed_window, proposed_audio_count),
+            force_for_boundary=True,
+        ):
+            return False
 
         asr_allowed, current_text_score, proposed_text_score = dialogue_asr_text_replacement_allowed(
             reference_frames=reference_frames,
@@ -26833,6 +28557,7 @@ def repair_boundary_lag_around_reference_cuts(
     similarity_threshold: float,
     attempt: int,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < 3:
@@ -26843,6 +28568,13 @@ def repair_boundary_lag_around_reference_cuts(
     for _ in range(2):
         pass_replacements = 0
         for index in range(1, len(repaired_path) - 1):
+            if reference_frame_range_hits_dialogue_interval(
+                reference_frames,
+                index - 1,
+                index + 1,
+                dialogue_intervals,
+            ):
+                continue
             reference_transition_similarity = (
                 float(reference_transition_similarities[index])
                 if reference_transition_similarities is not None and index < len(reference_transition_similarities)
@@ -27398,6 +29130,7 @@ def repair_same_video_continuity_glitches(
     frame_interval: float,
     similarity_threshold: float,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < 2:
@@ -27408,6 +29141,13 @@ def repair_same_video_continuity_glitches(
     for _pass in range(3):
         pass_replacements = 0
         for index in range(1, len(repaired_path)):
+            if reference_frame_range_hits_dialogue_interval(
+                reference_frames,
+                index - 1,
+                index + 1,
+                dialogue_intervals,
+            ):
+                continue
             previous_candidate = repaired_path[index - 1]
             current_candidate = repaired_path[index]
             next_candidate = repaired_path[index + 1] if index + 1 < len(repaired_path) else None
@@ -27541,6 +29281,7 @@ def repair_same_video_local_timing_windows(
     similarity_threshold: float,
     attempt: int,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < max(4, MATCH_LOCAL_TIMING_MIN_RUN):
@@ -27634,6 +29375,13 @@ def repair_same_video_local_timing_windows(
                 add_problem_window(window_start, window_end, order_repair_needed)
 
             for window_start, window_end, enforce_order_repair in problem_windows:
+                if reference_frame_range_hits_dialogue_interval(
+                    reference_frames,
+                    window_start,
+                    window_end,
+                    dialogue_intervals,
+                ):
+                    continue
                 window_candidates = repaired_path[window_start : window_end + 1]
                 if len(window_candidates) < 3:
                     continue
@@ -27868,6 +29616,7 @@ def repair_boundary_phase_lag_runs(
     similarity_threshold: float,
     attempt: int,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < 3:
@@ -27930,6 +29679,14 @@ def repair_boundary_phase_lag_runs(
             current_sequence = repaired_path[run_start : run_end + 1]
             if len(current_sequence) < 2:
                 run_start += 1
+                continue
+            if reference_frame_range_hits_dialogue_interval(
+                reference_frames,
+                run_start - 1,
+                run_end + 1,
+                dialogue_intervals,
+            ):
+                run_start = run_end + 1
                 continue
 
             expected_video_path = cast(FrameSample, current_sequence[0]["sample"]).video_path
@@ -28055,6 +29812,7 @@ def repair_short_same_track_reentry_backtracks(
     hasher: VisualHasher,
     frame_interval: float,
     similarity_threshold: float,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < 4 or not source_frames:
@@ -28067,6 +29825,13 @@ def repair_short_same_track_reentry_backtracks(
     max_away_seconds = max(frame_interval, float(MATCH_SHORT_REENTRY_MAX_AWAY_SECONDS))
 
     for index in range(1, len(repaired_path)):
+        if reference_frame_range_hits_dialogue_interval(
+            reference_frames,
+            index - 1,
+            index,
+            dialogue_intervals,
+        ):
+            continue
         current_candidate = repaired_path[index]
         current_sample = cast(FrameSample, current_candidate["sample"])
 
@@ -28147,6 +29912,7 @@ def repair_low_structural_match_windows(
     similarity_threshold: float,
     attempt: int,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(selected_path) < 2:
@@ -28157,6 +29923,13 @@ def repair_low_structural_match_windows(
     for _pass in range(2):
         pass_replacements = 0
         for index, current_candidate in enumerate(repaired_path):
+            if reference_frame_range_hits_dialogue_interval(
+                reference_frames,
+                index - 1,
+                index + 1,
+                dialogue_intervals,
+            ):
+                continue
             ref = reference_frames[index]
             current_sample = cast(FrameSample, current_candidate["sample"])
             current_visual = float(current_candidate.get("visual", 0.0) or 0.0)
@@ -29230,6 +31003,7 @@ def match_frames(
         similarity_threshold,
         attempt,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, smoothed_replacements = smooth_isolated_match_outliers(
@@ -29251,6 +31025,7 @@ def match_frames(
         similarity_threshold,
         attempt,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, continuity_replacements = repair_same_video_continuity_glitches(
@@ -29261,6 +31036,7 @@ def match_frames(
         frame_interval,
         similarity_threshold,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, local_timing_replacements = repair_same_video_local_timing_windows(
@@ -29273,6 +31049,7 @@ def match_frames(
         similarity_threshold,
         attempt,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, boundary_phase_replacements = repair_boundary_phase_lag_runs(
@@ -29284,6 +31061,7 @@ def match_frames(
         similarity_threshold,
         attempt,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, post_phase_local_timing_replacements = repair_same_video_local_timing_windows(
@@ -29296,6 +31074,7 @@ def match_frames(
         similarity_threshold,
         attempt,
         reference_transition_similarities=reference_transition_similarities,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, short_reentry_replacements = repair_short_same_track_reentry_backtracks(
@@ -29305,6 +31084,7 @@ def match_frames(
         hasher,
         frame_interval,
         similarity_threshold,
+        dialogue_intervals=dialogue_intervals,
         log_func=log_func,
     )
     selected_path, dialogue_continuity_replacements = repair_dialogue_match_path_continuity(
@@ -29458,6 +31238,8 @@ def merge_matches(matches: Sequence[Dict[str, object]], tolerance: float = 0.05)
 def repair_final_same_video_match_order_backtracks(
     matches: Sequence[Dict[str, object]],
     frame_interval: float,
+    reference_frames: Optional[Sequence[ReferenceFrame]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(matches) < 4:
@@ -29485,6 +31267,14 @@ def repair_final_same_video_match_order_backtracks(
     logged_windows = 0
     index = 1
     while index < len(repaired) - 1:
+        if reference_frames is not None and reference_frame_range_hits_dialogue_interval(
+            reference_frames,
+            index - 1,
+            index + 1,
+            dialogue_intervals,
+        ):
+            index += 1
+            continue
         previous_match = repaired[index - 1]
         current_match = repaired[index]
         if not same_track(previous_match, current_match):
@@ -29578,6 +31368,8 @@ def repair_final_same_video_noncut_jumps(
     matches: Sequence[Dict[str, object]],
     frame_interval: float,
     reference_transition_similarities: Optional[Sequence[float]] = None,
+    reference_frames: Optional[Sequence[ReferenceFrame]] = None,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(matches) < 2:
@@ -29604,6 +31396,17 @@ def repair_final_same_video_noncut_jumps(
         ref_gap = float(current.get("ref_time", 0.0) or 0.0) - float(previous.get("ref_time", 0.0) or 0.0)
         if ref_gap <= 0.0 or ref_gap > max_ref_gap:
             continue
+        if reference_frames is not None and index < len(reference_frames):
+            current_ref_frame = reference_frames[index]
+            previous_ref_frame = reference_frames[index - 1] if index - 1 < len(reference_frames) else current_ref_frame
+            if reference_frame_in_dialogue_interval(
+                current_ref_frame,
+                dialogue_intervals,
+            ) or reference_frame_in_dialogue_interval(
+                previous_ref_frame,
+                dialogue_intervals,
+            ):
+                continue
         transition_similarity = (
             float(reference_transition_similarities[index])
             if reference_transition_similarities is not None and index < len(reference_transition_similarities)
@@ -29646,6 +31449,7 @@ def repair_final_isolated_transition_frames(
     hasher: VisualHasher,
     frame_interval: float,
     similarity_threshold: float,
+    dialogue_intervals: Optional[Sequence[Tuple[float, float]]] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> Tuple[List[Dict[str, object]], int]:
     if len(matches) < 3 or not source_frames:
@@ -29660,6 +31464,13 @@ def repair_final_isolated_transition_frames(
     logged = 0
 
     for index in range(1, min(len(repaired), len(reference_frames)) - 1):
+        if reference_frame_range_hits_dialogue_interval(
+            reference_frames,
+            index - 1,
+            index + 1,
+            dialogue_intervals,
+        ):
+            continue
         previous_candidate = match_dict_to_candidate(
             repaired[index - 1],
             source_frames,
@@ -32193,8 +34004,11 @@ def build_tts_track(
             if analysis_audio_path is not None:
                 analysis_samples, analysis_sample_rate = load_wav_mono_samples(analysis_audio_path)
 
+        visual_split_reference_entries = (
+            settings.visual_subtitle_entries if settings.visual_subtitle_entries else speech_entries
+        )
         visually_split_entries, _visual_split_stats = split_entries_by_reference_visual_subtitle_changes(
-            speech_entries,
+            visual_split_reference_entries,
             settings.reference_video,
             video_processor,
             samples=reference_samples,
@@ -32203,7 +34017,10 @@ def build_tts_track(
             auxiliary_sample_rate=analysis_sample_rate,
             log_func=log_func,
         )
-        if len(visually_split_entries) != len(speech_entries):
+        if (
+            not settings.visual_subtitle_entries
+            and len(visually_split_entries) != len(speech_entries)
+        ):
             speech_entries = visually_split_entries
             strict_timeline_duration = max(
                 strict_timeline_duration,
@@ -32277,12 +34094,30 @@ def build_tts_track(
             for entry_index, pause_duration in subtitle_boundary_pause_map.items():
                 if entry_index not in audio_boundary_pause_map:
                     audio_boundary_pause_map[entry_index] = float(pause_duration or 0.0)
-        visual_pause_map, visual_join_map, _visual_stats = build_reference_visual_tts_boundary_evidence(
-            speech_entries,
-            settings.reference_video,
-            video_processor,
-            log_func=log_func,
-        )
+        visual_pause_map: Dict[int, float] = {}
+        visual_join_map: Dict[int, bool] = {}
+        if settings.visual_subtitle_entries:
+            visual_pause_map, visual_join_map = build_srt_visual_boundary_assist_maps(
+                speech_entries,
+                settings.visual_subtitle_entries,
+            )
+            _visual_stats = {
+                "adopted_breaks": float(len(visual_pause_map)),
+                "adopted_joins": float(len(visual_join_map)),
+            }
+            if log_func:
+                log_func(
+                    "  TTS visual subtitle SRT assist: "
+                    f"{len(visual_pause_map)} visual break hint(s), "
+                    f"{len(visual_join_map)} visual no-break hint(s)"
+                )
+        else:
+            visual_pause_map, visual_join_map, _visual_stats = build_reference_visual_tts_boundary_evidence(
+                speech_entries,
+                settings.reference_video,
+                video_processor,
+                log_func=log_func,
+            )
         if visual_pause_map:
             strict_boundary_visual_pause_map = visual_pause_map
         if visual_join_map:
@@ -32290,15 +34125,15 @@ def build_tts_track(
         if log_func:
             if visual_pause_map or visual_join_map:
                 log_func(
-                    "  TTS visual-primary pause planning: "
+                    "  TTS audio-primary pause planning: "
                     f"{len(visual_pause_map)} visual break boundary(s), "
                     f"{len(visual_join_map)} visual no-break boundary(s); "
-                    "audio evidence is supplemental for missing subtitles and zero-pause visual wraps"
+                    "visual evidence is supplemental for missing audio probes and zero-pause visual wraps"
                 )
             else:
                 log_func(
-                    "  TTS visual-primary pause planning: no reliable visual boundary evidence; "
-                    "falling back to supplemental audio pause probes"
+                    "  TTS audio-primary pause planning: no reliable visual boundary evidence; "
+                    "using audio pause probes"
                 )
         strict_boundary_audio_pause_map = audio_boundary_pause_map or None
         if log_func and strict_boundary_audio_pause_map:
@@ -32330,7 +34165,7 @@ def build_tts_track(
         join_count = sum(1 for value in tts_join_map.values() if value)
         if strict_audio_timing_mode:
             log_func(
-                "  TTS pause planner: visual-primary regrouping kept "
+                "  TTS pause planner: audio-primary regrouping kept "
                 f"{join_count} intra-phrase joins from {len(speech_entries)} FunASR sentence(s) "
                 f"-> {len(tts_groups)} TTS group(s)"
             )
@@ -33115,6 +34950,18 @@ def build_tts_track(
             if log_func:
                 log_func(
                     f"  TTS strict duck alignment: tightened {shortened_count}/{len(refined_duck_intervals)} interval(s) against final narration waveform"
+                )
+        bridged_duck_intervals, bridged_count, bridged_total = bridge_continuous_narration_duck_intervals(
+            duck_intervals,
+            prepared_groups,
+            timeline_entries,
+        )
+        if bridged_count > 0:
+            duck_intervals = bridged_duck_intervals
+            if log_func:
+                log_func(
+                    "  TTS continuous narration duck bridge: "
+                    f"covered {bridged_count} inter-sentence gap(s), total {bridged_total:.2f}s"
                 )
     if settings is not None:
         match_tts_track_loudness_to_reference(
@@ -34308,10 +36155,15 @@ def delivery_video_needs_reference_format_alignment(
     source_video: Path,
     reference_video: Path,
     video_processor: VideoProcessor,
+    *,
+    target_fps_override: Optional[float] = None,
 ) -> Tuple[bool, str, Optional[Dict[str, object]]]:
     reference_format = probe_delivery_reference_format(reference_video, video_processor)
     if reference_format is None:
         return False, "reference format probe unavailable", None
+    if target_fps_override is not None and float(target_fps_override) > 1.0:
+        reference_format = dict(reference_format)
+        reference_format["fps"] = float(target_fps_override)
 
     result = run_subprocess_hidden(
         [
@@ -34414,12 +36266,16 @@ def align_delivery_video_to_reference_format(
     video_processor: VideoProcessor,
     *,
     reference_format: Optional[Dict[str, object]] = None,
+    target_fps_override: Optional[float] = None,
     log_func: Optional[Callable[[str], None]] = None,
 ) -> None:
     effective_reference_format = reference_format or probe_delivery_reference_format(reference_video, video_processor)
     if effective_reference_format is None:
         shutil.copy2(source_video, output_path)
         return
+    if target_fps_override is not None and float(target_fps_override) > 1.0:
+        effective_reference_format = dict(effective_reference_format)
+        effective_reference_format["fps"] = float(target_fps_override)
 
     target_fps = max(1.0, float(effective_reference_format["fps"]))
     target_profile = str(effective_reference_format["profile"])
@@ -34822,11 +36678,15 @@ def run_clone_pipeline(
             best_matches,
             settings.frame_interval,
             reference_transition_similarities=final_reference_transition_similarities,
+            reference_frames=reference_frames,
+            dialogue_intervals=final_dialogue_match_intervals,
             log_func=log,
         )
         best_matches, final_order_replacements = repair_final_same_video_match_order_backtracks(
             best_matches,
             settings.frame_interval,
+            reference_frames=reference_frames,
+            dialogue_intervals=final_dialogue_match_intervals,
             log_func=log,
         )
         best_matches, final_isolated_frame_replacements = repair_final_isolated_transition_frames(
@@ -34836,6 +36696,7 @@ def run_clone_pipeline(
             hasher,
             settings.frame_interval,
             min(settings.match_threshold, 0.67),
+            dialogue_intervals=final_dialogue_match_intervals,
             log_func=log,
         )
         best_matches, final_short_source_island_replacements = repair_final_short_source_island_runs(
@@ -34897,12 +36758,32 @@ def run_clone_pipeline(
                 + final_dialogue_boundary_replacements
             )
 
-        profile = video_processor.probe_video(settings.reference_video)
-        width = int(profile["width"])
-        height = int(profile["height"])
-        fps = fps_to_float(profile["fps"])
-
         jobs = merge_matches(best_matches)
+        profile = video_processor.probe_video(settings.reference_video)
+        reference_width = int(profile["width"])
+        reference_height = int(profile["height"])
+        width, height, source_fps, frame_size_reason = choose_target_video_profile_from_source_jobs(
+            jobs,
+            video_processor,
+            reference_width,
+            reference_height,
+        )
+        reference_fps = fps_to_float(profile["fps"])
+        fps = source_fps if source_fps > 1.0 else reference_fps
+        if width != reference_width or height != reference_height:
+            log(
+                "  Output frame size: "
+                f"{width}x{height} from original source material ({frame_size_reason}); "
+                f"reference is {reference_width}x{reference_height}"
+            )
+        else:
+            log(f"  Output frame size: {width}x{height} ({frame_size_reason})")
+        if source_fps > 1.0 and abs(source_fps - reference_fps) > 0.01:
+            log(
+                "  Output frame rate: "
+                f"{source_fps:.2f}fps from original source material; "
+                f"reference is {reference_fps:.2f}fps"
+            )
         log(f"  Segment plan: {len(jobs)} merged segment(s) from {len(best_matches)} matched frame window(s)")
         random_episode_flip_overrides: Dict[str, bool] = {}
         if settings.enable_random_episode_flip:
@@ -35159,11 +37040,27 @@ def run_clone_pipeline(
             and log
         ):
             log("  Delivery subtitle timeline preserved: visual-primary grouping kept; rendered-audio ASR lock skipped")
-        timeline_output_entries = build_boundary_locked_delivery_subtitle_entries(
-            reference_timeline_entries,
-            rendered_entries,
-            fps=delivery_fps,
+        has_source_audio_entries = any(
+            entry.entry_type in {"dialogue", "original_subtitle"}
+            and normalize_subtitle_text(entry.text)
+            for entry in reference_timeline_entries
         )
+        used_rendered_delivery_timeline = False
+        if strict_audio_timing_mode and has_source_audio_entries and rendered_timeline_output_entries:
+            timeline_output_entries = list(rendered_timeline_output_entries)
+            used_rendered_delivery_timeline = True
+            if log:
+                log(
+                    "  Delivery SRT strict audio timeline: using rendered pause-aligned "
+                    "TTS/source entries; reference boundary lock skipped to avoid "
+                    "dialogue-window time overlaps"
+                )
+        else:
+            timeline_output_entries = build_boundary_locked_delivery_subtitle_entries(
+                reference_timeline_entries,
+                rendered_entries,
+                fps=delivery_fps,
+            )
         if not timeline_output_entries:
             timeline_output_entries = list(reference_output_entries or rendered_timeline_output_entries)
         if log and rendered_timeline_output_entries and len(timeline_output_entries) != len(rendered_timeline_output_entries):
@@ -35173,17 +37070,12 @@ def run_clone_pipeline(
                 f"rendered TTS timeline had {len(rendered_timeline_output_entries)} display entry(s)"
             )
         output_entries = list(timeline_output_entries)
-        if log and output_entries:
+        if log and output_entries and not used_rendered_delivery_timeline:
             log(
                 "  Delivery SRT boundary lock: final SRT keeps processed reference grouping; "
                 "display-only splitting is deferred to subtitle burn"
             )
         write_srt(final_srt_path, output_entries)
-        has_source_audio_entries = any(
-            entry.entry_type in {"dialogue", "original_subtitle"}
-            and normalize_subtitle_text(entry.text)
-            for entry in reference_timeline_entries
-        )
         if (
             reference_output_entries
             and timeline_output_entries
@@ -35318,6 +37210,7 @@ def run_clone_pipeline(
                 finalized_video_path,
                 settings.reference_video,
                 video_processor,
+                target_fps_override=fps,
             )
         )
         if reference_alignment_needed:
@@ -35332,6 +37225,7 @@ def run_clone_pipeline(
                 settings.reference_video,
                 video_processor,
                 reference_format=reference_format,
+                target_fps_override=fps,
                 log_func=log,
             )
             safe_unlink_file(finalized_video_path)

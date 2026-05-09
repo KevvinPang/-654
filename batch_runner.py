@@ -65,6 +65,7 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "azure_tts_key",
     "azure_tts_region",
     "azure_tts_voice",
+    "reference_visual_subtitle",
     "prefer_funasr_audio_subtitles",
     "disable_ai_subtitle_review",
     "disable_ai_narration_rewrite",
@@ -2466,7 +2467,7 @@ def build_visual_subtitle_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                 "extract_frequency": "auto",
                 "probe_extract_frequency": "auto",
                 "generate_txt": True,
-                "skip_existing": True,
+                "skip_existing": False,
             }
         ]
 
@@ -2580,6 +2581,14 @@ def find_matching_subtitle(
     return None
 
 
+def find_matching_visual_subtitle(
+    subtitle_paths: list[Path],
+    video_path: Path,
+    workspace_root: Path,
+) -> Path | None:
+    return find_matching_subtitle(subtitle_paths, set(), video_path, workspace_root)
+
+
 def render_auto_clip_title(task: dict[str, Any], workspace: WorkspaceContext, reference_video: Path, index: int, total: int) -> str:
     template = str(task.get("title") or "").strip()
     reference_stem = sanitize_stem(reference_video.stem)
@@ -2654,7 +2663,10 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
         reference_subtitles: list[Path] = []
         explicit_reference_subtitle = bool(task.get("reference_subtitle")) or bool(task.get("reference_subtitle_glob"))
         candidate_subtitle_glob = str(task.get("reference_subtitle_glob") or "").strip()
-        if not task.get("reference_subtitle") and candidate_subtitle_glob in {"", "subtitles/*.srt", "subtitles/audio/*.srt"}:
+        if not task.get("reference_subtitle") and (
+            candidate_subtitle_glob in {"", "subtitles/*.srt", "subtitles/audio/*.srt"}
+            or (prefer_funasr_audio_subtitles and candidate_subtitle_glob == "subtitles/visual/*.srt")
+        ):
             subtitle_output_dir = (
                 infer_first_subtitle_output_dir(workspace)
                 if prefer_funasr_audio_subtitles
@@ -2671,6 +2683,37 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
         if explicit_reference_subtitle and not reference_subtitles and not force_no_narration_mode:
             specs.append(TaskSpec("auto_clip", f"auto_clip#{index}", None, PROJECT_ROOT, "missing reference_subtitle"))
             continue
+
+        reference_visual_subtitles: list[Path] = []
+        explicit_reference_visual_subtitle = bool(task.get("reference_visual_subtitle")) or bool(
+            task.get("reference_visual_subtitle_glob")
+        )
+        if not force_no_narration_mode:
+            visual_subtitle_glob = str(task.get("reference_visual_subtitle_glob") or "").strip()
+            if not task.get("reference_visual_subtitle") and visual_subtitle_glob in {"", "subtitles/visual/*.srt"}:
+                visual_subtitle_output_dir = infer_first_visual_subtitle_output_dir(workspace)
+                if visual_subtitle_output_dir is not None:
+                    task["reference_visual_subtitle_glob"] = str(visual_subtitle_output_dir / "*.srt")
+            reference_visual_subtitles = resolve_workspace_inputs(
+                workspace.root,
+                task.get("reference_visual_subtitle"),
+                task.get("reference_visual_subtitle_glob"),
+            )
+            reference_visual_subtitles = filter_paths_by_suffix(
+                reference_visual_subtitles,
+                SUPPORTED_SUBTITLE_EXTENSIONS,
+            )
+            if explicit_reference_visual_subtitle and not reference_visual_subtitles:
+                specs.append(
+                    TaskSpec(
+                        "auto_clip",
+                        f"auto_clip#{index}",
+                        None,
+                        PROJECT_ROOT,
+                        "missing reference_visual_subtitle",
+                    )
+                )
+                continue
 
         raw_source_dir = str(task.get("source_dir") or "").strip()
         if raw_source_dir in {"", "downloads/baidu"}:
@@ -2725,6 +2768,13 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             }
             if reference_subtitle is not None:
                 job_payload["reference_subtitle"] = str(reference_subtitle)
+            reference_visual_subtitle = (
+                find_matching_visual_subtitle(reference_visual_subtitles, reference_video, workspace.root)
+                if reference_visual_subtitles
+                else None
+            )
+            if reference_visual_subtitle is not None:
+                job_payload["reference_visual_subtitle"] = str(reference_visual_subtitle)
             bgm_source_mode = normalize_bgm_source_mode(
                 setting_value(task, shared_settings, "bgm_source_mode", "auto")
             )
@@ -2763,6 +2813,11 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                     value = round(float(auto_bgm_volume_percent), 1)
                 elif key in {"cover_image_path", "bgm_audio_path"}:
                     value = str(resolve_workspace_path(workspace.root, str(value or "").strip(), "")) if str(value or "").strip() else ""
+                elif key == "reference_visual_subtitle":
+                    value = str(resolve_workspace_path(workspace.root, str(value or "").strip(), "")) if str(value or "").strip() else ""
+                    if value:
+                        job_payload[key] = value
+                    continue
                 job_payload[key] = value
             if bgm_source_mode not in {"none", "manual"} and auto_bgm_volume_percent is not None:
                 job_payload["bgm_volume_percent"] = round(float(auto_bgm_volume_percent), 1)
