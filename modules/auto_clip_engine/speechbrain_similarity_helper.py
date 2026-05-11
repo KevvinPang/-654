@@ -39,16 +39,24 @@ def _normalize_waveform(signal, sample_rate: int):
     return signal, sample_rate
 
 
-def _slice_segment(signal, sample_rate: int, start: float, end: float):
+def _slice_segment(
+    signal,
+    sample_rate: int,
+    start: float,
+    end: float,
+    *,
+    pad: float = 0.08,
+    desired_min: float = 0.45,
+    allow_context_extension: bool = True,
+):
     import torch
 
     total_samples = int(signal.shape[-1])
-    duration = max(0.0, float(end) - float(start))
-    pad = 0.08
-    desired_min = 0.45
+    pad = max(0.0, float(pad))
+    desired_min = max(0.05, float(desired_min))
     start = max(0.0, float(start) - pad)
     end = min(total_samples / float(sample_rate), float(end) + pad)
-    if end - start < desired_min:
+    if allow_context_extension and end - start < desired_min:
         center = (start + end) * 0.5
         half = desired_min * 0.5
         start = max(0.0, center - half)
@@ -64,10 +72,19 @@ def _slice_segment(signal, sample_rate: int, start: float, end: float):
     return clip
 
 
-def _encode_segment(recognizer, signal, sample_rate: int, start: float, end: float):
+def _encode_segment(recognizer, signal, sample_rate: int, start: float, end: float, item: Optional[Dict[str, object]] = None):
     import torch
 
-    clip = _slice_segment(signal, sample_rate, start, end)
+    item = item or {}
+    clip = _slice_segment(
+        signal,
+        sample_rate,
+        start,
+        end,
+        pad=float(item.get("pad_seconds", 0.08) or 0.0),
+        desired_min=float(item.get("min_duration", 0.45) or 0.45),
+        allow_context_extension=bool(item.get("allow_context_extension", True)),
+    )
     wav = clip.squeeze(0).unsqueeze(0)
     lengths = torch.tensor([1.0], dtype=torch.float32)
     embedding = recognizer.encode_batch(wav, lengths, normalize=False)
@@ -180,6 +197,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     sample_rate,
                     float(item.get("start", 0.0) or 0.0),
                     float(item.get("end", 0.0) or 0.0),
+                    item,
                 )
             except Exception:
                 continue
@@ -198,7 +216,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except (TypeError, ValueError):
             continue
         try:
-            vector = _encode_segment(recognizer, signal, sample_rate, start, end)
+            vector = _encode_segment(recognizer, signal, sample_rate, start, end, item)
         except Exception:
             continue
         output_entries.append(

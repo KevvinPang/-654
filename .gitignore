@@ -15,6 +15,7 @@ venv/
 
 logs/
 runtime/
+hub/
 @AutomationLog.txt
 
 modules/**/audio_cache/

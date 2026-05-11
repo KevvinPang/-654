@@ -52,7 +52,8 @@ LOG_LINE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[(
 TASK_SCHEMA_VERSION = 3
 TASK_SCHEMA_VERSION_KEY = "_control_center_task_version"
 UI_SESSION_HEARTBEAT_TIMEOUT_SECONDS = 15.0
-UI_SESSION_SHUTDOWN_GRACE_SECONDS = 60.0
+UI_SESSION_SHUTDOWN_GRACE_SECONDS = 3.0
+UI_SESSION_AUTOSTOP_ENV = "SERVER_AUTO_CLIP_STOP_ON_UI_DISCONNECT"
 
 DEFAULT_CONCURRENCY = {
     "baidu_share": 1,
@@ -211,6 +212,14 @@ def system_notice_message(reason: str, stopped_jobs: int = 0) -> str:
     if normalized:
         return normalized
     return f"后台任务已被停止，共 {stopped_jobs} 个。"
+
+
+def should_stop_jobs_when_ui_session_disconnects() -> bool:
+    """Closing the control-center window should stop its background Python process by default."""
+    raw_value = os.environ.get(UI_SESSION_AUTOSTOP_ENV)
+    if raw_value is None or not raw_value.strip():
+        return True
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def persist_system_notice(message: str, *, tone: str = "warning", reason: str = "") -> None:
@@ -656,9 +665,12 @@ def start_ui_session_watchdog(server: ThreadingHTTPServer) -> None:
     setattr(server, "_ui_session_watchdog_started", True)
 
     def worker() -> None:
+        autostop_enabled = should_stop_jobs_when_ui_session_disconnects()
         while not getattr(server, "_shutdown_requested", False):
-            time.sleep(2.0)
+            time.sleep(1.0)
             prune_expired_ui_sessions()
+            if not autostop_enabled:
+                continue
             with UI_SESSION_LOCK:
                 should_shutdown = (
                     UI_SESSION_EVER_CONNECTED
@@ -2802,6 +2814,9 @@ HTML_PAGE = """<!doctype html>
     let latestStatus = null;
     let currentLogJobId = "";
     let noticeTimer = null;
+    const UI_SESSION_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    let uiSessionHeartbeatTimer = null;
+    let uiSessionDisconnected = false;
 
     const DEFAULT_CONCURRENCY = {
       baidu_share: 1,
@@ -2876,6 +2891,50 @@ HTML_PAGE = """<!doctype html>
         throw new Error(data.error || response.statusText);
       }
       return data;
+    }
+
+    function uiSessionPayload() {
+      return JSON.stringify({ session_id: UI_SESSION_ID });
+    }
+
+    async function registerUiSession() {
+      if (uiSessionDisconnected) return;
+      try {
+        await api("/api/ui-session", {
+          method: "POST",
+          body: uiSessionPayload()
+        });
+      } catch (error) {
+        // The regular status refresh will surface server problems; heartbeat failures should stay quiet.
+      }
+    }
+
+    function disconnectUiSession() {
+      if (uiSessionDisconnected) return;
+      uiSessionDisconnected = true;
+      if (uiSessionHeartbeatTimer) {
+        window.clearInterval(uiSessionHeartbeatTimer);
+        uiSessionHeartbeatTimer = null;
+      }
+      const payload = uiSessionPayload();
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/ui-session/disconnect",
+          new Blob([payload], { type: "application/json" })
+        );
+        return;
+      }
+      fetch("/api/ui-session/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true
+      }).catch(() => {});
+    }
+
+    function startUiSessionHeartbeat() {
+      registerUiSession();
+      uiSessionHeartbeatTimer = window.setInterval(registerUiSession, 5000);
     }
 
     function normalizeTask(task, workspaceName = currentWorkspace || task?.workspace_name || "workspace") {
@@ -3465,6 +3524,10 @@ HTML_PAGE = """<!doctype html>
       }
     });
 
+    window.addEventListener("pagehide", disconnectUiSession);
+    window.addEventListener("beforeunload", disconnectUiSession);
+
+    startUiSessionHeartbeat();
     setInterval(() => { loadStatus().catch(() => {}); }, 4000);
     refreshAll().catch(error => showNotice(error.message, "error"));
   </script>

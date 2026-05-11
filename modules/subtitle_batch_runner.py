@@ -16,8 +16,12 @@ from typing import Any
 
 import cv2
 
-from subtitle_region_detector import detect_subtitle_region as detect_image_subtitle_region
-from subtitle_region_detector import save_detection_preview as save_image_detection_preview
+try:
+    from subtitle_region_detector import detect_subtitle_region as detect_image_subtitle_region
+    from subtitle_region_detector import save_detection_preview as save_image_detection_preview
+except ModuleNotFoundError:
+    from modules.subtitle_region_detector import detect_subtitle_region as detect_image_subtitle_region
+    from modules.subtitle_region_detector import save_detection_preview as save_image_detection_preview
 
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
@@ -102,6 +106,41 @@ class RawSubtitleBox:
 
     @property
     def center_y(self) -> float:
+        return (self.ymin + self.ymax) / 2.0
+
+
+@dataclass(frozen=True)
+class OcrTextLine:
+    text: str
+    ymin: int | None = None
+    ymax: int | None = None
+    xmin: int | None = None
+    xmax: int | None = None
+    canvas_width: int | None = None
+    canvas_height: int | None = None
+
+    @property
+    def width(self) -> int:
+        if self.xmin is None or self.xmax is None:
+            return 0
+        return max(0, self.xmax - self.xmin)
+
+    @property
+    def height(self) -> int:
+        if self.ymin is None or self.ymax is None:
+            return 0
+        return max(0, self.ymax - self.ymin)
+
+    @property
+    def center_x(self) -> float | None:
+        if self.xmin is None or self.xmax is None:
+            return None
+        return (self.xmin + self.xmax) / 2.0
+
+    @property
+    def center_y(self) -> float | None:
+        if self.ymin is None or self.ymax is None:
+            return None
         return (self.ymin + self.ymax) / 2.0
 
 
@@ -836,18 +875,99 @@ def subtitle_creator_watermark_like_text(text: str) -> bool:
     return False
 
 
-def subtitle_line_cluster_score(cluster: list[tuple[int | None, str]]) -> float:
-    text = "\n".join(line_text for _line_y, line_text in cluster if line_text)
+def coerce_ocr_text_line(line: OcrTextLine | tuple[int | None, str]) -> OcrTextLine:
+    if isinstance(line, OcrTextLine):
+        return line
+    line_y, line_text = line
+    return OcrTextLine(text=line_text, ymin=line_y, ymax=line_y)
+
+
+def ocr_line_sort_y(line: OcrTextLine) -> int:
+    if line.ymin is None:
+        return 10**9
+    return int(line.ymin)
+
+
+def ocr_line_geometry_score(line: OcrTextLine) -> float:
+    if line.center_x is None or line.center_y is None or not line.canvas_width or not line.canvas_height:
+        return 0.0
+    width_ratio = clamp(line.width / max(1.0, float(line.canvas_width)), 0.0, 1.0)
+    height_ratio = clamp(line.height / max(1.0, float(line.canvas_height)), 0.0, 1.0)
+    center_ratio = 1.0 - abs((line.center_x / max(1.0, float(line.canvas_width))) - 0.5) * 2.0
+    center_ratio = clamp(center_ratio, 0.0, 1.0)
+    lower_ratio = clamp(line.center_y / max(1.0, float(line.canvas_height)), 0.0, 1.0)
+    return width_ratio * 1.2 + center_ratio * 2.4 + height_ratio * 1.0 + lower_ratio * 0.8
+
+
+def ocr_line_matches_main_subtitle_geometry(line: OcrTextLine, anchor: OcrTextLine) -> bool:
+    if line is anchor:
+        return True
+    if (
+        line.center_x is None
+        or line.center_y is None
+        or anchor.center_x is None
+        or anchor.center_y is None
+        or not line.canvas_width
+        or not line.canvas_height
+        or not anchor.canvas_width
+        or not anchor.canvas_height
+    ):
+        return True
+
+    canvas_width = max(1.0, float(line.canvas_width))
+    canvas_height = max(1.0, float(line.canvas_height))
+    line_center_ratio = line.center_x / canvas_width
+    anchor_center_ratio = anchor.center_x / max(1.0, float(anchor.canvas_width))
+    center_delta = abs(line_center_ratio - anchor_center_ratio)
+    width_ratio = line.width / canvas_width
+    anchor_width = max(1, anchor.width)
+    height_ratio = line.height / max(1, anchor.height)
+    vertical_delta = abs(line.center_y - anchor.center_y)
+
+    if height_ratio < 0.46 or height_ratio > 2.35:
+        return False
+    if width_ratio < 0.16 and center_delta > 0.20:
+        return False
+    if line.width < anchor_width * 0.35 and center_delta > 0.24:
+        return False
+    if center_delta > 0.42 and line.width < anchor_width * 0.70:
+        return False
+    if vertical_delta > max(anchor.height * 3.2, canvas_height * 0.42) and line.width < anchor_width * 0.72:
+        return False
+    if line.center_y < anchor.center_y - max(anchor.height * 2.2, canvas_height * 0.30) and line.width < anchor_width * 0.65:
+        return False
+    return True
+
+
+def filter_lines_by_main_subtitle_geometry(lines: list[OcrTextLine]) -> list[OcrTextLine]:
+    if len(lines) < 2:
+        return lines
+    measurable = [
+        line
+        for line in lines
+        if line.width > 0 and line.height > 0 and line.center_x is not None and line.center_y is not None
+    ]
+    if len(measurable) < 2:
+        return lines
+    anchor = max(measurable, key=ocr_line_geometry_score)
+    kept = [line for line in lines if ocr_line_matches_main_subtitle_geometry(line, anchor)]
+    return kept or lines
+
+
+def subtitle_line_cluster_score(cluster: list[OcrTextLine]) -> float:
+    text = "\n".join(line.text for line in cluster if line.text)
     if not text:
         return -999.0
     score = subtitle_text_quality_score(text)
     normalized = normalize_subtitle_text(text)
     chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
-    y_values = [float(line_y) for line_y, _line_text in cluster if line_y is not None]
+    y_values = [float(line.center_y) for line in cluster if line.center_y is not None]
     if y_values:
-        # Moving creator marks often drift above the main subtitle. Prefer the
-        # lower, stable subtitle row when text quality is otherwise comparable.
+        # Geometry is the primary signal here; text keywords are only a fallback.
         score += min(max(sum(y_values) / len(y_values), 0.0), 320.0) * 0.035
+    geometry_scores = [ocr_line_geometry_score(line) for line in cluster]
+    if geometry_scores:
+        score += sum(geometry_scores) / len(geometry_scores) * 4.0
     if len(normalized) <= 4 and len(cluster) == 1:
         score -= 3.0
     if chinese_chars <= 2:
@@ -857,28 +977,31 @@ def subtitle_line_cluster_score(cluster: list[tuple[int | None, str]]) -> float:
     return score
 
 
-def select_preferred_subtitle_text(lines: list[tuple[int | None, str]]) -> str:
+def select_preferred_subtitle_text(lines: list[OcrTextLine | tuple[int | None, str]]) -> str:
     if not lines:
         return ""
-    ranked = sorted(lines, key=lambda item: (item[0] is None, item[0] if item[0] is not None else 10**9))
-    filtered = [(y, text) for y, text in ranked if not subtitle_noise_like_text(text)]
+    ranked = sorted((coerce_ocr_text_line(line) for line in lines), key=ocr_line_sort_y)
+    geometry_filtered = filter_lines_by_main_subtitle_geometry(ranked)
+    non_noise = [line for line in geometry_filtered if not subtitle_noise_like_text(line.text)]
+    filtered = non_noise or geometry_filtered
     if not filtered:
         return ""
 
-    clusters: list[list[tuple[int | None, str]]] = []
-    current_cluster: list[tuple[int | None, str]] = []
+    clusters: list[list[OcrTextLine]] = []
+    current_cluster: list[OcrTextLine] = []
     previous_y: int | None = None
-    for line_y, line_text in filtered:
+    for line in filtered:
+        line_y = line.ymin
         if not current_cluster:
-            current_cluster.append((line_y, line_text))
+            current_cluster.append(line)
             previous_y = line_y
             continue
         if previous_y is None or line_y is None or line_y - previous_y <= SUBTITLE_LINE_JOIN_GAP:
-            current_cluster.append((line_y, line_text))
+            current_cluster.append(line)
             previous_y = line_y
             continue
         clusters.append(current_cluster)
-        current_cluster = [(line_y, line_text)]
+        current_cluster = [line]
         previous_y = line_y
     if current_cluster:
         clusters.append(current_cluster)
@@ -888,13 +1011,13 @@ def select_preferred_subtitle_text(lines: list[tuple[int | None, str]]) -> str:
     content_clusters = [
         cluster
         for cluster in clusters
-        if not subtitle_creator_watermark_like_text("\n".join(piece for _line_y, piece in cluster if piece))
+        if not subtitle_creator_watermark_like_text("\n".join(line.text for line in cluster if line.text))
     ]
     if not content_clusters:
-        return ""
+        content_clusters = clusters
 
     best_cluster = max(content_clusters, key=subtitle_line_cluster_score)
-    return "\n".join(piece for _line_y, piece in best_cluster if piece)
+    return "\n".join(line.text for line in best_cluster if line.text)
 
 
 def subtitles_are_similar(left: str, right: str) -> bool:
@@ -1082,43 +1205,98 @@ def build_frame_fingerprint(frame, area):
     return cv2.resize(binary, (96, 32), interpolation=cv2.INTER_AREA)
 
 
-def build_frame_text(dt_box, rec_res) -> str:
+def normalize_rapidocr_box(points: Any) -> tuple[int, int, int, int] | None:
+    xs: list[int] = []
+    ys: list[int] = []
+    for point in points if isinstance(points, list) else []:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            xs.append(int(round(float(point[0]))))
+            ys.append(int(round(float(point[1]))))
+        except (TypeError, ValueError):
+            continue
+    if not xs or not ys:
+        return None
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def append_ocr_text_line(
+    lines: list[OcrTextLine],
+    parts: list[tuple[str, tuple[int, int, int, int] | None]],
+    *,
+    canvas_width: int,
+    canvas_height: int,
+) -> None:
+    text = "".join(piece for piece, _box in parts).strip()
+    if not text:
+        return
+    boxes = [box for _piece, box in parts if box is not None]
+    if not boxes:
+        lines.append(OcrTextLine(text=text, canvas_width=canvas_width, canvas_height=canvas_height))
+        return
+    xmins = [box[0] for box in boxes]
+    xmaxs = [box[1] for box in boxes]
+    ymins = [box[2] for box in boxes]
+    ymaxs = [box[3] for box in boxes]
+    lines.append(
+        OcrTextLine(
+            text=text,
+            xmin=min(xmins),
+            xmax=max(xmaxs),
+            ymin=min(ymins),
+            ymax=max(ymaxs),
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
+        )
+    )
+
+
+def ocr_parts_same_visual_line(
+    current_parts: list[tuple[str, tuple[int, int, int, int] | None]],
+    new_box: tuple[int, int, int, int] | None,
+) -> bool:
+    if not current_parts:
+        return True
+    current_boxes = [box for _piece, box in current_parts if box is not None]
+    if not current_boxes or new_box is None:
+        return True
+    current_y = statistics.median((box[2] + box[3]) / 2.0 for box in current_boxes)
+    current_height = statistics.median(max(1, box[3] - box[2]) for box in current_boxes)
+    new_y = (new_box[2] + new_box[3]) / 2.0
+    new_height = max(1, new_box[3] - new_box[2])
+    return abs(new_y - current_y) <= max(24.0, current_height * 0.80, new_height * 0.80)
+
+
+def build_frame_text(dt_box, rec_res, canvas_width: int, canvas_height: int) -> str:
     if not rec_res:
         return ""
     coordinate_list = GetCoordinatesFn(dt_box) if GetCoordinatesFn is not None else []
-    lines: list[tuple[int | None, str]] = []
-    current_parts: list[str] = []
-    current_y: int | None = None
+    lines: list[OcrTextLine] = []
+    current_parts: list[tuple[str, tuple[int, int, int, int] | None]] = []
     for index, (text, _score) in enumerate(rec_res):
         cleaned = clean_subtitle_text(text)
         if not cleaned:
             continue
-        ymin = None
+        box = None
         if index < len(coordinate_list):
-            ymin = int(coordinate_list[index][2])
-        if current_y is None or ymin is None or abs(ymin - current_y) <= 24:
-            current_parts.append(cleaned)
-            if current_y is None and ymin is not None:
-                current_y = ymin
+            coordinate = coordinate_list[index]
+            box = (int(coordinate[0]), int(coordinate[1]), int(coordinate[2]), int(coordinate[3]))
+        if ocr_parts_same_visual_line(current_parts, box):
+            current_parts.append((cleaned, box))
             continue
-        line_text = "".join(current_parts).strip()
-        if line_text:
-            lines.append((current_y, line_text))
-        current_parts = [cleaned]
-        current_y = ymin
+        append_ocr_text_line(lines, current_parts, canvas_width=canvas_width, canvas_height=canvas_height)
+        current_parts = [(cleaned, box)]
     if current_parts:
-        line_text = "".join(current_parts).strip()
-        if line_text:
-            lines.append((current_y, line_text))
+        append_ocr_text_line(lines, current_parts, canvas_width=canvas_width, canvas_height=canvas_height)
     return select_preferred_subtitle_text(lines)
 
 
-def build_rapidocr_text(result) -> str:
+def build_rapidocr_text(result, canvas_width: int, canvas_height: int) -> str:
     if not result:
         return ""
-    lines: list[tuple[int | None, str]] = []
-    current_parts: list[str] = []
-    current_y: int | None = None
+    lines: list[OcrTextLine] = []
+    current_parts: list[tuple[str, tuple[int, int, int, int] | None]] = []
     for item in result:
         if len(item) < 2:
             continue
@@ -1126,23 +1304,14 @@ def build_rapidocr_text(result) -> str:
         cleaned = clean_subtitle_text(text)
         if not cleaned:
             continue
-        ymin = None
-        if box:
-            ymin = int(min(point[1] for point in box))
-        if current_y is None or ymin is None or abs(ymin - current_y) <= 24:
-            current_parts.append(cleaned)
-            if current_y is None and ymin is not None:
-                current_y = ymin
+        normalized_box = normalize_rapidocr_box(box)
+        if ocr_parts_same_visual_line(current_parts, normalized_box):
+            current_parts.append((cleaned, normalized_box))
             continue
-        line_text = "".join(current_parts).strip()
-        if line_text:
-            lines.append((current_y, line_text))
-        current_parts = [cleaned]
-        current_y = ymin
+        append_ocr_text_line(lines, current_parts, canvas_width=canvas_width, canvas_height=canvas_height)
+        current_parts = [(cleaned, normalized_box)]
     if current_parts:
-        line_text = "".join(current_parts).strip()
-        if line_text:
-            lines.append((current_y, line_text))
+        append_ocr_text_line(lines, current_parts, canvas_width=canvas_width, canvas_height=canvas_height)
     return select_preferred_subtitle_text(lines)
 
 
@@ -1154,7 +1323,7 @@ def extract_frame_subtitle_text_with_rapidocr(ocr, frame, area) -> str:
         candidates = [candidates[-1], *candidates[:-1]]
     for candidate_index, candidate in enumerate(candidates):
         result, _ = ocr(candidate, use_cls=False)
-        text = build_rapidocr_text(result)
+        text = build_rapidocr_text(result, int(candidate.shape[1]), int(candidate.shape[0]))
         if not text:
             continue
         score = subtitle_text_quality_score(text)
@@ -1173,7 +1342,7 @@ def extract_frame_subtitle_text(ocr, frame, area) -> str:
     best_score = -999.0
     for candidate in build_ocr_candidates(frame, area):
         dt_box, rec_res = ocr.predict(candidate)
-        text = build_frame_text(dt_box, rec_res)
+        text = build_frame_text(dt_box, rec_res, int(candidate.shape[1]), int(candidate.shape[0]))
         if not text:
             continue
         score = subtitle_text_quality_score(text)
