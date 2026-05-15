@@ -37,6 +37,20 @@ def write_sine_wav(path, intervals, duration=2.6, sample_rate=16000):
         handle.writeframes(bytes(frames))
 
 
+def sine_samples(intervals, duration=2.6, sample_rate=16000):
+    if not core.NUMPY_AVAILABLE:
+        return None, sample_rate
+    import numpy as np
+
+    total_samples = int(duration * sample_rate)
+    samples = np.zeros(total_samples, dtype=np.float32)
+    for sample_index in range(total_samples):
+        time_value = sample_index / sample_rate
+        if any(start <= time_value <= end for start, end in intervals):
+            samples[sample_index] = 0.42 * math.sin(2.0 * math.pi * 180.0 * time_value)
+    return samples, sample_rate
+
+
 class DummyAINarrationGenerator:
     def review_subtitle_ocr(self, entries, log_func=None):
         return {}
@@ -213,6 +227,153 @@ class SubtitleTextRepairRegressionTests(unittest.TestCase):
             core.subtitle_mask_dynamic_hold_frames(120.0),
             core.SUBTITLE_MASK_DYNAMIC_MAX_HOLD_FRAMES,
         )
+
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for mask alpha tests")
+    def test_fixed_subtitle_band_fades_out_at_vertical_edges(self):
+        alpha = core.build_fixed_subtitle_band_alpha(100, 20)
+
+        self.assertIsNotNone(alpha)
+        self.assertLess(float(alpha[0, 10]), 0.02)
+        self.assertLess(float(alpha[-1, 10]), 0.02)
+        self.assertGreater(float(alpha[50, 10]), 0.55)
+        self.assertGreater(float(alpha[25, 10]), float(alpha[5, 10]))
+        self.assertGreater(float(alpha[50, 10]), float(alpha[10, 10]))
+
+    def test_subtitle_mask_cover_region_stays_tight_and_anchors_burn(self):
+        detected = core.VideoMaskRegion(165, 1228, 729, 516, 0.41, "auto")
+        cover = core.expand_subtitle_mask_cover_region(detected, 1080, 1920)
+        layout = core.build_subtitle_burn_layout(1080, 1920, cover)
+        subtitle_baseline_y = 1920 - int(layout["margin_v"])
+
+        self.assertEqual(cover.x, 0)
+        self.assertEqual(cover.width, 1080)
+        self.assertLessEqual(cover.height, int(round(1920 * core.SUBTITLE_MASK_COVER_MAX_HEIGHT_RATIO)) + 2)
+        self.assertGreaterEqual(subtitle_baseline_y, cover.y)
+        self.assertLessEqual(subtitle_baseline_y, cover.y + cover.height)
+
+        detected_anchor = core.VideoMaskRegion(
+            165,
+            1228,
+            729,
+            96,
+            0.41,
+            "auto",
+            anchor_x=165,
+            anchor_y=1228,
+            anchor_width=729,
+            anchor_height=96,
+        )
+        cover_with_anchor = core.expand_subtitle_mask_cover_region(detected_anchor, 1080, 1920)
+        anchored_layout = core.build_subtitle_burn_layout(1080, 1920, cover_with_anchor)
+        anchored_baseline_y = 1920 - int(anchored_layout["margin_v"])
+        self.assertGreaterEqual(anchored_baseline_y, 1228)
+        self.assertLessEqual(anchored_baseline_y, 1228 + 96 + anchored_layout["font_size"])
+
+    def test_subtitle_mask_intervals_merge_visual_and_audio_events(self):
+        audio_entry = entry(1, 1.00, 1.50, "\u4ed6\u521a\u8d70\u4e0b\u5a5a\u8f66", "narration")
+        visual_entry = entry(2, 1.56, 1.90, "\u4ed6\u521a\u8d70\u4e0b\u5a5a\u8f66", "narration")
+
+        intervals = core.build_subtitle_mask_intervals(
+            [audio_entry],
+            [visual_entry],
+            total_duration=3.0,
+        )
+
+        self.assertEqual(len(intervals), 1)
+        self.assertLessEqual(intervals[0][0], 0.95)
+        self.assertGreaterEqual(intervals[0][1], 2.05)
+        self.assertTrue(core.time_in_subtitle_mask_intervals(1.70, intervals))
+        self.assertFalse(core.time_in_subtitle_mask_intervals(2.50, intervals))
+
+    def test_narrator_only_near_reject_similarity_stays_narration_gray(self):
+        espnet_item = {
+            "speaker_engine": "espnet_wavlm",
+            "narration_similarity": 0.558,
+            "dialogue_similarity": 0.0,
+            "entry_duration": 1.56,
+            "has_context_window": 1.0,
+        }
+        unispeech_item = {
+            "speaker_engine": "unispeech_sat_large_sv",
+            "narration_similarity": 0.768,
+            "dialogue_similarity": 0.0,
+            "entry_duration": 1.56,
+            "has_context_window": 1.0,
+        }
+
+        self.assertEqual(core.espnet_wavlm_similarity_label(espnet_item), "")
+        self.assertEqual(core.unispeech_sat_similarity_label(unispeech_item), "")
+        self.assertEqual(core.speaker_gray_fallback_override_from_item(espnet_item)["type"], "narration")
+        self.assertEqual(core.speaker_gray_fallback_override_from_item(unispeech_item)["type"], "narration")
+
+    def test_narrator_only_hard_reject_still_marks_dialogue(self):
+        espnet_item = {
+            "speaker_engine": "espnet_wavlm",
+            "narration_similarity": 0.31,
+            "dialogue_similarity": 0.0,
+            "entry_duration": 1.20,
+            "has_context_window": 1.0,
+        }
+        unispeech_item = {
+            "speaker_engine": "unispeech_sat_large_sv",
+            "narration_similarity": 0.60,
+            "dialogue_similarity": 0.0,
+            "entry_duration": 1.20,
+            "has_context_window": 1.0,
+        }
+
+        self.assertEqual(core.espnet_wavlm_similarity_label(espnet_item), "dialogue")
+        self.assertEqual(core.unispeech_sat_similarity_label(unispeech_item), "dialogue")
+
+    def test_visual_delivery_split_rejects_word_internal_boundary(self):
+        source = entry(
+            1,
+            0.0,
+            2.8,
+            "\u53ea\u56e0\u6821\u957f\u589e\u52a0\u4e86\u4e00\u6761\u65b0\u89c4"
+            "\u5c31\u662f\u6bcf\u6350\u6b3e\u4e94\u767e\u4e07\u53ef\u4ee5\u7ed9\u5b69\u5b50\u52a0\u5341\u5206",
+        )
+        visual = [
+            entry(
+                1,
+                0.0,
+                1.4,
+                "\u53ea\u56e0\u6821\u957f\u589e\u52a0\u4e86\u4e00\u6761\u65b0\u89c4"
+                "\u5c31\u662f\u6bcf\u6350\u6b3e\u4e94\u767e\u4e07\u53ef",
+            ),
+            entry(2, 1.4, 2.8, "\u4ee5\u7ed9\u5b69\u5b50\u52a0\u5341\u5206"),
+        ]
+
+        split_entries, split_count = core.split_long_delivery_entries_by_visual_subtitles(
+            [source],
+            visual,
+            fps=50.0,
+            max_units=18,
+        )
+
+        self.assertGreaterEqual(split_count, 1)
+        self.assertEqual("".join(item.text for item in split_entries), source.text)
+        for left, right in zip(split_entries, split_entries[1:]):
+            self.assertFalse(left.text.endswith("\u53ef") and right.text.startswith("\u4ee5"))
+            self.assertFalse(core.split_crosses_display_protected_word(left.text, right.text))
+
+    def test_visual_delivery_split_rejects_duplicate_boundary_character(self):
+        source = entry(1, 0.0, 2.2, "\u521a\u597d\u8d85\u8fc7\u4e86\u5973\u513f\u6210\u4e3a\u4e86\u7b2c\u4e00\u540d")
+        visual = [
+            entry(1, 0.0, 1.1, "\u521a\u597d\u8d85\u8fc7\u4e86\u5973\u513f\u6210"),
+            entry(2, 1.1, 2.2, "\u6210\u4e3a\u4e86\u7b2c\u4e00\u540d"),
+        ]
+
+        split_entries, _ = core.split_long_delivery_entries_by_visual_subtitles(
+            [source],
+            visual,
+            fps=50.0,
+            max_units=12,
+        )
+
+        self.assertEqual("".join(item.text for item in split_entries), source.text)
+        for left, right in zip(split_entries, split_entries[1:]):
+            self.assertFalse(left.text.endswith("\u6210") and right.text.startswith("\u6210"))
 
     def test_audio_sentence_info_is_repaired_from_qwen_master_text(self):
         parsed = {
@@ -649,6 +810,22 @@ class SubtitleTextRepairRegressionTests(unittest.TestCase):
         rendered = [entry(1, 0.0, 2.0, "得救一番交谈")]
         delivered = core.build_boundary_locked_delivery_subtitle_entries(reference, rendered, fps=30)
         self.assertEqual([item.text for item in delivered], ["得救", "一番交谈"])
+
+    def test_visual_display_split_does_not_touch_short_audio_pause_group(self):
+        audio_group = [entry(1, 0.0, 1.5, "shortline")]
+        visual = [
+            entry(1, 0.0, 0.7, "short"),
+            entry(2, 0.8, 1.5, "line"),
+        ]
+
+        delivered, split_count = core.split_long_delivery_entries_by_visual_subtitles(
+            audio_group,
+            visual,
+            fps=30,
+        )
+
+        self.assertEqual(split_count, 0)
+        self.assertEqual([item.text for item in delivered], ["shortline"])
 
     def test_display_delivery_does_not_split_short_sentence(self):
         delivered = core.build_display_delivery_subtitle_entries([entry(1, 0.0, 1.2, "男人刚刚下车")])
@@ -1582,6 +1759,56 @@ class DualSrtFusionStressTests(unittest.TestCase):
 
         self.assertIn("\u6ca1\u60f3\u5230\u7ba1\u5bb6\u51b2\u4e86\u8fdb\u6765", [item.text for item in bundle.all_entries])
 
+    def test_visual_missing_short_dialogue_can_be_restored_with_speaker_type(self):
+        visual = [
+            entry(1, 0.0, 1.1, "\u7537\u4eba\u521a\u5230\u95e8\u53e3"),
+            entry(2, 1.6, 2.8, "\u5973\u4eba\u8f6c\u8eab\u79bb\u5f00"),
+        ]
+        audio = [
+            entry(1, 0.0, 0.9, "\u7537\u4eba\u521a\u5230\u95e8\u53e3"),
+            entry(2, 0.95, 1.35, "\u6162\u7740"),
+            entry(3, 1.6, 2.8, "\u5973\u4eba\u8f6c\u8eab\u79bb\u5f00"),
+        ]
+        settings = core.CloneSettings(
+            reference_video=Path("reference.mp4"),
+            source_dir=Path("."),
+            output_dir=Path("."),
+            subtitle_entries=audio,
+            visual_subtitle_entries=visual,
+            prefer_funasr_audio_subtitles=True,
+            disable_ai_subtitle_review=True,
+            disable_ai_narration_rewrite=True,
+            prefer_funasr_sentence_pauses=True,
+        )
+        original_build_overrides = core.build_audio_classification_overrides
+        original_run_funasr = core.run_funasr_reference_transcription
+        try:
+            core.run_funasr_reference_transcription = lambda *args, **kwargs: []
+            core.build_audio_classification_overrides = lambda processed_entries, *args, **kwargs: {
+                item.index: {
+                    "type": "dialogue",
+                    "confidence": 0.74,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+                for item in processed_entries
+                if item.text == "\u6162\u7740"
+            }
+            bundle = core.build_processed_subtitles(
+                audio,
+                "",
+                DummyAINarrationGenerator(),
+                reference_video=Path("reference.mp4"),
+                video_processor=object(),
+                settings=settings,
+            )
+        finally:
+            core.build_audio_classification_overrides = original_build_overrides
+            core.run_funasr_reference_transcription = original_run_funasr
+
+        restored = [item for item in bundle.all_entries if item.text == "\u6162\u7740"]
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0].entry_type, "dialogue")
+
     def test_audio_primary_keeps_audio_sentence_when_visual_missing_whole_sentence(self):
         visual = [
             entry(1, 0.0, 1.1, "\u7537\u4eba\u521a\u5230\u95e8\u53e3"),
@@ -1970,6 +2197,37 @@ class DualSrtFusionStressTests(unittest.TestCase):
         self.assertEqual([[item.index for item in group] for group in groups], [[1]])
         self.assertEqual(join_map, {})
 
+    def test_long_delivery_display_falls_back_when_visual_text_is_not_exact(self):
+        entries = [
+            entry(
+                1,
+                57.38,
+                68.10,
+                "甚至还告诉公婆和丈夫，既然自己进了这个家，以后谁都别再想欺负咱们。可她话音刚落，王虎就带着人冲进了家里。这家伙声称这大婚之日没人闹喜怎么能行？说着还想对秀莲动手动脚",
+            )
+        ]
+        visual = [
+            entry(1, 57.40, 58.80, "甚至还告诉公婆和丈夫"),
+            entry(2, 58.80, 60.20, "既然自己进了这个家"),
+            entry(3, 60.20, 61.60, "以后谁都别再想欺负咱们"),
+            entry(4, 61.60, 62.40, "可他话音刚落"),
+            entry(5, 62.40, 64.00, "王虎就带着人冲进了家里"),
+            entry(6, 64.00, 65.40, "这家伙声称这大婚之日"),
+            entry(7, 65.40, 66.40, "没人闹戏怎么能行"),
+            entry(8, 66.40, 68.40, "说着还想对秀莲动手动脚"),
+        ]
+
+        delivered, split_count = core.split_long_delivery_entries_by_visual_subtitles(
+            entries,
+            visual,
+            fps=50,
+        )
+
+        self.assertGreaterEqual(split_count, 1)
+        self.assertGreater(len(delivered), 1)
+        self.assertTrue(all(core.subtitle_display_units(item.text) <= core.MAX_SUBTITLE_CHARS + 4 for item in delivered))
+        self.assertEqual("".join(item.text for item in delivered), entries[0].text)
+
     def test_reported_narration_tail_is_not_split_as_dialogue_without_direct_evidence(self):
         source = entry(1, 4.04, 6.08, "\u6c11\u8bae\u8bba\u7eb7\u7eb7\uff0c\u90fd\u8bf4\u6751\u957f\u4e00\u5bb6\u6d3b\u8be5\u88ab\u5835")
 
@@ -1983,8 +2241,8 @@ class DualSrtFusionStressTests(unittest.TestCase):
             override_meta={
                 1: {
                     "type": "narration",
-                    "confidence": 0.72,
-                    "source": "audio_speaker_voice_lock",
+                    "confidence": 0.80,
+                    "source": "audio_speaker_espnet_wavlm",
                 }
             },
         )
@@ -2005,6 +2263,30 @@ class DualSrtFusionStressTests(unittest.TestCase):
         self.assertEqual([item.entry_type for item in pre_audio_entries], ["narration", "dialogue"])
         self.assertEqual(post_audio_count, 0)
         self.assertEqual(post_audio_entries, [source])
+
+    def test_mixed_dialogue_head_is_split_before_speaker_review(self):
+        source = entry(
+            1,
+            98.08,
+            105.04,
+            "\u5417\uff1f\u7136\u800c\u8fd8\u6ca1\u7b49\u4ed6\u8fc7\u53bb\uff0c\u79c0\u83b2\u53c8\u62ff\u51fa\u4e00\u628a\u5200",
+            "dialogue",
+        )
+
+        split_entries, split_count = core.split_mixed_reported_speech_entries([source])
+
+        self.assertEqual(split_count, 1)
+        self.assertEqual([item.entry_type for item in split_entries], ["dialogue", "narration"])
+        self.assertEqual(split_entries[0].text, "\u5417")
+        self.assertTrue(split_entries[1].text.startswith("\u7136\u800c\u8fd8\u6ca1\u7b49\u4ed6\u8fc7\u53bb"))
+
+    def test_mixed_dialogue_head_requires_narration_transition(self):
+        source = entry(1, 10.0, 12.0, "\u662f\u5417\uff1f\u4f60\u8fd8\u6562\u8fd9\u6837\u8ddf\u6211\u8bf4\u8bdd", "dialogue")
+
+        split_entries, split_count = core.split_mixed_reported_speech_entries([source])
+
+        self.assertEqual(split_count, 0)
+        self.assertEqual(split_entries, [source])
 
     def test_short_speaker_verification_window_is_expanded(self):
         source = entry(1, 10.00, 10.26, "\u6162\u7740", "dialogue")
@@ -2224,8 +2506,8 @@ class CleanAudioTailRegressionTests(unittest.TestCase):
         repaired = self.run_tail_retime(
             [(0.82, 1.46)],
             override_meta={
-                1: {"type": "dialogue", "confidence": 0.82, "source": "audio_speaker_voice_dialogue_lock"},
-                2: {"type": "narration", "confidence": 0.82, "source": "audio_speaker_voice_lock"},
+                1: {"type": "dialogue", "confidence": 0.82, "source": "audio_speaker_espnet_wavlm"},
+                2: {"type": "narration", "confidence": 0.82, "source": "audio_speaker_unispeech_sat"},
             },
         )
         self.assertAlmostEqual(repaired[0].end, 1.00, places=2)
@@ -2255,17 +2537,33 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
                 cluster_id=2,
                 narrator_cluster_id=0,
                 has_narrator_seed=False,
-                family_similarity=0.96,
-                cluster_to_narrator_similarity=0.96,
-                cluster_score=9.4,
+                family_similarity=0.982,
+                cluster_to_narrator_similarity=0.982,
+                cluster_score=9.8,
                 best_cluster_score=10.0,
-                narration_advantage=0.22,
+                narration_advantage=0.42,
                 ai_dialogue_density=0.0,
                 ai_narration_density=0.0,
             )
         )
 
-    def test_non_narrator_voice_override_survives_local_stabilization(self):
+    def test_no_seed_narrator_family_rejects_merely_close_character_voice(self):
+        self.assertFalse(
+            core.audio_cluster_belongs_to_narrator_family(
+                cluster_id=2,
+                narrator_cluster_id=0,
+                has_narrator_seed=False,
+                family_similarity=0.95,
+                cluster_to_narrator_similarity=0.95,
+                cluster_score=9.6,
+                best_cluster_score=10.0,
+                narration_advantage=0.30,
+                ai_dialogue_density=0.0,
+                ai_narration_density=0.0,
+            )
+        )
+
+    def test_model_dialogue_override_survives_local_stabilization(self):
         entries = [
             entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u8d70\u5230\u95e8\u53e3", "narration"),
             entry(2, 1.00, 1.70, "\u6162\u7740", "narration"),
@@ -2277,70 +2575,266 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             {
                 2: {
                     "type": "dialogue",
-                    "confidence": 0.66,
-                    "source": "audio_speaker_non_narrator_voice",
+                    "confidence": 0.76,
+                    "source": "audio_speaker_espnet_wavlm",
                 }
             },
         )
 
         self.assertEqual(repaired[1].entry_type, "dialogue")
 
-    def test_non_narrator_voice_confidence_forces_dialogue_without_text_guards(self):
-        confidence = core.non_narrator_voice_dialogue_confidence(
-            dominant_cluster_id=2,
-            dominant_cluster_in_narrator_family=False,
-            dominant_ratio=0.52,
-            narrator_ratio=0.34,
-            effective_narrator_similarity=0.86,
-            entry_duration=0.46,
-            narrator_voice_guard=False,
-            voice_locked_narration=False,
-            speechbrain_narration_similarity=0.58,
-            speechbrain_narration_gap=-0.03,
-            speechbrain_dialogue_gap=0.03,
+    def test_speaker_verification_expands_short_narration_fragments(self):
+        entries = [
+            entry(13, 23.84, 24.60, "\u6bd5\u7adf\u6751\u957f\u513f\u5b50\u591a", "narration"),
+            entry(14, 24.68, 25.08, "\u800c\u4e14", "narration"),
+            entry(15, 25.16, 25.48, "\u90fd\u662f\u6df7", "narration"),
+            entry(16, 25.56, 26.56, "\u5728\u6751\u91cc\u65e0\u4eba\u6562\u60f9", "narration"),
+            entry(17, 26.80, 28.64, "\u738b\u864e\u8ba9\u5c0f\u5f1f\u4eec\u62e6\u4f4f\u674e\u53d4\u8ddf\u548c\u4ed6\u7239", "narration"),
+            entry(18, 28.80, 29.40, "\u4ed6\u8d70\u5230\u5a5a\u8f66", "narration"),
+            entry(19, 29.48, 29.96, "\u65c1\u8fd8\u60f3", "narration"),
+            entry(20, 30.04, 30.88, "\u8d5a\u65b0\u5ab3\u5987\u7684\u4fbf\u5b9c", "narration"),
+        ]
+
+        context = core.build_speaker_verification_context_window_map(entries)
+
+        self.assertEqual(context[14], (23.84, 25.08))
+        self.assertEqual(context[15], (25.16, 26.56))
+        self.assertEqual(context[18], (28.80, 29.96))
+
+    def test_speaker_verification_context_does_not_cross_dialogue_boundary(self):
+        entries = [
+            entry(1, 0.00, 0.80, "\u7537\u4eba\u8d76\u5230\u95e8\u53e3", "narration"),
+            entry(2, 0.88, 1.24, "\u6162\u7740", "dialogue"),
+            entry(3, 1.32, 2.10, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+
+        context = core.build_speaker_verification_context_window_map(entries)
+
+        self.assertNotIn(2, context)
+
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for audio pause grouping")
+    def test_speaker_verification_context_uses_real_audio_pause_groups(self):
+        entries = [
+            entry(13, 23.84, 24.60, "\u6bd5\u7adf\u6751\u957f\u513f\u5b50\u591a", "narration"),
+            entry(14, 24.68, 25.08, "\u800c\u4e14", "narration"),
+            entry(15, 25.16, 25.48, "\u90fd\u662f\u6df7", "narration"),
+            entry(16, 25.56, 26.56, "\u5728\u6751\u91cc\u65e0\u4eba\u6562\u60f9", "narration"),
+        ]
+        samples, sample_rate = sine_samples([(23.84, 26.56)], duration=27.0)
+
+        context = core.build_speaker_verification_context_window_map(entries, samples, sample_rate)
+
+        self.assertEqual(context[14], (23.84, 26.56))
+        self.assertEqual(context[15], (23.84, 26.56))
+        self.assertEqual(context[16], (23.84, 26.56))
+
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for audio pause grouping")
+    def test_speaker_verification_context_falls_back_for_uncovered_short_fragments(self):
+        entries = [
+            entry(1, 0.00, 0.70, "\u6bd5\u7adf\u6751\u957f\u513f\u5b50", "narration"),
+            entry(2, 0.84, 1.24, "\u800c\u4e14", "narration"),
+            entry(3, 1.32, 1.90, "\u90fd\u662f\u6df7\u6df7", "narration"),
+            entry(4, 3.00, 3.50, "\u53ef\u4e0b\u4e00\u79d2", "narration"),
+            entry(5, 3.58, 4.10, "\u4f17\u4eba\u90fd\u6123\u4f4f", "narration"),
+        ]
+        samples, sample_rate = sine_samples(
+            [(0.00, 0.70), (0.84, 1.24), (1.32, 1.90), (3.00, 4.10)],
+            duration=4.5,
         )
 
-        self.assertGreaterEqual(confidence, 0.62)
+        context = core.build_speaker_verification_context_window_map(entries, samples, sample_rate)
 
-    def test_non_narrator_voice_confidence_yields_to_strong_narrator_audio_only(self):
-        confidence = core.non_narrator_voice_dialogue_confidence(
-            dominant_cluster_id=2,
-            dominant_cluster_in_narrator_family=False,
-            dominant_ratio=0.56,
-            narrator_ratio=0.36,
-            effective_narrator_similarity=0.85,
-            entry_duration=0.70,
-            narrator_voice_guard=False,
-            voice_locked_narration=False,
-            speechbrain_narration_similarity=0.84,
-            speechbrain_narration_gap=0.16,
-            speechbrain_dialogue_gap=-0.16,
-        )
+        self.assertEqual(context[2], (0.84, 1.90))
+        self.assertEqual(context[4], (3.00, 4.10))
 
-        self.assertEqual(confidence, 0.0)
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for audio pause grouping")
+    def test_speaker_verification_context_respects_real_audio_pause(self):
+        entries = [
+            entry(1, 0.00, 0.56, "\u524d\u4e00\u53e5", "narration"),
+            entry(2, 0.88, 1.40, "\u540e\u4e00\u53e5", "narration"),
+        ]
+        samples, sample_rate = sine_samples([(0.00, 0.56), (0.88, 1.40)], duration=1.8)
 
-    def test_non_narrator_voice_protection_threshold_matches_override_threshold(self):
-        self.assertTrue(
+        context = core.build_speaker_verification_context_window_map(entries, samples, sample_rate)
+
+        self.assertEqual(context, {})
+
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for audio pause grouping")
+    def test_speaker_verification_context_does_not_mix_preliminary_types(self):
+        entries = [
+            entry(47, 71.36, 73.20, "\u73b0\u5728\u5230\u4e86\u4f60\u8fd9\u4e00\u8f88\u53c8\u7ecf\u5e38\u6b3a\u8d1f\u6211\u513f\u5b50", "dialogue"),
+            entry(48, 73.44, 74.40, "\u4f60\u4eec\u7237\u4fe9\u592a\u8fc7\u5206\u4e86", "dialogue"),
+            entry(49, 74.50, 75.94, "\u8001\u674e\u8bf4\u7740\u5c31\u60f3\u8981\u628a\u4ed6\u8d76\u51fa\u53bb", "narration"),
+        ]
+        samples, sample_rate = sine_samples([(71.36, 75.94)], duration=76.5)
+
+        context = core.build_speaker_verification_context_window_map(entries, samples, sample_rate)
+
+        self.assertNotIn(48, context)
+        self.assertNotIn(49, context)
+
+    def test_legacy_non_narrator_voice_is_not_a_protected_override(self):
+        self.assertFalse(
             core.audio_override_is_protected(
                 {
                     "type": "dialogue",
-                    "confidence": 0.66,
+                    "confidence": 0.92,
                     "source": "audio_speaker_non_narrator_voice",
                 },
                 "dialogue",
             )
         )
+        self.assertFalse(
+            core.audio_override_has_speaker_evidence(
+                {
+                    "type": "dialogue",
+                    "confidence": 0.92,
+                    "source": "audio_speaker_non_narrator_voice",
+                }
+            )
+        )
+
+    def test_legacy_voice_lock_is_not_credible_speaker_evidence(self):
+        legacy_override = {
+            "type": "narration",
+            "confidence": 0.96,
+            "source": "audio_speaker_voice_lock",
+        }
+
+        self.assertFalse(core.audio_override_is_protected(legacy_override, "narration"))
+        self.assertFalse(core.audio_override_has_speaker_evidence(legacy_override))
+        self.assertFalse(
+            core.audio_override_has_credible_speaker_evidence(
+                legacy_override,
+                "narration",
+                min_confidence=0.62,
+            )
+        )
+
+    def test_model_dialogue_protection_threshold_matches_override_threshold(self):
+        self.assertTrue(
+            core.audio_override_is_protected(
+                {
+                    "type": "dialogue",
+                    "confidence": 0.76,
+                    "source": "audio_speaker_espnet_wavlm",
+                },
+                "dialogue",
+            )
+        )
+
+    def test_gray_forty_four_second_sentence_gets_no_local_continuity_override(self):
+        entries = [
+            entry(1, 42.80, 43.60, "\u968f\u540e\u4f17\u4eba\u62e6\u5728\u8def\u4e2d\u95f4", "narration"),
+            entry(2, 43.92, 44.68, "\u8bf4\u4eca\u5929\u8fd9\u4e2a\u8def\u4f60\u4eec\u522b\u60f3\u8fc7\u4e86", "original_subtitle"),
+            entry(3, 44.84, 45.60, "\u674e\u53d4\u53ea\u80fd\u505c\u4e0b\u811a\u6b65", "narration"),
+        ]
+
+        strengthened, changed = core.strengthen_audio_overrides_by_continuity(entries, {})
+        repaired = core.repair_final_classification_boundaries(entries, override_meta=strengthened)
+
+        self.assertEqual(changed, 0)
+        self.assertEqual(strengthened, {})
+        self.assertEqual(repaired[1].entry_type, "original_subtitle")
+
+    def test_short_dialogue_overrides_survive_disabled_local_strengthening(self):
+        dialogue_texts = [
+            "\u6162\u7740",
+            "\u522b\u52a8",
+            "\u4f60\u5e72\u561b",
+            "\u4e0d\u8f6c",
+        ]
+        for text in dialogue_texts:
+            with self.subTest(text=text):
+                entries = [
+                    entry(1, 0.00, 0.90, "\u7537\u4eba\u8d76\u5230\u95e8\u53e3", "narration"),
+                    entry(2, 1.00, 1.42, text, "dialogue"),
+                    entry(3, 1.52, 2.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+                ]
+                overrides = {
+                    2: {
+                        "type": "dialogue",
+                        "confidence": 0.76,
+                        "source": "audio_speaker_espnet_wavlm",
+                    }
+                }
+
+                strengthened, changed = core.strengthen_audio_overrides_by_continuity(entries, overrides)
+                repaired = core.repair_final_classification_boundaries(
+                    core.apply_audio_classification_overrides(entries, strengthened),
+                    override_meta=strengthened,
+                )
+
+                self.assertEqual(changed, 0)
+                self.assertEqual(strengthened, overrides)
+                self.assertEqual(repaired[1].entry_type, "dialogue")
+
+    def test_ambiguous_model_output_uses_audio_gray_fallback(self):
+        original_extract = core.extract_reference_audio_for_classification
+        original_clean_extract = core.extract_reference_audio_for_uvr_pause_analysis
+        original_build_similarity = core.build_speechbrain_similarity_map
+        original_detect_ai = core.detect_ai_audio_seed_labels
+        original_supplement = core.supplement_audio_seed_labels_locally
+        original_has_audio = core.VideoProcessor.has_audio_stream
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_root = Path(temp_dir)
+                wav_path = temp_root / "speaker.wav"
+                fake_video = temp_root / "reference.mp4"
+                fake_video.write_bytes(b"fake")
+                write_sine_wav(wav_path, [(0.0, 3.0)], duration=3.2)
+                entries = [
+                    entry(1, 0.00, 1.00, "\u7537\u4eba\u8bf4\u6211\u4e00\u5b9a\u8981\u8ba9\u4f60\u4eec\u540e\u6094", "dialogue"),
+                    entry(2, 1.10, 2.00, "\u53ef\u4e0b\u4e00\u79d2\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+                ]
+
+                core.VideoProcessor.has_audio_stream = lambda *args, **kwargs: True
+                core.extract_reference_audio_for_classification = lambda *args, **kwargs: wav_path
+                core.extract_reference_audio_for_uvr_pause_analysis = lambda *args, **kwargs: None
+                core.detect_ai_audio_seed_labels = lambda *args, **kwargs: {
+                    2: {"label": "narration_seed", "confidence": 0.95}
+                }
+                core.supplement_audio_seed_labels_locally = lambda _entries, _hint_map, _profiles, seed_map, **kwargs: dict(seed_map)
+                core.build_speechbrain_similarity_map = lambda *args, **kwargs: {
+                    1: {
+                        "speaker_engine": "unispeech_sat_large_sv",
+                        "narration_similarity": 0.90,
+                        "dialogue_similarity": 0.0,
+                    },
+                    2: {
+                        "speaker_engine": "unispeech_sat_large_sv",
+                        "narration_similarity": 0.91,
+                        "dialogue_similarity": 0.0,
+                    },
+                }
+
+                overrides = core.build_audio_classification_overrides(entries, fake_video)
+        finally:
+            core.extract_reference_audio_for_classification = original_extract
+            core.extract_reference_audio_for_uvr_pause_analysis = original_clean_extract
+            core.build_speechbrain_similarity_map = original_build_similarity
+            core.detect_ai_audio_seed_labels = original_detect_ai
+            core.supplement_audio_seed_labels_locally = original_supplement
+            core.VideoProcessor.has_audio_stream = original_has_audio
+
+        self.assertEqual(sorted(overrides), [1, 2])
+        self.assertTrue(overrides[1].get("gray_fallback"))
+        self.assertTrue(overrides[2].get("gray_fallback"))
+        self.assertEqual(overrides[1]["type"], "narration")
+        self.assertEqual(overrides[2]["type"], "narration")
 
     def test_espnet_wavlm_review_does_not_replace_decisive_primary_voice(self):
         merged = core.merge_espnet_wavlm_similarity_review(
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.88,
                     "dialogue_similarity": 0.28,
                 }
             },
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.20,
                     "dialogue_similarity": 0.48,
                 }
@@ -2353,12 +2847,14 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
         merged = core.merge_espnet_wavlm_similarity_review(
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.58,
                     "dialogue_similarity": 0.62,
                 }
             },
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.91,
                     "dialogue_similarity": 0.24,
                 }
@@ -2372,6 +2868,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             {},
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.18,
                     "dialogue_similarity": 0.48,
                 }
@@ -2385,6 +2882,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             {},
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.62,
                     "dialogue_similarity": 0.57,
                 }
@@ -2397,12 +2895,14 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
         merged = core.merge_espnet_wavlm_primary_with_legacy_fallback(
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.08,
                     "dialogue_similarity": 0.52,
                 }
             },
             {
                 1: {
+                    "speaker_engine": "espnet_wavlm",
                     "narration_similarity": 0.86,
                     "dialogue_similarity": 0.24,
                 }
@@ -2466,6 +2966,1074 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
         )
 
         self.assertIsNone(override)
+
+    def test_unispeech_sat_strong_dialogue_becomes_hard_override(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.84,
+                "dialogue_similarity": 0.97,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+        self.assertEqual(override["source"], "audio_speaker_unispeech_sat")
+
+    def test_unispeech_sat_strong_narration_becomes_hard_override(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.96,
+                "dialogue_similarity": 0.83,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "narration")
+        self.assertEqual(override["source"], "audio_speaker_unispeech_sat")
+
+    def test_unispeech_sat_ambiguous_voice_does_not_become_hard_override(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.90,
+                "dialogue_similarity": 0.87,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_anonymous_similarity_cannot_create_speaker_override(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "narration_similarity": 0.98,
+                "dialogue_similarity": 0.10,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_unispeech_sat_dialogue_centroid_does_not_override_narrator_verification(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.955,
+                "dialogue_similarity": 0.940,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_unispeech_sat_without_dialogue_seed_can_verify_narrator(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.966,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "narration")
+
+    def test_unispeech_sat_without_dialogue_seed_keeps_mid_similarity_ambiguous(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.936,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_unispeech_sat_without_dialogue_seed_rejects_non_narrator(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.78,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_espnet_wavlm_rejects_narrator_instead_of_matching_dialogue_class(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.35,
+                "dialogue_similarity": 0.46,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_espnet_wavlm_without_dialogue_seed_keeps_mid_similarity_ambiguous(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.74,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_espnet_wavlm_without_dialogue_seed_rejects_non_narrator(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.40,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_narrator_only_gray_short_entry_can_follow_neighbor_voice(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.74,
+                "dialogue_similarity": 0.0,
+                "entry_duration": 0.42,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.91,
+                "next_narration_similarity": 0.90,
+                "previous_similarity": 0.68,
+                "next_similarity": 0.66,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "narration")
+
+    def test_narrator_only_gray_short_entry_rejects_when_neighbor_voice_differs(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.55,
+                "dialogue_similarity": 0.0,
+                "entry_duration": 0.42,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.91,
+                "next_narration_similarity": 0.90,
+                "previous_similarity": 0.31,
+                "next_similarity": 0.34,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    @unittest.skipUnless(core.NUMPY_AVAILABLE, "numpy is required for audio pause grouping")
+    def test_speaker_context_window_does_not_expand_by_local_entry_type_when_audio_available(self):
+        entries = [
+            entry(1, 0.00, 0.30, "他", entry_type="narration"),
+            entry(2, 0.52, 0.76, "走到", entry_type="narration"),
+            entry(3, 0.98, 1.26, "婚车旁", entry_type="narration"),
+        ]
+        samples, sample_rate = sine_samples([(0.00, 0.30), (0.52, 0.76), (0.98, 1.26)], duration=1.6)
+
+        context_map = core.build_speaker_verification_context_window_map(entries, samples, sample_rate)
+
+        self.assertEqual(context_map, {})
+
+    def test_ai_audio_seed_detection_ignores_dialogue_seeds(self):
+        class SeedAI:
+            api_key = "test-key"
+            system_prompt = ""
+
+            def request_json_object(self, **kwargs):
+                self.system_prompt = str(kwargs.get("system_prompt") or "")
+                return {
+                    "entries": [
+                        {"index": 1, "label": "narration_seed", "confidence": 0.93},
+                        {"index": 2, "label": "dialogue_seed", "confidence": 0.99},
+                    ]
+                }
+
+            def note_ai_issue(self, *args, **kwargs):
+                pass
+
+        entries = [
+            entry(1, 0.0, 1.0, "男人这才意识到事情不对"),
+            entry(2, 1.2, 1.8, "你到底想干什么", entry_type="dialogue"),
+        ]
+        profiles = {item.index: audio_profile_for(item) for item in entries}
+        original_needs_ai = core.audio_seed_detection_needs_ai
+        original_select_candidates = core.select_audio_ai_seed_candidates
+        try:
+            core.audio_seed_detection_needs_ai = lambda *args, **kwargs: True
+            core.select_audio_ai_seed_candidates = lambda *args, **kwargs: entries
+            ai = SeedAI()
+            seed_map = core.detect_ai_audio_seed_labels(
+                ai,
+                entries,
+                {},
+                profiles,
+            )
+        finally:
+            core.audio_seed_detection_needs_ai = original_needs_ai
+            core.select_audio_ai_seed_candidates = original_select_candidates
+
+        self.assertIn(1, seed_map)
+        self.assertNotIn(2, seed_map)
+        self.assertNotIn("dialogue_seed", ai.system_prompt)
+
+    def test_narrator_only_similarity_calibration_adds_per_video_thresholds(self):
+        similarity_map = {
+            index + 1: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": value,
+                "dialogue_similarity": 0.0,
+            }
+            for index, value in enumerate([0.22, 0.31, 0.40, 0.58, 0.70, 0.81, 0.86, 0.89, 0.91, 0.93])
+        }
+
+        calibrated = core.calibrate_narrator_only_similarity_map(similarity_map)
+
+        self.assertLessEqual(calibrated[1]["narrator_verify_min"], core.ESPNET_WAVLM_NARRATOR_ONLY_VERIFY_MIN)
+        self.assertGreaterEqual(
+            calibrated[1]["narrator_verify_min"],
+            core.ESPNET_WAVLM_NARRATOR_ONLY_RELAXED_VERIFY_MIN,
+        )
+        self.assertLessEqual(calibrated[1]["narrator_reject_max"], core.ESPNET_WAVLM_NARRATOR_ONLY_REJECT_MAX)
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[1]), "dialogue")
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[10]), "narration")
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[5]), "")
+
+    def test_narrator_only_calibration_still_keeps_low_mid_voice_ambiguous(self):
+        similarity_map = {
+            index + 1: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": value,
+                "dialogue_similarity": 0.0,
+            }
+            for index, value in enumerate([0.22, 0.31, 0.40, 0.58, 0.70, 0.81, 0.86, 0.89, 0.91, 0.93])
+        }
+
+        calibrated = core.calibrate_narrator_only_similarity_map(similarity_map)
+
+        self.assertFalse(core.primary_speaker_similarity_is_decisive(calibrated[4]))
+        self.assertFalse(core.primary_speaker_similarity_is_decisive(calibrated[5]))
+        self.assertTrue(core.primary_speaker_similarity_is_decisive(calibrated[9]))
+
+    def test_narrator_only_calibration_relaxes_espnet_verify_threshold(self):
+        scores = [0.18, 0.31, 0.42, 0.52, 0.61, 0.70, 0.76, 0.78, 0.81, 0.84, 0.88, 0.91]
+        similarity_map = {
+            index + 1: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": value,
+                "dialogue_similarity": 0.0,
+            }
+            for index, value in enumerate(scores)
+        }
+
+        calibrated = core.calibrate_narrator_only_similarity_map(similarity_map)
+
+        self.assertLess(calibrated[1]["narrator_verify_min"], core.ESPNET_WAVLM_NARRATOR_ONLY_VERIFY_MIN)
+        self.assertGreaterEqual(
+            calibrated[1]["narrator_verify_min"],
+            core.ESPNET_WAVLM_NARRATOR_ONLY_RELAXED_VERIFY_MIN,
+        )
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[12]), "narration")
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[11]), "")
+        self.assertEqual(core.espnet_wavlm_similarity_label(calibrated[5]), "")
+
+    def test_narrator_only_calibration_relaxes_unispeech_high_tail_only(self):
+        scores = [0.72, 0.79, 0.82, 0.86, 0.89, 0.91, 0.93, 0.94, 0.946, 0.950, 0.960, 0.972]
+        similarity_map = {
+            index + 1: {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": value,
+                "dialogue_similarity": 0.0,
+            }
+            for index, value in enumerate(scores)
+        }
+
+        calibrated = core.calibrate_narrator_only_similarity_map(similarity_map)
+
+        self.assertLess(calibrated[1]["narrator_verify_min"], core.UNISPEECH_SAT_NARRATOR_ONLY_VERIFY_MIN)
+        self.assertGreaterEqual(
+            calibrated[1]["narrator_verify_min"],
+            core.UNISPEECH_SAT_NARRATOR_ONLY_RELAXED_VERIFY_MIN,
+        )
+        self.assertEqual(core.unispeech_sat_similarity_label(calibrated[10]), "narration")
+        self.assertEqual(core.unispeech_sat_similarity_label(calibrated[7]), "")
+
+    def test_speaker_thresholds_are_not_shared_between_models(self):
+        espnet_high = {
+            "speaker_engine": "espnet_wavlm",
+            "narration_similarity": 0.93,
+            "dialogue_similarity": 0.0,
+        }
+        unispeech_same_score = {
+            "speaker_engine": "unispeech_sat_large_sv",
+            "narration_similarity": 0.93,
+            "dialogue_similarity": 0.0,
+        }
+        unispeech_low = {
+            "speaker_engine": "unispeech_sat_large_sv",
+            "narration_similarity": 0.76,
+            "dialogue_similarity": 0.0,
+        }
+        espnet_same_low_score = {
+            "speaker_engine": "espnet_wavlm",
+            "narration_similarity": 0.76,
+            "dialogue_similarity": 0.0,
+        }
+
+        self.assertEqual(core.espnet_wavlm_similarity_label(espnet_high), "narration")
+        self.assertEqual(core.unispeech_sat_similarity_label(unispeech_same_score), "")
+        self.assertEqual(core.unispeech_sat_similarity_label(unispeech_low), "dialogue")
+        self.assertEqual(core.espnet_wavlm_similarity_label(espnet_same_low_score), "")
+        direct_overrides = core.direct_speaker_similarity_overrides(
+            {
+                1: espnet_high,
+                2: unispeech_same_score,
+                3: unispeech_low,
+                4: espnet_same_low_score,
+            }
+        )
+
+        self.assertEqual(sorted(direct_overrides), [1, 2, 3, 4])
+        self.assertEqual(direct_overrides[1]["type"], "narration")
+        self.assertEqual(direct_overrides[1]["source"], "audio_speaker_espnet_wavlm")
+        self.assertEqual(direct_overrides[2]["type"], "narration")
+        self.assertTrue(direct_overrides[2].get("gray_fallback"))
+        self.assertEqual(direct_overrides[3]["type"], "dialogue")
+        self.assertEqual(direct_overrides[3]["source"], "audio_speaker_unispeech_sat")
+        self.assertEqual(direct_overrides[4]["type"], "narration")
+        self.assertTrue(direct_overrides[4].get("gray_fallback"))
+
+    def test_gray_fallback_uses_closer_similarity_then_narration_default(self):
+        direct_overrides = core.direct_speaker_similarity_overrides(
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.68,
+                },
+                2: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.60,
+                },
+            }
+        )
+
+        self.assertEqual(direct_overrides[1]["type"], "dialogue")
+        self.assertTrue(direct_overrides[1].get("gray_fallback"))
+        self.assertEqual(direct_overrides[2]["type"], "narration")
+        self.assertTrue(direct_overrides[2].get("gray_fallback"))
+
+    def test_gray_fallback_can_inherit_hard_neighbor_voice_type(self):
+        direct_overrides = core.direct_speaker_similarity_overrides(
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.18,
+                    "dialogue_similarity": 0.0,
+                    "next_index": 2,
+                    "next_similarity": 0.82,
+                    "next_narration_similarity": 0.62,
+                    "next_dialogue_similarity": 0.0,
+                },
+                2: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 1,
+                    "previous_similarity": 0.82,
+                    "previous_narration_similarity": 0.18,
+                    "previous_dialogue_similarity": 0.0,
+                },
+            }
+        )
+
+        self.assertEqual(direct_overrides[1]["type"], "dialogue")
+        self.assertFalse(direct_overrides[1].get("gray_neighbor_fallback"))
+        self.assertEqual(direct_overrides[2]["type"], "dialogue")
+        self.assertTrue(direct_overrides[2].get("gray_neighbor_fallback"))
+
+    def test_gray_fallback_does_not_inherit_gray_or_conflicting_neighbors(self):
+        direct_overrides = core.direct_speaker_similarity_overrides(
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "next_index": 2,
+                    "next_similarity": 0.90,
+                    "next_narration_similarity": 0.62,
+                    "next_dialogue_similarity": 0.0,
+                },
+                2: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 1,
+                    "previous_similarity": 0.90,
+                    "next_index": 3,
+                    "next_similarity": 0.88,
+                    "previous_narration_similarity": 0.62,
+                    "previous_dialogue_similarity": 0.0,
+                    "next_narration_similarity": 0.93,
+                    "next_dialogue_similarity": 0.0,
+                },
+                3: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.93,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 2,
+                    "previous_similarity": 0.88,
+                    "previous_narration_similarity": 0.62,
+                    "previous_dialogue_similarity": 0.0,
+                },
+                4: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 5,
+                    "previous_similarity": 0.84,
+                    "next_index": 6,
+                    "next_similarity": 0.82,
+                    "previous_narration_similarity": 0.18,
+                    "previous_dialogue_similarity": 0.0,
+                    "next_narration_similarity": 0.93,
+                    "next_dialogue_similarity": 0.0,
+                },
+                5: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.18,
+                    "dialogue_similarity": 0.0,
+                    "next_index": 4,
+                    "next_similarity": 0.84,
+                    "next_narration_similarity": 0.62,
+                    "next_dialogue_similarity": 0.0,
+                },
+                6: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.93,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 4,
+                    "previous_similarity": 0.82,
+                    "previous_narration_similarity": 0.62,
+                    "previous_dialogue_similarity": 0.0,
+                },
+            }
+        )
+
+        self.assertEqual(direct_overrides[2]["type"], "narration")
+        self.assertTrue(direct_overrides[2].get("gray_neighbor_fallback"))
+        self.assertEqual(direct_overrides[4]["type"], "narration")
+        self.assertFalse(direct_overrides[4].get("gray_neighbor_fallback"))
+
+    def test_gray_neighbor_fallback_can_propagate_to_adjacent_gray_entry(self):
+        direct_overrides = core.direct_speaker_similarity_overrides(
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.18,
+                    "dialogue_similarity": 0.0,
+                    "next_index": 2,
+                    "next_similarity": 0.82,
+                    "next_narration_similarity": 0.62,
+                    "next_dialogue_similarity": 0.0,
+                },
+                3: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 2,
+                    "previous_similarity": 0.84,
+                    "previous_narration_similarity": 0.62,
+                    "previous_dialogue_similarity": 0.0,
+                },
+                2: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.62,
+                    "dialogue_similarity": 0.0,
+                    "previous_index": 1,
+                    "previous_similarity": 0.82,
+                    "next_index": 3,
+                    "next_similarity": 0.84,
+                    "previous_narration_similarity": 0.18,
+                    "previous_dialogue_similarity": 0.0,
+                    "next_narration_similarity": 0.62,
+                    "next_dialogue_similarity": 0.0,
+                },
+            }
+        )
+
+        self.assertEqual(direct_overrides[2]["type"], "dialogue")
+        self.assertTrue(direct_overrides[2].get("gray_neighbor_fallback"))
+        self.assertEqual(direct_overrides[3]["type"], "dialogue")
+        self.assertTrue(direct_overrides[3].get("gray_neighbor_fallback"))
+
+    def test_speaker_override_dispatch_keeps_model_sources_separate(self):
+        espnet_override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.93,
+                "dialogue_similarity": 0.0,
+            }
+        )
+        unispeech_override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "unispeech_sat_large_sv",
+                "narration_similarity": 0.76,
+                "dialogue_similarity": 0.0,
+            }
+        )
+
+        self.assertIsNotNone(espnet_override)
+        self.assertEqual(espnet_override["type"], "narration")
+        self.assertEqual(espnet_override["source"], "audio_speaker_espnet_wavlm")
+        self.assertIsNotNone(unispeech_override)
+        self.assertEqual(unispeech_override["type"], "dialogue")
+        self.assertEqual(unispeech_override["source"], "audio_speaker_unispeech_sat")
+
+    def test_espnet_isolated_narrator_like_sentence_can_override_dialogue_gray_zone(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.87,
+                "dialogue_similarity": 0.0,
+                "previous_narration_similarity": 0.68,
+                "next_narration_similarity": 0.35,
+                "previous_similarity": 0.67,
+                "next_similarity": 0.35,
+                "entry_duration": 2.10,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "narration")
+        self.assertEqual(override["source"], "audio_speaker_espnet_wavlm")
+
+    def test_espnet_isolated_narration_guard_keeps_lower_gray_score_ambiguous(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.84,
+                "dialogue_similarity": 0.0,
+                "previous_narration_similarity": 0.68,
+                "next_narration_similarity": 0.35,
+                "previous_similarity": 0.67,
+                "next_similarity": 0.35,
+                "entry_duration": 2.10,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_espnet_isolated_narration_guard_requires_voice_separation(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.87,
+                "dialogue_similarity": 0.0,
+                "previous_narration_similarity": 0.68,
+                "next_narration_similarity": 0.35,
+                "previous_similarity": 0.82,
+                "next_similarity": 0.35,
+                "entry_duration": 2.10,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_ambiguous_narrator_only_voice_is_not_hard_narration(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.80,
+                "dialogue_similarity": 0.0,
+                "narrator_verify_min": 0.86,
+                "narrator_reject_max": 0.56,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_short_uncontexted_narrator_only_mid_score_is_not_hard_dialogue(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.48,
+                "dialogue_similarity": 0.0,
+                "narrator_verify_min": 0.86,
+                "narrator_reject_max": 0.56,
+                "entry_duration": 0.40,
+                "has_context_window": 0.0,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_short_uncontexted_clear_non_narrator_still_becomes_dialogue(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.20,
+                "dialogue_similarity": 0.0,
+                "narrator_verify_min": 0.86,
+                "narrator_reject_max": 0.56,
+                "entry_duration": 0.40,
+                "has_context_window": 0.0,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_short_uncontexted_mid_voice_uses_neighbor_contrast_as_dialogue(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.48,
+                "dialogue_similarity": 0.0,
+                "narrator_verify_min": 0.86,
+                "narrator_reject_max": 0.56,
+                "entry_duration": 0.40,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.90,
+                "next_narration_similarity": 0.91,
+                "previous_similarity": 0.30,
+                "next_similarity": 0.32,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_short_uncontexted_mid_voice_without_neighbor_contrast_stays_ambiguous(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.48,
+                "dialogue_similarity": 0.0,
+                "narrator_verify_min": 0.86,
+                "narrator_reject_max": 0.56,
+                "entry_duration": 0.40,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.90,
+                "next_narration_similarity": 0.91,
+                "previous_similarity": 0.68,
+                "next_similarity": 0.32,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_gray_short_entry_can_follow_mixed_narration_neighbor(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.74,
+                "dialogue_similarity": 0.0,
+                "entry_duration": 0.42,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.93,
+                "next_narration_similarity": 0.28,
+                "previous_similarity": 0.70,
+                "next_similarity": 0.30,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "narration")
+
+    def test_gray_short_entry_can_follow_mixed_dialogue_neighbor(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.62,
+                "dialogue_similarity": 0.0,
+                "entry_duration": 0.42,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.93,
+                "next_narration_similarity": 0.24,
+                "previous_similarity": 0.29,
+                "next_similarity": 0.68,
+            }
+        )
+
+        self.assertIsNotNone(override)
+        self.assertEqual(override["type"], "dialogue")
+
+    def test_gray_short_entry_ignores_gray_neighbors(self):
+        override = core.speaker_similarity_override_from_item(
+            {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.62,
+                "dialogue_similarity": 0.0,
+                "entry_duration": 0.42,
+                "has_context_window": 0.0,
+                "previous_narration_similarity": 0.75,
+                "next_narration_similarity": 0.77,
+                "previous_similarity": 0.70,
+                "next_similarity": 0.69,
+            }
+        )
+
+        self.assertIsNone(override)
+
+    def test_speaker_classification_uses_original_audio_not_uvr_denoised_audio(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+
+        original_extract = core.extract_reference_audio_for_classification
+        original_uvr_extract = core.extract_reference_audio_for_uvr_pause_analysis
+        original_load = core.load_wav_mono_samples
+        original_build_similarity = core.build_speechbrain_similarity_map
+        captured = {}
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_root = Path(temp_dir)
+                reference_video = temp_root / "reference.mp4"
+                reference_video.write_bytes(b"video")
+                raw_audio = temp_root / "raw.wav"
+                raw_audio.write_bytes(b"raw")
+                denoised_audio = temp_root / "denoised.wav"
+                denoised_audio.write_bytes(b"denoised")
+
+                def fake_extract(_reference_video, _processor, log_func=None):
+                    return raw_audio
+
+                def fake_uvr_extract(*args, **kwargs):
+                    raise AssertionError("speaker classification should not request UVR denoised audio")
+
+                def fake_load(path):
+                    self.assertEqual(Path(path), raw_audio)
+                    return core.np.zeros(32000, dtype=core.np.float32), 16000
+
+                def fake_similarity(audio_path, entries, ai_seed_map, **kwargs):
+                    captured["audio_path"] = Path(audio_path)
+                    captured["speaker_samples"] = kwargs.get("speaker_samples")
+                    return {
+                        1: {
+                            "speaker_engine": "espnet_wavlm",
+                            "narration_similarity": 0.94,
+                            "dialogue_similarity": 0.0,
+                        }
+                    }
+
+                core.extract_reference_audio_for_classification = fake_extract
+                core.extract_reference_audio_for_uvr_pause_analysis = fake_uvr_extract
+                core.load_wav_mono_samples = fake_load
+                core.build_speechbrain_similarity_map = fake_similarity
+
+                overrides = core.build_audio_classification_overrides(
+                    [entry(1, 0.00, 0.80, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "dialogue")],
+                    reference_video,
+                )
+        finally:
+            core.extract_reference_audio_for_classification = original_extract
+            core.extract_reference_audio_for_uvr_pause_analysis = original_uvr_extract
+            core.load_wav_mono_samples = original_load
+            core.build_speechbrain_similarity_map = original_build_similarity
+
+        self.assertEqual(captured["audio_path"], raw_audio)
+        self.assertIsNotNone(captured["speaker_samples"])
+        self.assertEqual(overrides[1]["type"], "narration")
+
+    def test_multi_character_dialogue_does_not_need_dialogue_centroid_match(self):
+        overrides = {
+            1: core.speaker_similarity_override_from_item(
+                {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.40,
+                    "dialogue_similarity": 0.0,
+                    "narrator_verify_min": 0.86,
+                    "narrator_reject_max": 0.56,
+                }
+            ),
+            2: core.speaker_similarity_override_from_item(
+                {
+                    "speaker_engine": "unispeech_sat_large_sv",
+                    "narration_similarity": 0.76,
+                    "dialogue_similarity": 0.0,
+                    "narrator_verify_min": 0.955,
+                    "narrator_reject_max": 0.80,
+                }
+            ),
+        }
+
+        self.assertEqual(overrides[1]["type"], "dialogue")
+        self.assertEqual(overrides[2]["type"], "dialogue")
+
+    def test_unispeech_sat_clear_decision_survives_legacy_review(self):
+        merged = core.merge_unispeech_sat_clear_with_legacy_review(
+            {
+                1: {
+                    "speaker_engine": "unispeech_sat_large_sv",
+                    "narration_similarity": 0.86,
+                    "dialogue_similarity": 0.97,
+                }
+            },
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.88,
+                    "dialogue_similarity": 0.30,
+                }
+            },
+        )
+
+        self.assertEqual(merged[1]["speaker_engine"], "unispeech_sat_large_sv")
+        self.assertEqual(merged[1]["dialogue_similarity"], 0.97)
+
+    def test_unispeech_sat_ambiguous_entry_allows_espnet_review(self):
+        merged = core.merge_unispeech_sat_clear_with_legacy_review(
+            {
+                1: {
+                    "speaker_engine": "unispeech_sat_large_sv",
+                    "narration_similarity": 0.89,
+                    "dialogue_similarity": 0.87,
+                }
+            },
+            {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.12,
+                    "dialogue_similarity": 0.55,
+                }
+            },
+        )
+
+        self.assertEqual(merged[1]["speaker_engine"], "espnet_wavlm")
+        self.assertEqual(merged[1]["dialogue_similarity"], 0.55)
+
+    def test_speechbrain_map_skips_unispeech_review_when_espnet_is_clear(self):
+        original_unispeech = core.build_unispeech_sat_similarity_map
+        original_espnet = core.build_espnet_wavlm_similarity_map
+        calls = {"unispeech": 0, "espnet": 0}
+
+        def fake_unispeech(*args, **kwargs):
+            calls["unispeech"] += 1
+            return {
+                1: {
+                    "speaker_engine": "unispeech_sat_large_sv",
+                    "narration_similarity": 0.86,
+                    "dialogue_similarity": 0.97,
+                }
+            }
+
+        def fake_espnet(*args, **kwargs):
+            calls["espnet"] += 1
+            return {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.88,
+                    "dialogue_similarity": 0.30,
+                }
+            }
+
+        try:
+            core.build_unispeech_sat_similarity_map = fake_unispeech
+            core.build_espnet_wavlm_similarity_map = fake_espnet
+            with tempfile.TemporaryDirectory() as temp_dir:
+                audio_path = Path(temp_dir) / "audio.wav"
+                write_sine_wav(audio_path, [(0.0, 0.5)], duration=0.8)
+                result = core.build_speechbrain_similarity_map(
+                    audio_path,
+                    [entry(1, 0.00, 0.50, "\u6162\u7740", "dialogue")],
+                    {1: {"label": "dialogue_seed", "confidence": 0.95}},
+                    allow_seed_expansion=False,
+                )
+        finally:
+            core.build_unispeech_sat_similarity_map = original_unispeech
+            core.build_espnet_wavlm_similarity_map = original_espnet
+
+        self.assertEqual(result[1]["speaker_engine"], "espnet_wavlm")
+        self.assertEqual(calls, {"unispeech": 0, "espnet": 1})
+
+    def test_speechbrain_map_reviews_only_unispeech_ambiguous_entries(self):
+        original_unispeech = core.build_unispeech_sat_similarity_map
+        original_espnet = core.build_espnet_wavlm_similarity_map
+        calls = {"espnet": 0}
+
+        def fake_unispeech(*args, **kwargs):
+            return {
+                1: {
+                    "speaker_engine": "unispeech_sat_large_sv",
+                    "narration_similarity": 0.89,
+                    "dialogue_similarity": 0.87,
+                }
+            }
+
+        def fake_espnet(*args, **kwargs):
+            calls["espnet"] += 1
+            return {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.12,
+                    "dialogue_similarity": 0.55,
+                }
+            }
+
+        try:
+            core.build_unispeech_sat_similarity_map = fake_unispeech
+            core.build_espnet_wavlm_similarity_map = fake_espnet
+            with tempfile.TemporaryDirectory() as temp_dir:
+                audio_path = Path(temp_dir) / "audio.wav"
+                write_sine_wav(audio_path, [(0.0, 0.5)], duration=0.8)
+                result = core.build_speechbrain_similarity_map(
+                    audio_path,
+                    [entry(1, 0.00, 0.50, "\u6162\u7740", "dialogue")],
+                    {1: {"label": "dialogue_seed", "confidence": 0.95}},
+                    allow_seed_expansion=False,
+                )
+        finally:
+            core.build_unispeech_sat_similarity_map = original_unispeech
+            core.build_espnet_wavlm_similarity_map = original_espnet
+
+        self.assertEqual(result[1]["speaker_engine"], "espnet_wavlm")
+        self.assertEqual(calls, {"espnet": 1})
+
+    def test_speechbrain_map_falls_back_to_espnet_when_unispeech_unavailable(self):
+        original_unispeech = core.build_unispeech_sat_similarity_map
+        original_espnet = core.build_espnet_wavlm_similarity_map
+
+        def fake_unispeech(*args, **kwargs):
+            return {}
+
+        def fake_espnet(*args, **kwargs):
+            return {
+                1: {
+                    "speaker_engine": "espnet_wavlm",
+                    "narration_similarity": 0.12,
+                    "dialogue_similarity": 0.55,
+                }
+            }
+
+        try:
+            core.build_unispeech_sat_similarity_map = fake_unispeech
+            core.build_espnet_wavlm_similarity_map = fake_espnet
+            with tempfile.TemporaryDirectory() as temp_dir:
+                audio_path = Path(temp_dir) / "audio.wav"
+                write_sine_wav(audio_path, [(0.0, 0.5)], duration=0.8)
+                result = core.build_speechbrain_similarity_map(
+                    audio_path,
+                    [entry(1, 0.00, 0.50, "\u6162\u7740", "dialogue")],
+                    {1: {"label": "dialogue_seed", "confidence": 0.95}},
+                    allow_seed_expansion=False,
+                )
+        finally:
+            core.build_unispeech_sat_similarity_map = original_unispeech
+            core.build_espnet_wavlm_similarity_map = original_espnet
+
+        self.assertEqual(result[1]["speaker_engine"], "espnet_wavlm")
+
+    def test_hard_narration_results_expand_secondary_seeds(self):
+        entries = [
+            entry(1, 0.00, 1.00, "\u7537\u4eba\u7ad9\u5728\u95e8\u53e3"),
+            entry(2, 1.10, 2.10, "\u6ca1\u60f3\u5230\u4e0b\u4e00\u79d2"),
+            entry(3, 2.20, 3.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86"),
+            entry(4, 3.30, 4.30, "\u4f60\u7ed9\u6211\u7b49\u7740", "dialogue"),
+        ]
+        base_seed_map = {1: {"label": "narration_seed", "confidence": 0.96}}
+        similarity_map = {
+            1: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.93,
+                "dialogue_similarity": 0.0,
+            },
+            2: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.94,
+                "dialogue_similarity": 0.0,
+            },
+            3: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.92,
+                "dialogue_similarity": 0.0,
+            },
+            4: {
+                "speaker_engine": "espnet_wavlm",
+                "narration_similarity": 0.18,
+                "dialogue_similarity": 0.0,
+            },
+        }
+
+        expanded = core.expanded_narration_seed_map_from_hard_speaker_results(
+            entries,
+            base_seed_map,
+            similarity_map,
+        )
+
+        self.assertIn(2, expanded)
+        self.assertIn(3, expanded)
+        self.assertNotIn(4, expanded)
+        self.assertEqual(expanded[2]["source"], "hard_speaker_expansion")
+
+    def test_hard_narration_seed_expansion_reruns_once(self):
+        original_unispeech = core.build_unispeech_sat_similarity_map
+        original_espnet = core.build_espnet_wavlm_similarity_map
+        calls = {"espnet": 0}
+        seen_seed_counts = []
+
+        def fake_unispeech(*args, **kwargs):
+            return {}
+
+        def fake_espnet(_audio_path, _entries, seed_map, *args, **kwargs):
+            calls["espnet"] += 1
+            seen_seed_counts.append(sum(1 for item in seed_map.values() if item.get("label") == "narration_seed"))
+            if calls["espnet"] == 1:
+                return {
+                    1: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.93, "dialogue_similarity": 0.0},
+                    2: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.94, "dialogue_similarity": 0.0},
+                    3: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.92, "dialogue_similarity": 0.0},
+                }
+            return {
+                1: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.95, "dialogue_similarity": 0.0},
+                2: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.95, "dialogue_similarity": 0.0},
+                3: {"speaker_engine": "espnet_wavlm", "narration_similarity": 0.95, "dialogue_similarity": 0.0},
+            }
+
+        try:
+            core.build_unispeech_sat_similarity_map = fake_unispeech
+            core.build_espnet_wavlm_similarity_map = fake_espnet
+            with tempfile.TemporaryDirectory() as temp_dir:
+                audio_path = Path(temp_dir) / "audio.wav"
+                write_sine_wav(audio_path, [(0.0, 3.0)], duration=3.2)
+                result = core.build_speechbrain_similarity_map(
+                    audio_path,
+                    [
+                        entry(1, 0.00, 1.00, "\u7537\u4eba\u7ad9\u5728\u95e8\u53e3"),
+                        entry(2, 1.10, 2.10, "\u6ca1\u60f3\u5230\u4e0b\u4e00\u79d2"),
+                        entry(3, 2.20, 3.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86"),
+                    ],
+                    {1: {"label": "narration_seed", "confidence": 0.96}},
+                )
+        finally:
+            core.build_unispeech_sat_similarity_map = original_unispeech
+            core.build_espnet_wavlm_similarity_map = original_espnet
+
+        self.assertEqual(calls["espnet"], 2)
+        self.assertEqual(seen_seed_counts, [1, 3])
+        self.assertEqual(result[2]["narration_similarity"], 0.95)
+
+    def test_unispeech_sat_override_is_protected_speaker_evidence(self):
+        self.assertTrue(
+            core.audio_override_is_protected(
+                {
+                    "type": "dialogue",
+                    "confidence": 0.80,
+                    "source": "audio_speaker_unispeech_sat",
+                },
+                "dialogue",
+            )
+        )
 
     def test_espnet_wavlm_strong_dialogue_survives_short_island_stabilization(self):
         entries = [
@@ -2533,7 +4101,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
 
         self.assertEqual(repaired[1].entry_type, "dialogue")
 
-    def test_long_local_dialogue_without_speaker_evidence_falls_back_to_narration(self):
+    def test_long_local_dialogue_without_speaker_evidence_is_not_text_demoted(self):
         entries = [
             entry(1, 0.00, 1.00, "\u4f60\u7ed9\u6211\u7b49\u7740", "dialogue"),
             entry(
@@ -2548,7 +4116,49 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
 
         repaired = core.repair_final_classification_boundaries(entries, override_meta={})
 
-        self.assertEqual(repaired[1].entry_type, "narration")
+        self.assertEqual(repaired[1].entry_type, "dialogue")
+
+    def test_first_person_narration_requires_acoustic_narrator_evidence(self):
+        entries = [
+            entry(1, 0.00, 1.00, "\u7537\u4eba\u7acb\u523b\u51b2\u4e86\u8fc7\u6765", "narration"),
+            entry(2, 1.20, 2.80, "\u6211\u4ece\u5c0f\u5c31\u88ab\u738b\u5bb6\u6b3a\u8d1f", "dialogue"),
+            entry(3, 3.00, 4.00, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+
+        without_audio = core.repair_final_classification_boundaries(entries, override_meta={})
+        with_audio = core.apply_audio_classification_overrides(
+            entries,
+            {
+                2: {
+                    "type": "narration",
+                    "confidence": 0.82,
+                    "source": "audio_speaker_unispeech_sat",
+                }
+            },
+        )
+
+        self.assertEqual(without_audio[1].entry_type, "dialogue")
+        self.assertEqual(with_audio[1].entry_type, "narration")
+
+    def test_first_person_character_dialogue_is_kept_when_acoustically_non_narrator(self):
+        entries = [
+            entry(1, 0.00, 1.00, "\u7537\u4eba\u7acb\u523b\u51b2\u4e86\u8fc7\u6765", "narration"),
+            entry(2, 1.20, 2.80, "\u6211\u6253\u6b7b\u53c8\u80fd\u600e\u4e48\u6837", "narration"),
+            entry(3, 3.00, 4.00, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+
+        repaired = core.apply_audio_classification_overrides(
+            entries,
+            {
+                2: {
+                    "type": "dialogue",
+                    "confidence": 0.78,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+            },
+        )
+
+        self.assertEqual(repaired[1].entry_type, "dialogue")
 
     def test_short_local_dialogue_without_speaker_evidence_is_kept(self):
         entries = [
@@ -2579,8 +4189,8 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             override_meta={
                 2: {
                     "type": "dialogue",
-                    "confidence": 0.66,
-                    "source": "audio_speaker_non_narrator_voice",
+                    "confidence": 0.76,
+                    "source": "audio_speaker_espnet_wavlm",
                 }
             },
         )
@@ -2600,7 +4210,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
                 2: {
                     "type": "dialogue",
                     "confidence": 0.76,
-                    "source": "audio_speaker_voice_dialogue_recovery",
+                    "source": "audio_speaker_espnet_wavlm",
                 }
             },
         )
@@ -2620,12 +4230,286 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
                 2: {
                     "type": "narration",
                     "confidence": 0.80,
-                    "source": "audio_speaker_voice_lock",
+                    "source": "audio_speaker_unispeech_sat",
                 }
             },
         )
 
         self.assertEqual(repaired[1].entry_type, "narration")
+
+    def test_audio_speaker_dialogue_can_correct_local_narration(self):
+        entries = [
+            entry(1, 15.36, 17.20, "\u8001\u674e\u8981\u8ddf\u6211\u95f9\u4e86\u4e00\u8f88\u5b50", "dialogue"),
+            entry(2, 17.44, 18.56, "\u73b0\u5728\u5a36\u4e86\u4e2a\u65b0\u5ab3\u5987", "narration"),
+            entry(3, 19.20, 20.50, "\u8fd8\u8981\u88ab\u4ed6\u4eec\u738b\u5bb6\u6b3a\u8d1f", "narration"),
+        ]
+
+        repaired = core.apply_audio_classification_overrides(
+            entries,
+            {
+                2: {
+                    "type": "dialogue",
+                    "confidence": 0.76,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+            },
+        )
+        final = core.repair_final_classification_boundaries(repaired, override_meta={
+            2: {
+                "type": "dialogue",
+                "confidence": 0.76,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        })
+
+        self.assertEqual(final[1].entry_type, "dialogue")
+
+    def test_audio_speaker_narration_can_correct_local_dialogue(self):
+        entries = [
+            entry(1, 70.00, 70.88, "\u4ece\u5c0f\u4f60\u7239\u5c31\u4e00\u76f4\u6b3a\u8d1f\u6211", "dialogue"),
+            entry(2, 71.36, 73.20, "\u73b0\u5728\u5230\u4e86\u4f60\u8fd9\u4e00\u8f88\u53c8\u7ecf\u5e38\u6b3a\u8d1f\u6211\u513f\u5b50", "dialogue"),
+            entry(3, 73.44, 74.40, "\u4f60\u4eec\u7237\u4fe9\u592a\u8fc7\u5206\u4e86", "dialogue"),
+        ]
+
+        repaired = core.apply_audio_classification_overrides(
+            entries,
+            {
+                2: {
+                    "type": "narration",
+                    "confidence": 0.80,
+                    "source": "audio_speaker_unispeech_sat",
+                }
+            },
+        )
+        final = core.repair_final_classification_boundaries(repaired, override_meta={
+            2: {
+                "type": "narration",
+                "confidence": 0.80,
+                "source": "audio_speaker_unispeech_sat",
+            }
+        })
+
+        self.assertEqual(final[1].entry_type, "narration")
+
+    def test_speaker_locked_dialogue_does_not_spread_to_following_narration(self):
+        entries = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u5230\u95e8\u53e3", "narration"),
+            entry(2, 1.00, 1.42, "\u6162\u7740", "narration"),
+            entry(3, 1.50, 2.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+        overrides = {
+            2: {
+                "type": "dialogue",
+                "confidence": 0.74,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        }
+
+        repaired = core.apply_audio_classification_overrides(entries, overrides)
+        final = core.repair_final_classification_boundaries(repaired, override_meta=overrides)
+
+        self.assertEqual(final[1].entry_type, "dialogue")
+        self.assertEqual(final[2].entry_type, "narration")
+
+    def test_neighbor_speaker_locks_do_not_relabel_middle_without_own_evidence(self):
+        entries = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u8f6c\u8eab\u79bb\u5f00", "narration"),
+            entry(2, 1.00, 1.42, "\u4f17\u4eba\u90fd\u6123\u4f4f", "dialogue"),
+            entry(3, 1.50, 2.20, "\u6162\u7740", "dialogue"),
+        ]
+        overrides = {
+            1: {
+                "type": "narration",
+                "confidence": 0.80,
+                "source": "audio_speaker_unispeech_sat",
+            },
+            3: {
+                "type": "dialogue",
+                "confidence": 0.76,
+                "source": "audio_speaker_espnet_wavlm",
+            },
+        }
+
+        repaired = core.apply_audio_classification_overrides(entries, overrides)
+
+        self.assertEqual(repaired[1].entry_type, "dialogue")
+
+    def test_processed_subtitles_respect_speaker_override_over_local_type(self):
+        entries = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u8d70\u5230\u95e8\u53e3"),
+            entry(2, 1.00, 1.48, "\u6162\u7740"),
+            entry(3, 1.60, 2.40, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86"),
+            entry(4, 2.60, 3.30, "\u4f60\u4eec\u7237\u4fe9\u592a\u8fc7\u5206\u4e86"),
+        ]
+        settings = core.CloneSettings(
+            reference_video=Path("reference.mp4"),
+            source_dir=Path("."),
+            output_dir=Path("."),
+            subtitle_entries=entries,
+            prefer_funasr_audio_subtitles=True,
+            disable_ai_subtitle_review=True,
+            disable_ai_narration_rewrite=True,
+            prefer_funasr_sentence_pauses=True,
+        )
+
+        original_build_overrides = core.build_audio_classification_overrides
+        original_run_funasr = core.run_funasr_reference_transcription
+        try:
+            core.run_funasr_reference_transcription = lambda *args, **kwargs: []
+
+            def fake_build_overrides(processed_entries, *args, **kwargs):
+                overrides = {}
+                for item in processed_entries:
+                    if item.text == "\u6162\u7740":
+                        overrides[item.index] = {
+                            "type": "dialogue",
+                            "confidence": 0.72,
+                            "source": "audio_speaker_espnet_wavlm",
+                        }
+                    if item.text == "\u4f60\u4eec\u7237\u4fe9\u592a\u8fc7\u5206\u4e86":
+                        overrides[item.index] = {
+                            "type": "narration",
+                            "confidence": 0.82,
+                            "source": "audio_speaker_unispeech_sat",
+                        }
+                return overrides
+
+            core.build_audio_classification_overrides = fake_build_overrides
+            bundle = core.build_processed_subtitles(
+                entries,
+                "",
+                DummyAINarrationGenerator(),
+                reference_video=Path("reference.mp4"),
+                video_processor=object(),
+                settings=settings,
+            )
+        finally:
+            core.build_audio_classification_overrides = original_build_overrides
+            core.run_funasr_reference_transcription = original_run_funasr
+
+        types_by_text = {item.text: item.entry_type for item in bundle.all_entries}
+        self.assertEqual(types_by_text["\u6162\u7740"], "dialogue")
+        self.assertEqual(types_by_text["\u4f60\u4eec\u7237\u4fe9\u592a\u8fc7\u5206\u4e86"], "narration")
+
+    def test_original_subtitle_run_keeps_speaker_backed_type(self):
+        entries = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u5230\u95e8\u53e3", "narration"),
+            entry(2, 0.95, 1.35, "\u6162\u7740", "original_subtitle"),
+            entry(3, 1.40, 2.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+
+        recovered = core.recover_narration_fragment_runs(
+            entries,
+            override_meta={
+                2: {
+                    "type": "dialogue",
+                    "confidence": 0.75,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+            },
+        )
+        applied = core.apply_audio_classification_overrides(
+            recovered,
+            {
+                2: {
+                    "type": "dialogue",
+                    "confidence": 0.75,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+            },
+        )
+        final = core.repair_final_classification_boundaries(
+            applied,
+            override_meta={
+                2: {
+                    "type": "dialogue",
+                    "confidence": 0.75,
+                    "source": "audio_speaker_espnet_wavlm",
+                }
+            },
+        )
+
+        self.assertEqual(recovered[1].entry_type, "original_subtitle")
+        self.assertEqual(final[1].entry_type, "dialogue")
+
+    def test_local_text_reclassification_helpers_are_neutralized(self):
+        original_run = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u5230\u95e8\u53e3", "narration"),
+            entry(2, 0.95, 1.35, "\u6162\u7740", "original_subtitle"),
+            entry(3, 1.40, 2.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+        dialogue_island = [
+            entry(1, 0.00, 0.70, "\u4f60\u522b\u540e\u6094", "dialogue"),
+            entry(2, 0.74, 1.18, "\u6162\u7740", "narration"),
+            entry(3, 1.22, 1.90, "\u4f60\u7ed9\u6211\u7b49\u7740", "dialogue"),
+        ]
+        forced_original_text = [
+            entry(1, 0.00, 0.80, "\u7b2c3\u96c6", "narration"),
+        ]
+
+        self.assertEqual(
+            [item.entry_type for item in core.recover_narration_fragment_runs(original_run)],
+            ["narration", "original_subtitle", "narration"],
+        )
+        self.assertEqual(
+            [item.entry_type for item in core.strengthen_classification(dialogue_island)],
+            ["dialogue", "narration", "dialogue"],
+        )
+        self.assertEqual(
+            [item.entry_type for item in core.refine_classified_entries(forced_original_text)],
+            ["narration"],
+        )
+
+    def test_text_only_dialogue_guard_no_longer_demotes_without_speaker_evidence(self):
+        entries = [
+            entry(1, 0.00, 0.90, "\u7537\u4eba\u521a\u5230\u95e8\u53e3", "narration"),
+            entry(2, 0.95, 1.35, "\u6162\u7740", "dialogue"),
+            entry(3, 1.40, 2.20, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "narration"),
+        ]
+
+        guarded = core.remove_text_only_dialogue_labels_after_speaker_review(
+            entries,
+            override_meta={
+                1: {
+                    "type": "narration",
+                    "confidence": 0.82,
+                    "source": "audio_speaker_unispeech_sat",
+                }
+            },
+        )
+
+        self.assertEqual(
+            [item.entry_type for item in guarded],
+            ["narration", "dialogue", "narration"],
+        )
+
+    def test_whole_text_context_classifier_is_neutralized(self):
+        entries = [
+            entry(1, 0.00, 0.80, "\u7537\u4eba\u8bf4\u8bdd", "narration"),
+            entry(2, 0.85, 1.15, "\u6162\u7740", "dialogue"),
+            entry(3, 1.20, 2.10, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86", "original_subtitle"),
+        ]
+
+        classified = core.classify_entries_with_whole_text_context(entries, trust_existing_type=True)
+
+        self.assertEqual([item.entry_type for item in classified], [item.entry_type for item in entries])
+
+    def test_local_seed_cleanup_helpers_are_neutralized(self):
+        entries = [
+            entry(1, 0.00, 0.80, "\u7537\u4eba\u8bf4\u8bdd", "narration"),
+            entry(2, 0.85, 1.15, "\u6162\u7740", "dialogue"),
+        ]
+        profiles = {item.index: audio_profile_for(item) for item in entries}
+        seed_map = {
+            1: {"label": "narration_seed", "confidence": 0.91},
+            2: {"label": "dialogue_seed", "confidence": 0.92},
+        }
+
+        supplemented = core.supplement_audio_seed_labels_locally(entries, {}, profiles, seed_map)
+        filtered = core.filter_audio_seed_labels_by_voice_consistency(profiles, seed_map)
+
+        self.assertEqual(supplemented, seed_map)
+        self.assertEqual(filtered, seed_map)
 
     def test_credible_dialogue_speaker_override_survives_short_island_repair(self):
         entries = [
@@ -2639,8 +4523,8 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             override_meta={
                 2: {
                     "type": "dialogue",
-                    "confidence": 0.66,
-                    "source": "audio_speaker_voice_dialogue_recovery",
+                    "confidence": 0.76,
+                    "source": "audio_speaker_espnet_wavlm",
                 }
             },
         )
@@ -2659,15 +4543,15 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             override_meta={
                 2: {
                     "type": "narration",
-                    "confidence": 0.66,
-                    "source": "audio_speaker_voice_lock",
+                    "confidence": 0.80,
+                    "source": "audio_speaker_unispeech_sat",
                 }
             },
         )
 
         self.assertEqual(repaired[1].entry_type, "narration")
 
-    def test_weak_speaker_evidence_does_not_block_local_narration_fallback(self):
+    def test_weak_speaker_evidence_does_not_enable_text_narration_fallback(self):
         entries = [
             entry(1, 0.00, 1.00, "\u4f60\u7ed9\u6211\u7b49\u7740", "dialogue"),
             entry(
@@ -2691,7 +4575,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(repaired[1].entry_type, "narration")
+        self.assertEqual(repaired[1].entry_type, "dialogue")
 
     def test_short_dialogue_without_speaker_evidence_is_not_swallowed_by_narration_bridge(self):
         entries = [
@@ -2704,7 +4588,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
 
         self.assertEqual(repaired[1].entry_type, "dialogue")
 
-    def test_audio_cluster_seed_map_provides_speaker_seeds_without_ai_text_rules(self):
+    def test_audio_cluster_seed_map_provides_narrator_seed_without_dialogue_centroid(self):
         entries = [
             entry(1, 0.00, 1.00, "\u7537\u4eba\u521a\u8d70\u8fdb\u5927\u5385", "narration"),
             entry(2, 1.10, 2.10, "\u6162\u7740", "dialogue"),
@@ -2750,7 +4634,7 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
         )
 
         self.assertEqual(seed_map[1]["label"], "narration_seed")
-        self.assertEqual(seed_map[2]["label"], "dialogue_seed")
+        self.assertNotIn(2, seed_map)
 
     def test_cluster_similarity_hard_decision_can_replace_weak_existing_similarity(self):
         merged = core.merge_speaker_similarity_maps_prefer_hard_audio(
@@ -2772,23 +4656,35 @@ class AudioClassificationOverrideRegressionTests(unittest.TestCase):
 
         self.assertEqual(merged[1]["dialogue_similarity"], 0.52)
 
-    def test_local_audio_override_only_confirms_current_type(self):
+    def test_local_audio_override_allows_speaker_evidence_to_cross_local_type(self):
         self.assertTrue(
             core.local_audio_override_can_confirm_entry_type(
                 entry(1, 0.00, 1.00, "\u6162\u7740", "dialogue"),
                 "dialogue",
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             core.local_audio_override_can_confirm_entry_type(
                 entry(2, 1.10, 2.10, "\u6162\u7740", "narration"),
                 "dialogue",
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             core.local_audio_override_can_confirm_entry_type(
                 entry(3, 2.20, 3.20, "\u7537\u4eba\u8fde\u5fd9\u540e\u9000", "dialogue"),
                 "narration",
+            )
+        )
+        self.assertFalse(
+            core.local_audio_override_can_confirm_entry_type(
+                entry(4, 3.30, 4.30, "HY44", "watermark"),
+                "narration",
+            )
+        )
+        self.assertFalse(
+            core.local_audio_override_can_confirm_entry_type(
+                entry(5, 4.40, 5.40, "", "narration"),
+                "dialogue",
             )
         )
 

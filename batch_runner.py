@@ -73,6 +73,11 @@ AUTO_CLIP_SETTINGS_KEYS = (
     "force_no_narration_mode",
     "narration_background_percent",
     "output_watermark_text",
+    "output_packaging_style",
+    "output_packaging_font",
+    "output_packaging_title_text",
+    "output_packaging_title_align",
+    "output_packaging_bottom_text",
     "enable_random_episode_flip",
     "random_episode_flip_ratio",
     "enable_random_visual_filter",
@@ -265,6 +270,16 @@ def build_logger(name: str, log_dir: Path) -> logging.Logger:
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     return logger
+
+
+def runtime_file_fingerprint(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+        stat_info = resolved.stat()
+    except OSError:
+        return f"{path} (missing)"
+    modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat_info.st_mtime))
+    return f"{resolved} (mtime {modified}, {stat_info.st_size} bytes)"
 
 
 def load_workspace(config_path: Path) -> WorkspaceContext:
@@ -2819,6 +2834,12 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
                         job_payload[key] = value
                     continue
                 job_payload[key] = value
+            if (
+                str(job_payload.get("output_packaging_style") or "").strip().lower()
+                not in {"", "none"}
+                and not str(job_payload.get("output_packaging_title_text") or "").strip()
+            ):
+                job_payload["output_packaging_title_text"] = workspace.name
             if bgm_source_mode not in {"none", "manual"} and auto_bgm_volume_percent is not None:
                 job_payload["bgm_volume_percent"] = round(float(auto_bgm_volume_percent), 1)
 
@@ -2857,6 +2878,16 @@ def get_stage_limit(workspace: WorkspaceContext, stage_name: str, default: int) 
 def run_workspace(workspace: WorkspaceContext, semaphores: dict[str, threading.Semaphore]) -> dict[str, dict[str, int]]:
     ensure_workspace_directories(workspace.root)
     workspace.logger.info("workspace=%s config=%s", workspace.name, workspace.config_path)
+    workspace.logger.info(
+        "runtime code: batch_runner=%s",
+        runtime_file_fingerprint(Path(__file__)),
+    )
+    workspace.logger.info(
+        "runtime code: subtitle_cli=%s auto_clip_cli=%s core=%s",
+        runtime_file_fingerprint(MODULES_ROOT / "auto_clip_engine" / "funasr_subtitle_cli.py"),
+        runtime_file_fingerprint(MODULES_ROOT / "auto_clip_engine" / "drama_clone_cli.py"),
+        runtime_file_fingerprint(MODULES_ROOT / "auto_clip_engine" / "drama_clone_core.py"),
+    )
 
     summaries: dict[str, dict[str, int]] = {}
     summaries["baidu_share"] = run_stage_specs(

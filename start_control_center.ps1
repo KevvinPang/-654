@@ -34,6 +34,22 @@ function Get-ControlCenterProcess {
     return $null
 }
 
+function Get-ControlCenterProcesses {
+    try {
+        $items = Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction Stop
+    } catch {
+        return @()
+    }
+
+    return @(
+        $items | Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -like '*control_center.py*' -and
+            $_.CommandLine -like "*$root*"
+        }
+    )
+}
+
 function Read-PidFile {
     if (-not (Test-Path -LiteralPath $pidFile)) {
         return $null
@@ -53,8 +69,82 @@ function Read-PidFile {
     }
 }
 
+function Get-ControlCenterStatus {
+    $url = "http://${hostName}:$port/api/status"
+    try {
+        $status = Invoke-RestMethod -Uri $url -TimeoutSec 2 -ErrorAction Stop
+    } catch {
+        return $null
+    }
+
+    if (-not $status.server -or -not $status.server.project_root) {
+        return $null
+    }
+
+    try {
+        $statusRoot = [System.IO.Path]::GetFullPath([string]$status.server.project_root).TrimEnd('\')
+        $localRoot = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
+    } catch {
+        return $null
+    }
+
+    if ([string]::Equals($statusRoot, $localRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $status
+    }
+
+    return $null
+}
+
+function Get-ProcessStartTimeUtc {
+    param($ProcessInfo)
+
+    if (-not $ProcessInfo) {
+        return $null
+    }
+
+    $creationDate = $ProcessInfo.CreationDate
+    if ($creationDate) {
+        if ($creationDate -is [datetime]) {
+            return $creationDate.ToUniversalTime()
+        }
+        try {
+            return [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$creationDate).ToUniversalTime()
+        } catch {
+        }
+    }
+
+    try {
+        return (Get-Process -Id ([int]$ProcessInfo.ProcessId) -ErrorAction Stop).StartTime.ToUniversalTime()
+    } catch {
+        return $null
+    }
+}
+
+function Stop-ControlCenterProcessIds {
+    param([object[]]$ProcessIds)
+
+    foreach ($rawProcessId in @($ProcessIds | Where-Object { $_ } | Select-Object -Unique)) {
+        try {
+            Stop-Process -Id ([int]$rawProcessId) -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+}
+
 $existingPid = Read-PidFile
+$existingStatus = Get-ControlCenterStatus
+if ($existingStatus -and $existingStatus.server.pid) {
+    try {
+        $existingPid = [int]$existingStatus.server.pid
+    } catch {
+    }
+}
 $existingProcess = Get-ControlCenterProcess -ProcessId $existingPid
+$allExistingProcesses = @(Get-ControlCenterProcesses)
+if (-not $existingProcess -and $allExistingProcesses.Count -gt 0) {
+    $existingProcess = $allExistingProcesses | Sort-Object ProcessId | Select-Object -First 1
+    $existingPid = [int]$existingProcess.ProcessId
+}
 $autoClipEngineFiles = @()
 if (Test-Path -LiteralPath $autoClipEngineDir) {
     $autoClipEngineFiles = Get-ChildItem -LiteralPath $autoClipEngineDir -Filter '*.py' -File -Recurse | ForEach-Object { $_.FullName }
@@ -67,19 +157,47 @@ $watchedFileCandidates = @(
 $watchedFiles = $watchedFileCandidates | Where-Object { Test-Path -LiteralPath $_ }
 $latestCodeWriteTime = ($watchedFiles | ForEach-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } | Sort-Object -Descending | Select-Object -First 1)
 $pidWriteTime = if (Test-Path -LiteralPath $pidFile) { (Get-Item -LiteralPath $pidFile).LastWriteTimeUtc } else { $null }
+$existingProcessStartTime = Get-ProcessStartTimeUtc $existingProcess
 $needsRestart = $false
 
-if ($existingProcess -and $pidWriteTime -and $latestCodeWriteTime -and $latestCodeWriteTime -gt $pidWriteTime) {
+if (
+    $existingProcess -and
+    (
+        ($existingProcessStartTime -and $latestCodeWriteTime -and $latestCodeWriteTime -gt $existingProcessStartTime) -or
+        ((-not $existingProcessStartTime) -and ((-not $pidWriteTime) -or ($latestCodeWriteTime -and $latestCodeWriteTime -gt $pidWriteTime)))
+    )
+) {
     try {
-        Stop-Process -Id $existingPid -Force -ErrorAction Stop
+        $idsToStop = @()
+        if ($existingPid) {
+            $idsToStop += $existingPid
+        }
+        if ($existingStatus -and $existingStatus.server.pid) {
+            $idsToStop += $existingStatus.server.pid
+        }
+        $idsToStop += @($allExistingProcesses | ForEach-Object { $_.ProcessId })
+        Stop-ControlCenterProcessIds $idsToStop
         Start-Sleep -Milliseconds 600
     } catch {
+    }
+    $existingStatus = Get-ControlCenterStatus
+    if ($existingStatus -and $existingStatus.server.pid) {
+        try {
+            $existingPid = [int]$existingStatus.server.pid
+        } catch {
+        }
     }
     $existingProcess = Get-ControlCenterProcess -ProcessId $existingPid
     $needsRestart = $true
 }
 
 if ($existingProcess -and -not $needsRestart) {
+    foreach ($item in $allExistingProcesses) {
+        if ($item.ProcessId -ne $existingPid) {
+            Stop-Process -Id $item.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Set-Content -LiteralPath $pidFile -Value $existingPid -Encoding ASCII
     Start-Process "http://${hostName}:$port"
     exit 0
 }
@@ -115,6 +233,15 @@ Set-Content -LiteralPath $pidFile -Value $process.Id -Encoding ASCII
 Start-Sleep -Seconds 2
 
 if ($process.HasExited) {
+    $stdoutText = if (Test-Path -LiteralPath $stdoutLogFile) { Get-Content -LiteralPath $stdoutLogFile -Raw -ErrorAction SilentlyContinue } else { '' }
+    if ($stdoutText -match 'CONTROL_CENTER_ALREADY_RUNNING') {
+        $existingStatus = Get-ControlCenterStatus
+        if ($existingStatus -and $existingStatus.server.pid) {
+            Set-Content -LiteralPath $pidFile -Value ([int]$existingStatus.server.pid) -Encoding ASCII
+        }
+        Start-Process "http://${hostName}:$port"
+        exit 0
+    }
     throw "Control center failed to start. Check $stdoutLogFile and $stderrLogFile"
 }
 

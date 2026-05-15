@@ -12,6 +12,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import drama_clone_core as _drama_clone_core
+
 from drama_clone_core import (
     CloneSettings,
     DEFAULT_ENABLE_RANDOM_VISUAL_FILTER,
@@ -29,6 +31,16 @@ from drama_clone_core import (
     run_clone_pipeline,
     sanitize_stem,
 )
+
+
+def _runtime_file_fingerprint(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+        stat_info = resolved.stat()
+    except OSError:
+        return f"{path} (missing)"
+    modified = datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    return f"{resolved} (mtime {modified}, {stat_info.st_size} bytes)"
 
 
 def _load_job_file(path: Path) -> dict:
@@ -102,6 +114,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-force-no-narration-mode", dest="force_no_narration_mode", action="store_false")
     parser.add_argument("--narration-background-percent", type=float)
     parser.add_argument("--output-watermark-text")
+    parser.add_argument("--output-packaging-style")
+    parser.add_argument("--output-packaging-font")
+    parser.add_argument("--output-packaging-title-text")
+    parser.add_argument("--output-packaging-title-align")
+    parser.add_argument("--output-packaging-bottom-text")
     parser.add_argument("--random-flip-episodes", dest="enable_random_episode_flip", action="store_true", default=None)
     parser.add_argument("--disable-random-flip-episodes", dest="enable_random_episode_flip", action="store_false")
     parser.add_argument("--random-flip-ratio", type=float)
@@ -166,6 +183,31 @@ def parse_args() -> argparse.Namespace:
         if args.output_watermark_text is not None
         else str(job.get("output_watermark_text", "") or "")
     )
+    args.output_packaging_style = (
+        args.output_packaging_style
+        if args.output_packaging_style is not None
+        else str(job.get("output_packaging_style", "") or "")
+    )
+    args.output_packaging_font = (
+        args.output_packaging_font
+        if args.output_packaging_font is not None
+        else str(job.get("output_packaging_font", "") or "")
+    )
+    args.output_packaging_title_text = (
+        args.output_packaging_title_text
+        if args.output_packaging_title_text is not None
+        else str(job.get("output_packaging_title_text", "") or "")
+    )
+    args.output_packaging_title_align = (
+        args.output_packaging_title_align
+        if args.output_packaging_title_align is not None
+        else str(job.get("output_packaging_title_align", "") or "")
+    )
+    args.output_packaging_bottom_text = (
+        args.output_packaging_bottom_text
+        if args.output_packaging_bottom_text is not None
+        else str(job.get("output_packaging_bottom_text", "") or "")
+    )
     if args.enable_random_episode_flip is None:
         args.enable_random_episode_flip = bool(
             job.get("enable_random_episode_flip", DEFAULT_ENABLE_RANDOM_EPISODE_FLIP)
@@ -213,6 +255,12 @@ def main() -> None:
         with log_file.open("a", encoding="utf-8-sig") as handle:
             faulthandler.enable(handle)
 
+    emit(
+        "Runtime code: "
+        f"drama_clone_cli={_runtime_file_fingerprint(Path(__file__))}; "
+        f"drama_clone_core={_runtime_file_fingerprint(Path(_drama_clone_core.__file__))}"
+    )
+
     subtitle_entries = []
     if args.reference_subtitle is not None:
         subtitle_content = load_text_file(args.reference_subtitle)
@@ -251,6 +299,11 @@ def main() -> None:
         force_no_narration_mode=bool(args.force_no_narration_mode),
         narration_background_percent=args.narration_background_percent,
         output_watermark_text=args.output_watermark_text,
+        output_packaging_style=args.output_packaging_style,
+        output_packaging_font=args.output_packaging_font,
+        output_packaging_title_text=args.output_packaging_title_text,
+        output_packaging_title_align=args.output_packaging_title_align,
+        output_packaging_bottom_text=args.output_packaging_bottom_text,
         enable_random_episode_flip=bool(args.enable_random_episode_flip),
         random_episode_flip_ratio=args.random_flip_ratio,
         enable_random_visual_filter=bool(args.enable_random_visual_filter),

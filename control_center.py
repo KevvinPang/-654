@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import argparse
 import collections
+import errno
+import io
 import importlib.util
 import json
+import math
 import mimetypes
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -15,13 +19,23 @@ import tempfile
 import threading
 import time
 import textwrap
+import urllib.error
 import urllib.parse
+import urllib.request
 import webbrowser
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+try:
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+    PIL_AVAILABLE = True
+except Exception:
+    Image = ImageDraw = ImageFont = ImageOps = None  # type: ignore[assignment]
+    PIL_AVAILABLE = False
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -33,6 +47,8 @@ CONTROL_CENTER_UI = PROJECT_ROOT / "control_center_ui.html"
 CONTROL_CENTER_ASSETS_DIR = PROJECT_ROOT / "assets"
 CONTROL_CENTER_APP_LOGO_PNG = CONTROL_CENTER_ASSETS_DIR / "app_logo.png"
 CONTROL_CENTER_APP_LOGO_ICO = CONTROL_CENTER_ASSETS_DIR / "app_logo.ico"
+CONTROL_CENTER_LOGO_LAYERS_DIR = CONTROL_CENTER_ASSETS_DIR / "logo_layers"
+PACKAGING_PREVIEW_SOURCE_IMAGE = PROJECT_ROOT / "docs" / "designs" / "external_wife_frame_120s.png"
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -54,6 +70,7 @@ TASK_SCHEMA_VERSION_KEY = "_control_center_task_version"
 UI_SESSION_HEARTBEAT_TIMEOUT_SECONDS = 15.0
 UI_SESSION_SHUTDOWN_GRACE_SECONDS = 3.0
 UI_SESSION_AUTOSTOP_ENV = "SERVER_AUTO_CLIP_STOP_ON_UI_DISCONNECT"
+CONTROL_CENTER_STARTED_AT = time.time()
 
 DEFAULT_CONCURRENCY = {
     "baidu_share": 1,
@@ -71,6 +88,95 @@ DEFAULT_GLOBAL_AI_SETTINGS = {
     "disable_ai_narration_rewrite": False,
 }
 GLOBAL_AI_SETTING_KEYS = tuple(DEFAULT_GLOBAL_AI_SETTINGS.keys())
+
+try:
+    from modules.auto_clip_engine.packaging_styles import (
+        DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT,
+        DEFAULT_OUTPUT_PACKAGING_FONT,
+        DEFAULT_OUTPUT_PACKAGING_STYLE,
+        DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN,
+        OUTPUT_PACKAGING_NONE,
+        apply_output_packaging_font,
+        get_output_packaging_style,
+        normalize_output_packaging_font,
+        normalize_output_packaging_style,
+        normalize_output_packaging_title_align,
+        packaging_font_options,
+        packaging_style_options,
+    )
+except Exception:
+    DEFAULT_OUTPUT_PACKAGING_FONT = "style_default"
+    DEFAULT_OUTPUT_PACKAGING_STYLE = "douyin_handwritten"
+    DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN = "left"
+    DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT = "热门短剧 剧情需要 请勿模仿"
+    OUTPUT_PACKAGING_NONE = "none"
+
+    def packaging_style_options() -> list[dict[str, str]]:
+        return [
+            {
+                "id": "none",
+                "label": "不使用包装",
+                "description": "保留原成片画面，不叠加上下遮挡和提示文字。",
+            },
+            {
+                "id": DEFAULT_OUTPUT_PACKAGING_STYLE,
+                "label": "款式 B 参考图手写标题",
+                "description": "白字黑边，剧名和底部提示使用同一款手写字体。",
+            },
+        ]
+
+    def packaging_font_options() -> list[dict[str, str]]:
+        return [{"id": DEFAULT_OUTPUT_PACKAGING_FONT, "label": "跟随款式", "description": "使用款式自带字体。"}]
+
+    def normalize_output_packaging_font(value: object) -> str:
+        return DEFAULT_OUTPUT_PACKAGING_FONT
+
+    def apply_output_packaging_font(style: dict[str, Any], font_id: object) -> dict[str, Any]:
+        resolved = dict(style)
+        resolved["font_id"] = DEFAULT_OUTPUT_PACKAGING_FONT
+        return resolved
+
+    def normalize_output_packaging_style(value: object) -> str:
+        style_id = str(value or "").strip()
+        if not style_id or style_id == OUTPUT_PACKAGING_NONE:
+            return OUTPUT_PACKAGING_NONE
+        return DEFAULT_OUTPUT_PACKAGING_STYLE
+
+    def normalize_output_packaging_title_align(value: object) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in {"left", "center", "right"} else DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN
+
+    def get_output_packaging_style(style_id: object) -> dict[str, Any]:
+        normalized = normalize_output_packaging_style(style_id)
+        if normalized == OUTPUT_PACKAGING_NONE:
+            return {"id": OUTPUT_PACKAGING_NONE, "label": "不使用包装", "enabled": False}
+        return {
+            "id": DEFAULT_OUTPUT_PACKAGING_STYLE,
+            "label": "款式 B 参考图手写标题",
+            "enabled": True,
+            "font_file": "MaShanZheng-Regular.ttf",
+            "top_height_ratio": 0.205,
+            "bottom_height_ratio": 0.210,
+            "edge_height_ratio": 0.060,
+            "edge_alpha": 0.74,
+            "gradient_alpha": 0.52,
+            "gradient_steps": 36,
+            "gradient_curve": 1.25,
+            "title_size_ratio": 0.030,
+            "title_min_size": 22,
+            "title_max_size": 58,
+            "title_margin_x_ratio": 0.045,
+            "title_margin_top_ratio": 0.026,
+            "title_border_ratio": 0.095,
+            "bottom_size_ratio": 0.027,
+            "bottom_min_size": 20,
+            "bottom_max_size": 52,
+            "bottom_margin_x_ratio": 0.045,
+            "bottom_margin_bottom_ratio": 0.036,
+            "bottom_align": "right",
+            "bottom_border_ratio": 0.085,
+        }
+
 KNOWN_MOJIBAKE_REPLACEMENTS = {
     "E:\\鏍风墖": "E:\\样片",
     "E:\\鎴愮墖": "E:\\成片",
@@ -82,6 +188,16 @@ KNOWN_WORKSPACE_MOJIBAKE = (
     "鏂╂儏褰撳ぉ浠栦滑鎮旂柉浜",
     "ն�鵱�����ǻڷ���",
 )
+
+
+def runtime_file_fingerprint(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+        stat_info = resolved.stat()
+    except OSError:
+        return f"{path} (missing)"
+    modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat_info.st_mtime))
+    return f"{resolved} (mtime {modified}, {stat_info.st_size} bytes)"
 
 
 @dataclass
@@ -127,12 +243,56 @@ UI_SESSION_EVER_CONNECTED = False
 SERVER_SHUTDOWN_LOCK = threading.Lock()
 
 
+class ControlCenterHTTPServer(ThreadingHTTPServer):
+    if os.name == "nt":
+        allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the local control center for server_auto_clip.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host.")
     parser.add_argument("--port", type=int, default=19081, help="Bind port.")
     parser.add_argument("--open-browser", action="store_true", help="Open the browser automatically after startup.")
     return parser.parse_args(argv)
+
+
+def control_center_url(host: str, port: int) -> str:
+    display_host = str(host or "").strip() or "127.0.0.1"
+    if display_host in {"0.0.0.0", "::"}:
+        display_host = "127.0.0.1"
+    if ":" in display_host and not display_host.startswith("["):
+        display_host = f"[{display_host}]"
+    return f"http://{display_host}:{int(port)}"
+
+
+def is_address_in_use_error(exc: OSError) -> bool:
+    return getattr(exc, "winerror", None) == 10048 or exc.errno == errno.EADDRINUSE
+
+
+def probe_existing_control_center(host: str, port: int) -> dict[str, Any] | None:
+    try:
+        with urllib.request.urlopen(f"{control_center_url(host, port)}/api/status", timeout=2.0) as response:
+            if response.status != HTTPStatus.OK:
+                return None
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
+        return None
+
+    server = payload.get("server") if isinstance(payload, dict) else None
+    if not isinstance(server, dict):
+        return None
+    try:
+        existing_root = Path(str(server.get("project_root") or "")).resolve()
+    except Exception:
+        return None
+    if existing_root != PROJECT_ROOT.resolve():
+        return None
+    return payload
 
 
 def read_json(path: Path, default: Any) -> Any:
@@ -237,6 +397,19 @@ def persist_system_notice(message: str, *, tone: str = "warning", reason: str = 
             "time_text": runtime_timestamp_text(),
         },
     )
+
+
+def read_current_system_notice() -> Any:
+    notice = read_json(CONTROL_CENTER_NOTICE_FILE, None)
+    if not isinstance(notice, dict):
+        return None
+    try:
+        timestamp = float(notice.get("timestamp", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if timestamp + 1.0 < CONTROL_CENTER_STARTED_AT:
+        return None
+    return notice
 
 
 def append_job_stop_notice(job: JobState, message: str) -> None:
@@ -402,6 +575,11 @@ def default_workspace_task(workspace_name: str) -> dict[str, Any]:
             "force_no_narration_mode": False,
             "narration_background_percent": 3,
             "output_watermark_text": "",
+            "output_packaging_style": DEFAULT_OUTPUT_PACKAGING_STYLE,
+            "output_packaging_font": DEFAULT_OUTPUT_PACKAGING_FONT,
+            "output_packaging_title_text": "",
+            "output_packaging_title_align": DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN,
+            "output_packaging_bottom_text": DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT,
             "enable_random_episode_flip": True,
             "random_episode_flip_ratio": 0.4,
             "enable_random_visual_filter": True,
@@ -451,6 +629,11 @@ def apply_workspace_task_defaults(payload: dict[str, Any], workspace_name: str) 
     settings.setdefault("force_no_narration_mode", False)
     settings.setdefault("narration_background_percent", 3)
     settings.setdefault("output_watermark_text", "")
+    settings.setdefault("output_packaging_style", DEFAULT_OUTPUT_PACKAGING_STYLE)
+    settings.setdefault("output_packaging_font", DEFAULT_OUTPUT_PACKAGING_FONT)
+    settings.setdefault("output_packaging_title_text", "")
+    settings.setdefault("output_packaging_title_align", DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN)
+    settings.setdefault("output_packaging_bottom_text", DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT)
     settings.setdefault("enable_random_episode_flip", True)
     settings.setdefault("random_episode_flip_ratio", 0.4)
     settings.setdefault("enable_random_visual_filter", True)
@@ -609,6 +792,15 @@ def disconnect_ui_session(session_id: str) -> int:
         return len(UI_SESSIONS)
 
 
+def active_workspace_job_count() -> int:
+    with JOB_LOCK:
+        return sum(
+            1
+            for job in JOBS.values()
+            if job.process is not None and job.status in {"running", "stopping"}
+        )
+
+
 def stop_all_jobs(*, reason: str = "") -> int:
     with JOB_LOCK:
         running_job_ids = [
@@ -679,7 +871,9 @@ def start_ui_session_watchdog(server: ThreadingHTTPServer) -> None:
                     and (time.time() - UI_SESSION_LAST_EMPTY_AT) >= UI_SESSION_SHUTDOWN_GRACE_SECONDS
                 )
             if should_shutdown:
-                request_server_shutdown(server, stop_jobs=True, reason="ui-session-disconnected")
+                if active_workspace_job_count() > 0:
+                    continue
+                request_server_shutdown(server, stop_jobs=False, reason="ui-session-disconnected")
                 return
 
     threading.Thread(target=worker, daemon=True).start()
@@ -1316,6 +1510,253 @@ def load_control_center_html() -> str:
     if CONTROL_CENTER_UI.exists():
         return CONTROL_CENTER_UI.read_text(encoding="utf-8")
     return HTML_PAGE
+
+
+def style_float(style: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(style.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def style_int(style: dict[str, Any], key: str, default: int) -> int:
+    try:
+        return int(style.get(key, default))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def clamp_float(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def normalize_packaging_preview_text(value: object, fallback: str, limit: int) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not text:
+        text = fallback
+    return text[:limit].strip()
+
+
+def normalize_packaging_preview_title(value: object, fallback: str = "外来媳妇专治各种不服") -> str:
+    text = normalize_packaging_preview_text(value, fallback, 40)
+    if not text:
+        return ""
+    return text if text.startswith("《") and text.endswith("》") else f"《{text.strip('《》')}》"
+
+
+def packaging_preview_text_units(text: str) -> float:
+    total = 0.0
+    for char in text:
+        if char.isspace():
+            total += 0.35
+        elif re.match(r"[\u3400-\u9fff]", char) or char in "《》【】（）":
+            total += 1.0
+        else:
+            total += 0.58
+    return max(1.0, total)
+
+
+def resolve_packaging_preview_font(style: dict[str, Any], size: int) -> Any:
+    if not PIL_AVAILABLE:
+        return None
+    candidates: list[Path] = []
+    raw_font_file = str(style.get("font_file") or "").strip()
+    raw_font_path = str(style.get("font_path") or "").strip()
+    if raw_font_path:
+        candidates.append(Path(raw_font_path))
+    if raw_font_file:
+        candidates.append(CONTROL_CENTER_ASSETS_DIR / "fonts" / raw_font_file)
+    windir = Path(os.environ.get("WINDIR", "C:/Windows"))
+    candidates.extend(
+        [
+            windir / "Fonts" / "msyhbd.ttc",
+            windir / "Fonts" / "msyh.ttc",
+            windir / "Fonts" / "simkai.ttf",
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            try:
+                return ImageFont.truetype(str(candidate), size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+
+def estimate_packaging_preview_font_size(
+    text: str,
+    width: int,
+    height: int,
+    *,
+    size_ratio: float,
+    min_size: int,
+    max_size: int,
+    margin_ratio: float,
+) -> int:
+    scale = height / 1080.0
+    raw_size = height * size_ratio
+    max_text_width = max(1.0, width * max(0.20, 1.0 - margin_ratio * 2.0))
+    fitted_size = max_text_width / (packaging_preview_text_units(text) * 0.92)
+    return int(round(clamp_float(min(raw_size, fitted_size), min_size * scale, max_size * scale)))
+
+
+def build_packaging_preview_base_image(width: int, height: int) -> Any:
+    if PIL_AVAILABLE and PACKAGING_PREVIEW_SOURCE_IMAGE.exists():
+        source = Image.open(PACKAGING_PREVIEW_SOURCE_IMAGE).convert("RGB")
+        return ImageOps.fit(source, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    image = Image.new("RGB", (width, height), (34, 37, 40))
+    draw = ImageDraw.Draw(image, "RGBA")
+    for y in range(height):
+        t = y / max(1, height - 1)
+        center_glow = 1.0 - min(1.0, abs(t - 0.48) * 2.2)
+        r = int(35 + 48 * center_glow + 14 * math.sin(t * math.pi * 2.0))
+        g = int(38 + 58 * center_glow)
+        b = int(42 + 46 * center_glow + 18 * (1.0 - t))
+        draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
+    return image
+
+
+def draw_packaging_preview_text(
+    image: Any,
+    text: str,
+    style: dict[str, Any],
+    *,
+    role: str,
+    align: str,
+) -> None:
+    if not text or not PIL_AVAILABLE:
+        return
+    width, height = image.size
+    draw = ImageDraw.Draw(image)
+    if role == "title":
+        margin_x = max(8, int(round(width * style_float(style, "title_margin_x_ratio", 0.045))))
+        margin_y = max(5, int(round(height * style_float(style, "title_margin_top_ratio", 0.026))))
+        font_size = estimate_packaging_preview_font_size(
+            text,
+            width,
+            height,
+            size_ratio=style_float(style, "title_size_ratio", 0.030),
+            min_size=style_int(style, "title_min_size", 22),
+            max_size=style_int(style, "title_max_size", 58),
+            margin_ratio=style_float(style, "title_margin_x_ratio", 0.045),
+        )
+        border = max(1, int(round(font_size * style_float(style, "title_border_ratio", 0.09))))
+        resolved_align = normalize_output_packaging_title_align(align)
+        y = margin_y
+    else:
+        margin_x = max(8, int(round(width * style_float(style, "bottom_margin_x_ratio", 0.045))))
+        margin_y = max(6, int(round(height * style_float(style, "bottom_margin_bottom_ratio", 0.036))))
+        font_size = estimate_packaging_preview_font_size(
+            text,
+            width,
+            height,
+            size_ratio=style_float(style, "bottom_size_ratio", 0.027),
+            min_size=style_int(style, "bottom_min_size", 20),
+            max_size=style_int(style, "bottom_max_size", 52),
+            margin_ratio=style_float(style, "bottom_margin_x_ratio", 0.045),
+        )
+        border = max(1, int(round(font_size * style_float(style, "bottom_border_ratio", 0.08))))
+        resolved_align = normalize_output_packaging_title_align(style.get("bottom_align") or "center")
+        y = height - margin_y
+    font = resolve_packaging_preview_font(style, max(1, font_size))
+    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=border)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    if resolved_align == "center":
+        x = int(round((width - text_width) / 2))
+    elif resolved_align == "right":
+        x = width - text_width - margin_x
+    else:
+        x = margin_x
+    if role != "title":
+        y = int(round(y - text_height))
+    draw.text(
+        (x, y),
+        text,
+        font=font,
+        fill=(255, 255, 255, 250),
+        stroke_width=border,
+        stroke_fill=(0, 0, 0, 240),
+    )
+
+
+def build_packaging_preview_png(
+    *,
+    style_id: str,
+    title_text: str,
+    title_align: str,
+    bottom_text: str,
+    font_id: str = DEFAULT_OUTPUT_PACKAGING_FONT,
+) -> bytes:
+    if not PIL_AVAILABLE:
+        raise RuntimeError("Pillow is required to render packaging previews")
+    width, height = 540, 960
+    style_id = normalize_output_packaging_style(style_id)
+    style = apply_output_packaging_font(get_output_packaging_style(style_id), font_id)
+    image = build_packaging_preview_base_image(width, height)
+    draw = ImageDraw.Draw(image, "RGBA")
+
+    if style_id != OUTPUT_PACKAGING_NONE and bool(style.get("enabled", True)):
+        top_height = max(0, int(round(height * style_float(style, "top_height_ratio", 0.20))))
+        bottom_height = max(0, int(round(height * style_float(style, "bottom_height_ratio", 0.20))))
+        default_edge_height_ratio = style_float(style, "edge_height_ratio", 0.055)
+        default_edge_alpha = style_float(style, "edge_alpha", 0.72)
+        default_gradient_alpha = style_float(style, "gradient_alpha", 0.50)
+        default_curve = style_float(style, "gradient_curve", 1.2)
+        top_edge_height = max(1, int(round(height * style_float(style, "top_edge_height_ratio", default_edge_height_ratio))))
+        bottom_edge_height = max(1, int(round(height * style_float(style, "bottom_edge_height_ratio", default_edge_height_ratio))))
+        top_edge_alpha = int(round(255 * clamp_float(style_float(style, "top_edge_alpha", default_edge_alpha), 0.0, 1.0)))
+        bottom_edge_alpha = int(round(255 * clamp_float(style_float(style, "bottom_edge_alpha", default_edge_alpha), 0.0, 1.0)))
+        top_gradient_alpha = int(round(255 * clamp_float(style_float(style, "top_gradient_alpha", default_gradient_alpha), 0.0, 1.0)))
+        bottom_gradient_alpha = int(round(255 * clamp_float(style_float(style, "bottom_gradient_alpha", default_gradient_alpha), 0.0, 1.0)))
+        top_curve = max(0.2, style_float(style, "top_gradient_curve", default_curve))
+        bottom_curve = max(0.2, style_float(style, "bottom_gradient_curve", default_curve))
+        if top_height > 0:
+            top_edge = min(top_edge_height, top_height)
+            draw.rectangle((0, 0, width, top_edge), fill=(0, 0, 0, top_edge_alpha))
+            for y in range(top_edge, top_height):
+                t = (y - top_edge) / max(1, top_height - top_edge)
+                alpha = int(round(top_gradient_alpha * ((1.0 - t) ** top_curve)))
+                if alpha > 0:
+                    draw.line((0, y, width, y), fill=(0, 0, 0, alpha))
+        if bottom_height > 0:
+            bottom_edge = min(bottom_edge_height, bottom_height)
+            fade_start = max(0, height - bottom_height)
+            fade_end = max(0, height - bottom_edge)
+            for y in range(fade_start, fade_end):
+                t = (y - fade_start) / max(1, fade_end - fade_start)
+                alpha = int(round(bottom_gradient_alpha * (t ** bottom_curve)))
+                if alpha > 0:
+                    draw.line((0, y, width, y), fill=(0, 0, 0, alpha))
+            draw.rectangle((0, fade_end, width, height), fill=(0, 0, 0, bottom_edge_alpha))
+        draw_packaging_preview_text(
+            image,
+            normalize_packaging_preview_title(title_text),
+            style,
+            role="title",
+            align=title_align,
+        )
+        draw_packaging_preview_text(
+            image,
+            normalize_packaging_preview_text(bottom_text, DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT, 48),
+            style,
+            role="bottom",
+            align="center",
+        )
+    else:
+        font = resolve_packaging_preview_font({}, 30)
+        text = "不使用包装"
+        bbox = draw.textbbox((0, 0), text, font=font)
+        draw.text(
+            ((width - (bbox[2] - bbox[0])) / 2, height - 92),
+            text,
+            font=font,
+            fill=(255, 255, 255, 230),
+        )
+
+    output = io.BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 def unique_destination_path(path: Path) -> Path:
@@ -2037,6 +2478,14 @@ def remove_control_center_pid_file() -> None:
         pass
 
 
+def write_control_center_pid_file() -> None:
+    try:
+        CONTROL_CENTER_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        CONTROL_CENTER_PID_FILE.write_text(str(os.getpid()), encoding="ascii")
+    except Exception:
+        pass
+
+
 def list_baidu_share_files(share_url: str) -> dict[str, Any]:
     share_url = str(share_url or "").strip()
     if not share_url:
@@ -2322,6 +2771,15 @@ def start_batch_job(workspace_names: list[str], *, workspace_parallel: int | Non
     log_dir.mkdir(parents=True, exist_ok=True)
     job_id = next_job_id()
     log_path = log_dir / f"{job_id}.log"
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(f"CONTROL_CENTER_STARTED {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(CONTROL_CENTER_STARTED_AT))}\n")
+        fh.write(f"RUNTIME_CODE control_center={runtime_file_fingerprint(Path(__file__))}\n")
+        fh.write(f"RUNTIME_CODE batch_runner={runtime_file_fingerprint(BATCH_RUNNER)}\n")
+        fh.write(
+            "RUNTIME_CODE auto_clip_core="
+            + runtime_file_fingerprint(PROJECT_ROOT / "modules" / "auto_clip_engine" / "drama_clone_core.py")
+            + "\n"
+        )
     process = subprocess.Popen(
         command,
         cwd=str(PROJECT_ROOT),
@@ -2415,9 +2873,11 @@ def build_status_payload(server: ThreadingHTTPServer) -> dict[str, Any]:
             "workspace_root": str(WORKSPACE_ROOT),
             "pid_file": str(CONTROL_CENTER_PID_FILE),
         },
-        "system_notice": read_json(CONTROL_CENTER_NOTICE_FILE, None),
+        "system_notice": read_current_system_notice(),
         "workspaces": list_workspaces(),
         "jobs": list_jobs(),
+        "packaging_styles": packaging_style_options(),
+        "packaging_fonts": packaging_font_options(),
         "modules": load_module_views(),
     }
 
@@ -3618,8 +4078,33 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 self._send_binary(HTTPStatus.OK, CONTROL_CENTER_APP_LOGO_PNG.read_bytes(), "image/png")
                 return
 
+            if len(parts) == 2 and parts[0] == "logo-layers":
+                filename = urllib.parse.unquote(parts[1])
+                if "/" in filename or "\\" in filename or filename.startswith("."):
+                    self._send_empty(HTTPStatus.NOT_FOUND)
+                    return
+                logo_layer = CONTROL_CENTER_LOGO_LAYERS_DIR / filename
+                if not logo_layer.is_file():
+                    self._send_empty(HTTPStatus.NOT_FOUND)
+                    return
+                content_type = mimetypes.guess_type(str(logo_layer))[0] or "application/octet-stream"
+                self._send_binary(HTTPStatus.OK, logo_layer.read_bytes(), content_type)
+                return
+
             if parsed.path == "/api/status":
                 self._send_json(HTTPStatus.OK, build_status_payload(self.server))
+                return
+
+            if parsed.path == "/api/packaging-preview.png":
+                query = urllib.parse.parse_qs(parsed.query)
+                preview = build_packaging_preview_png(
+                    style_id=str((query.get("style") or [DEFAULT_OUTPUT_PACKAGING_STYLE])[0] or ""),
+                    font_id=str((query.get("font") or [DEFAULT_OUTPUT_PACKAGING_FONT])[0] or ""),
+                    title_text=str((query.get("title") or [""])[0] or ""),
+                    title_align=str((query.get("align") or [DEFAULT_OUTPUT_PACKAGING_TITLE_ALIGN])[0] or ""),
+                    bottom_text=str((query.get("bottom") or [DEFAULT_OUTPUT_PACKAGING_BOTTOM_TEXT])[0] or ""),
+                )
+                self._send_binary(HTTPStatus.OK, preview, "image/png")
                 return
 
             if parsed.path == "/api/baidu/login-status":
@@ -3865,11 +4350,27 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     ensure_workspace_root()
-    server = ThreadingHTTPServer((args.host, args.port), ControlCenterHandler)
+    url = control_center_url(args.host, args.port)
+    try:
+        server = ControlCenterHTTPServer((args.host, args.port), ControlCenterHandler)
+    except OSError as exc:
+        if not is_address_in_use_error(exc):
+            raise
+        existing_status = probe_existing_control_center(args.host, args.port)
+        if existing_status is None:
+            print(f"CONTROL_CENTER_PORT_IN_USE {url}")
+            print("端口已被其他程序占用，请先关闭占用该端口的程序，或用 --port 指定另一个端口。")
+            return 2
+        existing_pid = existing_status.get("server", {}).get("pid")
+        print(f"CONTROL_CENTER_ALREADY_RUNNING {url}" + (f" pid={existing_pid}" if existing_pid else ""))
+        if args.open_browser:
+            webbrowser.open(url)
+        return 0
+    write_control_center_pid_file()
     start_ui_session_watchdog(server)
     if args.open_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://{args.host}:{args.port}")).start()
-    print(f"CONTROL_CENTER http://{args.host}:{args.port}")
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    print(f"CONTROL_CENTER {url}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

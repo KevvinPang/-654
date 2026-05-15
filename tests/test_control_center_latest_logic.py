@@ -92,6 +92,28 @@ class ControlCenterLatestLogicTests(unittest.TestCase):
         self.assertIn("sendBeacon", html)
         self.assertIn("pagehide", html)
 
+    def test_ui_disconnect_shutdown_defers_while_workspace_job_is_running(self):
+        original_jobs = dict(control_center.JOBS)
+        try:
+            control_center.JOBS.clear()
+            control_center.JOBS["running-job"] = control_center.JobState(
+                job_id="running-job",
+                workspace="demo",
+                command=[],
+                log_path="",
+                started_at=1.0,
+                status="running",
+                process=object(),
+            )
+
+            self.assertEqual(control_center.active_workspace_job_count(), 1)
+
+            control_center.JOBS["running-job"].status = "completed"
+            self.assertEqual(control_center.active_workspace_job_count(), 0)
+        finally:
+            control_center.JOBS.clear()
+            control_center.JOBS.update(original_jobs)
+
 
 if __name__ == "__main__":
     unittest.main()

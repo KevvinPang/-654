@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>短剧自动剪辑控制台 UI 预览稿</title>
+  <style>
+    :root{
+      --page:#0d0f12;
+      --ink:#f7f3ec;
+      --muted:#a8aaad;
+      --line:rgba(255,255,255,.12);
+      --glass:rgba(255,255,255,.06);
+      --font-title:"Microsoft YaHei UI","HarmonyOS Sans SC","Source Han Sans SC",sans-serif;
+      --font-body:"HarmonyOS Sans SC","Microsoft YaHei UI","Noto Sans CJK SC",sans-serif;
+      --font-mono:"Cascadia Mono","JetBrains Mono","Consolas",monospace;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0;
+      min-height:100vh;
+      color:var(--ink);
+      font-family:var(--font-body);
+      background:
+        radial-gradient(circle at 8% 2%,rgba(48,131,255,.2),transparent 28rem),
+        radial-gradient(circle at 92% 4%,rgba(255,134,61,.18),transparent 30rem),
+        linear-gradient(180deg,#090b0f 0%,#11151c 44%,#0b0d10 100%);
+    }
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    .shell{max-width:1520px;margin:0 auto;padding:28px}
+    .intro{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) minmax(260px,360px);
+      gap:24px;
+      align-items:center;
+      padding:22px;
+      border:1px solid var(--line);
+      border-radius:28px;
+      background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.035));
+      box-shadow:0 24px 80px rgba(0,0,0,.32);
+      backdrop-filter:blur(18px);
+    }
+    .kicker{font:700 12px/1.2 var(--font-mono);letter-spacing:.18em;text-transform:uppercase;color:#86ffd2}
+    h1,h2,h3,p{margin:0}
+    h1{margin-top:8px;font-family:var(--font-title);font-size:clamp(34px,5vw,64px);line-height:.98;letter-spacing:-.08em}
+    .intro p{margin-top:12px;max-width:780px;color:#c8c8c8;line-height:1.7}
+    .source-note{
+      display:grid;
+      gap:8px;
+      min-width:300px;
+      padding:16px;
+      border-radius:22px;
+      background:rgba(0,0,0,.28);
+      border:1px solid var(--line);
+      color:#d9dddf;
+      font-size:13px;
+      line-height:1.55;
+    }
+    .source-note strong{color:#fff}
+    .tabs{
+      position:sticky;
+      top:0;
+      z-index:20;
+      display:flex;
+      gap:10px;
+      margin:18px 0;
+      padding:10px;
+      border:1px solid var(--line);
+      border-radius:22px;
+      background:rgba(10,12,15,.78);
+      backdrop-filter:blur(18px);
+      overflow:auto;
+    }
+    .tab{
+      flex:0 0 auto;
+      border:1px solid transparent;
+      border-radius:16px;
+      padding:10px 14px;
+      background:transparent;
+      color:#bec3c8;
+      font-weight:800;
+      transition:background .18s ease,color .18s ease,border-color .18s ease;
+    }
+    .tab.active{background:#fff;color:#111;border-color:#fff}
+    .concept{display:none;animation:rise .35s ease both}
+    .concept.active{display:block}
+    @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+    .concept-frame{
+      min-height:860px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      border-radius:32px;
+      box-shadow:0 34px 120px rgba(0,0,0,.42);
+    }
+    .caption{
+      display:flex;
+      justify-content:space-between;
+      gap:18px;
+      align-items:center;
+      padding:16px 4px 0;
+      color:#cfd5d8;
+      font-size:14px;
+      line-height:1.7;
+    }
+    .caption b{color:#fff}
+    .badge,.pill,.chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border-radius:999px;
+      white-space:nowrap;
+    }
+    .dot{width:8px;height:8px;border-radius:999px;background:currentColor;box-shadow:0 0 18px currentColor}
+    .metric{display:grid;gap:4px}
+    .metric b{font-size:26px;letter-spacing:-.04em}
+    .metric span{font-size:12px;color:var(--muted)}
+    .progress{height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.1)}
+    .progress i{
+      position:relative;
+      display:block;
+      height:100%;
+      overflow:hidden;
+      border-radius:inherit;
+      background:linear-gradient(90deg,#68ffcc,#ffe08a);
+      box-shadow:0 0 18px rgba(104,255,204,.4);
+    }
+    .progress i::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.52),transparent);
+      transform:translateX(-120%);
+      animation:progressGlint 2.2s ease-in-out infinite;
+    }
+    .tiny{font-size:12px;color:var(--muted)}
+    .mono{font-family:var(--font-mono)}
+    .brand-mark{
+      position:relative;
+      width:108px;
+      height:108px;
+      flex:0 0 auto;
+      display:grid;
+      place-items:center;
+      isolation:isolate;
+      filter:drop-shadow(0 22px 34px rgba(0,0,0,.46));
+    }
+    .brand-mark::before{
+      content:"";
+      position:absolute;
+      inset:-18px;
+      border-radius:34px;
+      background:
+        radial-gradient(circle at 50% 52%,rgba(255,219,129,.18),transparent 42%),
+        radial-gradient(circle at 60% 22%,rgba(98,255,209,.16),transparent 46%);
+      filter:blur(6px);
+      opacity:.9;
+      z-index:-2;
+    }
+    .brand-mark::after{
+      content:"";
+      position:absolute;
+      inset:7px;
+      border-radius:28px;
+      border:1px solid rgba(255,255,255,.12);
+      background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,0));
+      z-index:-1;
+    }
+    .brand-mark img{
+      position:absolute;
+      width:100%;
+      height:100%;
+      object-fit:contain;
+      user-select:none;
+      pointer-events:none;
+      transform-origin:50% 58%;
+      backface-visibility:hidden;
+      will-change:transform,opacity,filter;
+    }
+    .brand-mark .mark-shield{
+      z-index:4;
+      transform-origin:50% 58%;
+      filter:saturate(1.04) contrast(1.03);
+    }
+    .brand-mark .mark-hammer{
+      z-index:3;
+      transform-origin:54% 55%;
+      filter:drop-shadow(0 10px 13px rgba(0,0,0,.28));
+    }
+    .brand-mark .mark-weapon-shadow{
+      z-index:2;
+      opacity:.55;
+      transform-origin:54% 55%;
+      filter:blur(2px);
+    }
+    .brand-mark.running .mark-shield{animation:shieldRecoil 1.28s cubic-bezier(.28,.76,.2,1) infinite}
+    .brand-mark.running .mark-hammer{animation:maceStrike 1.28s cubic-bezier(.28,.78,.22,1) infinite}
+    .brand-mark.running .mark-weapon-shadow{animation:maceShadowStrike 1.28s cubic-bezier(.28,.78,.22,1) infinite}
+    .brand-mark.running::before{animation:brandPulse 1.28s ease infinite}
+    .brand-mark.compact{width:70px;height:70px}
+    .brand-mark.hero{width:156px;height:156px}
+    .brand-row{display:flex;align-items:center;gap:16px}
+    .brand-row h1{margin-top:8px}
+    @keyframes shieldRecoil{
+      0%,51%,100%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+      57%{transform:translate3d(-1.15px,1.18px,0) rotate(-.34deg) scale(.996)}
+      64%{transform:translate3d(.42px,-.38px,0) rotate(.13deg) scale(1.002)}
+      74%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+    }
+    @keyframes maceStrike{
+      0%,50%,100%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+      54%{transform:translate3d(-3.05px,2.26px,0) rotate(-4.25deg) scale(1.006)}
+      58%{transform:translate3d(-1.02px,.72px,0) rotate(-1.25deg) scale(1.001)}
+      65%{transform:translate3d(.48px,-.42px,0) rotate(.4deg) scale(.998)}
+      76%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+    }
+    @keyframes maceShadowStrike{
+      0%,50%,100%{transform:translate3d(1.6px,3.8px,0) rotate(0deg);opacity:.26}
+      54%{transform:translate3d(-1.15px,5.95px,0) rotate(-4.25deg);opacity:.43}
+      65%{transform:translate3d(2.18px,3.48px,0) rotate(.4deg);opacity:.3}
+      76%{transform:translate3d(1.6px,3.8px,0) rotate(0deg);opacity:.26}
+    }
+    @keyframes brandPulse{
+      0%,50%,100%{opacity:.66;transform:scale(.96)}
+      58%{opacity:1;transform:scale(1.065)}
+      74%{opacity:.78;transform:scale(.985)}
+    }
+
+    /* Concept 1 */
+    .studio{
+      --bg:#06080b;
+      --panel:#101419;
+      --panel-2:#151b22;
+      --text:#f4f7f8;
+      --soft:#a6b1b8;
+      --edge:rgba(255,255,255,.09);
+      --accent:#62ffd1;
+      --warn:#ffcf6b;
+      --bad:#ff6d6d;
+      background:
+        linear-gradient(90deg,rgba(98,255,209,.09) 1px,transparent 1px),
+        linear-gradient(180deg,rgba(98,255,209,.06) 1px,transparent 1px),
+        radial-gradient(circle at 78% 8%,rgba(98,255,209,.16),transparent 24rem),
+        var(--bg);
+      background-size:48px 48px,48px 48px,auto,auto;
+      color:var(--text);
+      padding:18px;
+      animation:studioGridDrift 18s linear infinite;
+    }
+    .studio-grid{display:grid;grid-template-columns:288px minmax(0,1fr) 330px;gap:14px;min-height:824px}
+    .studio-card{
+      border:1px solid var(--edge);
+      border-radius:22px;
+      background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+      backdrop-filter:blur(18px);
+      transition:transform .22s ease,border-color .22s ease,background .22s ease;
+    }
+    .studio-card:hover{transform:translateY(-2px);border-color:rgba(98,255,209,.22);background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.04))}
+    .studio-side{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:14px}
+    .studio-brand{padding:18px;position:relative;overflow:hidden}
+    .studio-brand::after{
+      content:"";
+      position:absolute;
+      right:-48px;
+      top:-58px;
+      width:168px;
+      height:168px;
+      border-radius:999px;
+      background:radial-gradient(circle,rgba(98,255,209,.18),transparent 68%);
+      pointer-events:none;
+    }
+    .studio-brand h2{margin-top:8px;font-size:25px;letter-spacing:-.06em}
+    .studio-brand .brand-row h2{margin-top:4px}
+    .studio-brand p{margin-top:8px;color:var(--soft);font-size:12px;line-height:1.45}
+    .brand-state{
+      display:flex;
+      gap:7px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
+    .brand-state span{
+      border:1px solid var(--edge);
+      border-radius:999px;
+      padding:6px 9px;
+      background:rgba(255,255,255,.045);
+      color:var(--soft);
+      font-size:12px;
+      font-weight:800;
+    }
+    .brand-state .live{color:var(--accent);border-color:rgba(98,255,209,.24);background:rgba(98,255,209,.08)}
+    .studio-workspaces{display:grid;gap:10px;padding:12px;overflow:auto;max-height:520px}
+    .workspace-mini{
+      display:grid;
+      gap:8px;
+      padding:13px;
+      border:1px solid var(--edge);
+      border-radius:16px;
+      background:rgba(255,255,255,.04);
+    }
+    .workspace-mini.active{background:linear-gradient(135deg,rgba(98,255,209,.18),rgba(255,255,255,.04));border-color:rgba(98,255,209,.35);box-shadow:0 0 32px rgba(98,255,209,.08)}
+    .workspace-mini h3{font-size:15px}
+    .workspace-mini .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+    .studio-main{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px}
+    .studio-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;padding:18px 20px;position:relative;overflow:hidden}
+    .studio-top::after{
+      content:"";
+      position:absolute;
+      inset:auto -12% -72% 34%;
+      height:170px;
+      background:radial-gradient(ellipse at center,rgba(255,211,108,.12),transparent 68%);
+      pointer-events:none;
+    }
+    .studio-top h2{font-size:34px;letter-spacing:-.07em}
+    .studio-actions{display:flex;gap:8px;align-items:start;flex-wrap:wrap;justify-content:flex-end}
+    .studio button,.studio .fake-btn{
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:13px;
+      padding:9px 12px;
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:800;
+    }
+    .studio .primary{background:var(--accent);color:#05100d;border-color:var(--accent)}
+    .studio-status{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .studio-status .studio-card{padding:10px 12px}
+    .status-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      min-height:42px;
+      border-radius:999px;
+      border:1px solid var(--edge);
+      background:rgba(255,255,255,.045);
+      color:var(--text);
+      padding:8px 12px;
+      font-size:13px;
+      font-weight:850;
+    }
+    .status-chip strong{font-size:15px;color:#fff}
+    .status-chip span{color:var(--soft);font-size:12px;font-weight:700}
+    .status-chip.primary{border-color:rgba(98,255,209,.25);background:rgba(98,255,209,.1);color:var(--accent)}
+    .status-chip.warn{border-color:rgba(255,207,107,.28);background:rgba(255,207,107,.1);color:var(--warn)}
+    .stage-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .stage-card{padding:16px;min-height:158px}
+    .stage-card header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+    .stage-card h3{font-size:18px}
+    .field-line{display:grid;grid-template-columns:112px minmax(0,1fr);gap:10px;align-items:center;margin:9px 0;color:var(--soft);font-size:13px}
+    .field-box{border:1px solid var(--edge);border-radius:12px;background:rgba(0,0,0,.22);padding:9px 10px;color:#eef}
+    .studio-right{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:14px}
+    .timeline{padding:16px}
+    .timeline h3{margin-bottom:14px}
+    .step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;position:relative;padding-bottom:14px}
+    .step:not(:last-child)::before{content:"";position:absolute;left:12px;top:22px;bottom:-2px;width:1px;background:rgba(255,255,255,.13)}
+    .step i{width:24px;height:24px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--edge)}
+    .step.done i{background:var(--accent);border-color:var(--accent)}
+    .step.run i{background:var(--warn);border-color:var(--warn);animation:pulse 1.4s ease infinite}
+    .logbox{align-self:start;padding:14px;font:11px/1.55 var(--font-mono);color:#9fadaa;overflow:hidden;max-height:188px;background:linear-gradient(180deg,rgba(8,11,13,.82),rgba(8,11,13,.58))}
+    .logbox div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.045);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    /* Concept 2 */
+    .editorial{
+      --paper:#f4efe6;
+      --paper-2:#fffaf1;
+      --ink:#201a14;
+      --sub:#73675b;
+      --line:#dfd4c6;
+      --green:#176d52;
+      --orange:#c8642a;
+      background:
+        radial-gradient(circle at 12% 10%,rgba(23,109,82,.12),transparent 24rem),
+        radial-gradient(circle at 84% 0%,rgba(200,100,42,.13),transparent 28rem),
+        var(--paper);
+      color:var(--ink);
+      padding:22px;
+    }
+    .editorial-wrap{display:grid;grid-template-columns:310px minmax(0,1fr);gap:18px;min-height:818px}
+    .paper-card{
+      border:1px solid var(--line);
+      border-radius:26px;
+      background:rgba(255,250,241,.82);
+      box-shadow:0 22px 70px rgba(74,55,35,.12);
+    }
+    .editorial-sidebar{display:grid;gap:14px;align-content:start}
+    .paper-head{padding:22px}
+    .paper-head h2{font:700 30px/1.05 var(--font-title);letter-spacing:-.07em}
+    .paper-head p{margin-top:10px;color:var(--sub);line-height:1.65;font-size:13px}
+    .paper-list{padding:10px;display:grid;gap:8px;max-height:575px;overflow:auto}
+    .paper-workspace{border:1px solid var(--line);border-radius:18px;background:#fffdf8;padding:14px}
+    .paper-workspace.active{border-color:rgba(23,109,82,.45);box-shadow:inset 4px 0 0 var(--green)}
+    .paper-main{display:grid;gap:18px}
+    .editorial-hero{padding:24px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:end}
+    .editorial-hero h2{font-size:46px;line-height:.98;letter-spacing:-.08em}
+    .editorial-hero p{margin-top:12px;color:var(--sub);line-height:1.7;max-width:680px}
+    .paper-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .editorial button,.paper-btn{
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:10px 14px;
+      background:#fffaf1;
+      color:var(--ink);
+      font-weight:900;
+      box-shadow:none;
+    }
+    .editorial .primary{background:var(--ink);border-color:var(--ink);color:#fff}
+    .paper-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .paper-kpis .paper-card{padding:16px}
+    .paper-modules{display:grid;grid-template-columns:1.12fr .88fr;gap:18px;align-items:start}
+    .paper-stack{display:grid;gap:14px}
+    .paper-module{padding:18px}
+    .paper-module h3{font-size:20px;margin-bottom:12px}
+    .clean-row{
+      display:grid;
+      grid-template-columns:140px minmax(0,1fr) auto;
+      gap:12px;
+      align-items:center;
+      padding:10px 0;
+      border-top:1px solid var(--line);
+      font-size:13px;
+    }
+    .clean-row:first-of-type{border-top:0}
+    .clean-row b{font-weight:900}
+    .clean-value{padding:9px 11px;border-radius:14px;background:#fff;border:1px solid var(--line);color:#342b21;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .editorial-log{
+      max-height:256px;
+      overflow:auto;
+      padding:14px;
+      border-radius:18px;
+      background:#251f18;
+      color:#f8ead8;
+      font:12px/1.75 var(--font-mono);
+    }
+
+    /* Concept 3 */
+    .cinema{
+      --black:#000;
+      --panel:#111;
+      --panel-2:#181818;
+      --line:#292929;
+      --text:#fff;
+      --muted:#a0a0a0;
+      --blue:#44a7ff;
+      --rose:#ff5a78;
+      --gold:#ffd36c;
+      background:#000;
+      color:var(--text);
+      padding:16px;
+    }
+    .cinema-stage{
+      min-height:828px;
+      display:grid;
+      grid-template-columns:260px minmax(0,1fr);
+      border-radius:26px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      background:
+        linear-gradient(120deg,rgba(68,167,255,.16),transparent 34%),
+        radial-gradient(circle at 78% 18%,rgba(255,90,120,.22),transparent 24rem),
+        #070707;
+    }
+    .cinema-nav{padding:18px;border-right:1px solid var(--line);background:rgba(0,0,0,.56)}
+    .cinema-nav h2{font-size:28px;letter-spacing:-.07em}
+    .cinema-nav p{margin:10px 0 18px;color:var(--muted);line-height:1.6;font-size:13px}
+    .nav-shot{display:grid;gap:8px;margin-top:12px}
+    .shot{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px;
+      background:rgba(255,255,255,.04);
+    }
+    .shot.active{background:rgba(68,167,255,.14);border-color:rgba(68,167,255,.4)}
+    .cinema-main{display:grid;grid-template-rows:auto minmax(0,1fr);gap:14px;padding:18px}
+    .cinema-hero{
+      min-height:235px;
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 360px;
+      gap:20px;
+      align-items:end;
+      border-radius:24px;
+      padding:22px;
+      background:
+        linear-gradient(180deg,rgba(0,0,0,.12),rgba(0,0,0,.78)),
+        linear-gradient(120deg,#273549,#140c0c);
+      border:1px solid var(--line);
+      position:relative;
+      overflow:hidden;
+    }
+    .cinema-hero::before{
+      content:"";
+      position:absolute;
+      inset:16px;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:18px;
+      pointer-events:none;
+    }
+    .cinema-brand-float{
+      position:absolute;
+      right:28px;
+      top:22px;
+      opacity:.84;
+      transform:rotate(-4deg);
+    }
+    .cinema-hero-copy{position:relative;z-index:2;padding-right:172px}
+    .cinema-hero h2{font-size:54px;line-height:.92;letter-spacing:-.08em;max-width:720px}
+    .cinema-hero p{margin-top:12px;color:#d0d0d0;line-height:1.55}
+    .reel-card{
+      padding:14px;
+      border:1px solid rgba(255,255,255,.13);
+      border-radius:18px;
+      background:rgba(0,0,0,.38);
+      backdrop-filter:blur(10px);
+    }
+    .wave{
+      display:flex;
+      gap:4px;
+      align-items:end;
+      height:54px;
+      padding:10px 0;
+    }
+    .wave i{
+      flex:1;
+      border-radius:999px;
+      background:linear-gradient(180deg,var(--gold),var(--rose));
+      min-height:8px;
+      transform-origin:bottom;
+      animation:waveLift 1.45s ease-in-out infinite;
+    }
+    .wave i:nth-child(2n){height:34px;animation-delay:.08s}.wave i:nth-child(3n){height:48px;animation-delay:.16s}.wave i:nth-child(5n){height:18px;animation-delay:.24s}
+    .timeline-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:14px;align-items:start}
+    .track-panel{border:1px solid var(--line);border-radius:22px;background:rgba(17,17,17,.86);padding:16px}
+    .track-panel h3{margin-bottom:14px}
+    .track{
+      display:grid;
+      grid-template-columns:96px minmax(0,1fr) 78px;
+      gap:12px;
+      align-items:center;
+      padding:10px 0;
+      border-top:1px solid var(--line);
+      color:#e9e9e9;
+      font-size:13px;
+    }
+    .track:first-of-type{border-top:0}
+    .bar{height:28px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+    .bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#44a7ff,#62ffd1)}
+    .bar.narration i{background:linear-gradient(90deg,#ffda76,#ff5a78)}
+    .bar.bgm i{background:linear-gradient(90deg,#8e5cff,#44a7ff)}
+    .cinema button,.cinema .fake-btn{border:1px solid var(--line);border-radius:10px;background:#fff;color:#000;padding:9px 12px;font-weight:900}
+    .cinema .ghost{background:rgba(255,255,255,.06);color:#fff}
+
+    /* Concept 4 */
+    .operator{
+      --bg:#eef2f3;
+      --ink:#101317;
+      --muted:#68727c;
+      --panel:#ffffff;
+      --line:#d8dee3;
+      --blue:#0b63ce;
+      --green:#0a8f5a;
+      --orange:#b86d00;
+      background:
+        linear-gradient(90deg,rgba(16,19,23,.05) 1px,transparent 1px),
+        linear-gradient(180deg,rgba(16,19,23,.05) 1px,transparent 1px),
+        var(--bg);
+      background-size:24px 24px;
+      color:var(--ink);
+      padding:14px;
+    }
+    .ops-grid{display:grid;grid-template-columns:250px minmax(0,1fr) 360px;gap:10px;min-height:834px}
+    .ops-panel{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.94);box-shadow:0 18px 50px rgba(16,19,23,.08)}
+    .ops-panel h3{font-size:15px}
+    .ops-side{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px}
+    .ops-head{padding:14px}
+    .ops-head h2{font-size:22px;letter-spacing:-.05em}
+    .ops-head p{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.5}
+    .ops-table{overflow:auto}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{color:var(--muted);font:800 11px/1.3 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;background:#f8fafb;position:sticky;top:0}
+    tr.active td{background:#eef6ff}
+    .ops-main{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:10px}
+    .ops-top{padding:14px;display:flex;justify-content:space-between;gap:14px;align-items:center}
+    .ops-top h2{font-size:28px;letter-spacing:-.06em}
+    .ops-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    .operator button,.operator .fake-btn{border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);padding:8px 10px;font-weight:900;font-size:12px}
+    .operator .primary{background:var(--blue);border-color:var(--blue);color:#fff}
+    .ops-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    .ops-kpis .ops-panel{padding:13px}
+    .ops-modules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+    .ops-module{padding:14px}
+    .ops-form{display:grid;gap:8px;margin-top:12px}
+    .ops-line{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center;font-size:12px}
+    .ops-input{border:1px solid var(--line);border-radius:10px;background:#f8fafb;padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ops-right{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px}
+    .queue{padding:14px}
+    .queue-item{display:grid;grid-template-columns:68px minmax(0,1fr) 42px;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:12px}
+    .queue-item:first-of-type{border-top:0}
+    .ops-log{padding:14px;overflow:auto;font:12px/1.7 var(--font-mono);background:#0f141a;color:#d9f1ef;border-color:#0f141a}
+    .ops-log h3{font-family:var(--font-body);color:#fff;margin-bottom:8px}
+
+    @keyframes pulse{0%{box-shadow:0 0 0 0 currentColor}80%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
+    @keyframes progressGlint{0%,28%{transform:translateX(-120%)}72%,100%{transform:translateX(120%)}}
+    @keyframes studioGridDrift{from{background-position:0 0,0 0,0 0,0 0}to{background-position:96px 48px,48px 96px,0 0,0 0}}
+    @keyframes waveLift{0%,100%{transform:scaleY(.72);opacity:.72}50%{transform:scaleY(1.08);opacity:1}}
+    @media (max-width:1180px){
+      .intro,.studio-grid,.editorial-wrap,.editorial-hero,.cinema-stage,.cinema-hero,.timeline-grid,.ops-grid{grid-template-columns:1fr}
+      .cinema-hero-copy{padding-right:0}
+      .cinema-brand-float{position:relative;right:auto;top:auto;transform:none;margin-bottom:12px}
+      .studio-status,.paper-kpis,.ops-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .stage-board,.paper-modules,.ops-modules{grid-template-columns:1fr}
+      .studio-right,.studio-side,.ops-right{grid-template-rows:auto}
+      .source-note{min-width:0}
+    }
+    @media (max-width:720px){
+      .shell{padding:12px}
+      .studio,.editorial,.cinema,.operator{padding:10px}
+      .studio-status,.paper-kpis,.ops-kpis{grid-template-columns:1fr}
+      .clean-row,.track,.ops-line{grid-template-columns:1fr}
+      .caption{display:block}
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="intro">
+      <div class="brand-row">
+        <div class="brand-mark running" aria-label="短剧自动剪辑控制台 Logo">
+          <img class="mark-shield" src="../../../assets/logo_layers/app_logo_shield.png" alt="">
+          <img class="mark-weapon-shadow" src="../../../assets/logo_layers/app_logo_mace_shadow.png" alt="">
+          <img class="mark-hammer" src="../../../assets/logo_layers/app_logo_mace.png" alt="">
+        </div>
+        <div>
+          <div class="kicker">UI Concepts / No Functional Changes</div>
+          <h1>短剧自动剪辑控制台，四款视觉方向预览</h1>
+        </div>
+      </div>
+      <div>
+        <p>这些是独立静态预览稿，只重排和重塑界面表达，不改现有控制台功能。每个方案都保留工作间、运行任务、下载导入、参考视频、AI、BGM、成片输出、并发、日志与进度等入口。</p>
+      </div>
+      <div class="source-note">
+        <strong>参考来源</strong>
+        <span>已读取 awesome-design-md-main，重点取 Linear 的精密工程感、Raycast 的命令台结构、Runway 的剪辑氛围、ElevenLabs 的音频产品气质。</span>
+        <span>预览目录：docs/designs/control-center-ui-concepts</span>
+      </div>
+    </section>
+
+    <nav class="tabs" aria-label="切换 UI 方案">
+      <button class="tab active" data-target="concept-studio">01 深色指挥台</button>
+      <button class="tab" data-target="concept-editorial">02 浅色高级工作台</button>
+      <button class="tab" data-target="concept-cinema">03 电影时间线</button>
+      <button class="tab" data-target="concept-operator">04 密集调度台</button>
+    </nav>
+
+    <section id="concept-studio" class="concept active">
+      <div class="concept-frame studio">
+        <div class="studio-grid">
+          <aside class="studio-side">
+            <div class="studio-card studio-brand">
+              <div class="brand-row" style="margin-bottom:14px">
+                <div class="brand-mark running" aria-label="运行中的控制台 Logo">
+                  <img class="mark-shield" src="../../../assets/logo_layers/app_logo_shield.png" alt="">
+                  <img class="mark-weapon-shadow" src="../../../assets/logo_layers/app_logo_mace_shadow.png" alt="">
+                  <img class="mark-hammer" src="../../../assets/logo_layers/app_logo_mace.png" alt="">
+                </div>
+                <div>
+                  <div class="kicker">Logo Locked</div>
+                  <h2>盾槌中控</h2>
+                  <div class="brand-state">
+                    <span class="live">运行中</span>
+                    <span>84%</span>
+                  </div>
+                </div>
+              </div>
+              <p>深色、高级、动态，但只突出工作间运行所需的信息。</p>
+            </div>
+            <div class="studio-card studio-workspaces">
+              <div class="workspace-mini active">
+                <div class="row"><span class="pill" style="color:var(--accent)"><span class="dot"></span>运行中</span><span class="tiny">84%</span></div>
+                <h3>外来媳妇本地生成</h3>
+                <div class="progress"><i style="width:84%"></i></div>
+                <div class="tiny">字幕类型校准，QWEN 音频停顿</div>
+              </div>
+              <div class="workspace-mini">
+                <div class="row"><span class="pill">已保存</span><span class="tiny">25 段素材</span></div>
+                <h3>父爱如山，为女撑腰</h3>
+                <div class="tiny">原素材 25，参考视频 1，BGM 已匹配</div>
+              </div>
+              <div class="workspace-mini">
+                <div class="row"><span class="pill" style="color:var(--warn)">等待下载</span><span class="tiny">百度</span></div>
+                <h3>乡下老公不好惹</h3>
+                <div class="tiny">官方客户端下载监控中</div>
+              </div>
+              <div class="workspace-mini">
+                <div class="row"><span class="pill">空闲</span><span class="tiny">草稿</span></div>
+                <h3>新建工作间</h3>
+                <div class="tiny">点击进入后导入素材</div>
+              </div>
+            </div>
+            <div class="studio-card" style="padding:14px">
+              <button class="primary" style="width:100%">启动勾选工作间</button>
+            </div>
+          </aside>
+          <main class="studio-main">
+            <section class="studio-card studio-top">
+              <div>
+                <div class="kicker">Current Workspace</div>
+                <h2>外来媳妇本地生成</h2>
+                <p class="tiny" style="margin-top:8px">原素材 50fps，输出跟随原素材帧率，BGM 音量对齐参考视频。</p>
+              </div>
+              <div class="studio-actions">
+                <button>重新载入</button>
+                <button>保存</button>
+                <button class="primary">保存并启动</button>
+                <button>停止任务</button>
+              </div>
+            </section>
+            <section class="studio-status">
+              <div class="status-chip primary"><span class="dot"></span><strong>音频字幕提取</strong><span>64%</span></div>
+              <div class="status-chip"><strong>QWEN</strong><span>停顿主导</span></div>
+              <div class="status-chip warn"><strong>灰区 7</strong><span>上下句辅助</span></div>
+              <div class="status-chip"><strong>BGM 92%</strong><span>Fight</span></div>
+              <div class="progress" style="flex:1 1 220px;min-width:180px"><i style="width:64%"></i></div>
+            </section>
+            <section class="stage-board">
+              <article class="studio-card stage-card">
+                <header><h3>下载与导入</h3><span class="pill" style="color:var(--accent)">可运行</span></header>
+                <div class="field-line"><span>原素材</span><div class="field-box">百度网盘官方客户端，已保存 25 个目标</div></div>
+                <div class="field-line"><span>参考视频</span><div class="field-box">抖音链接 1 条，无水印优先</div></div>
+                <div class="field-line"><span>本地导入</span><div class="field-box">浏览原素材 / 选择视频文件夹</div></div>
+              </article>
+              <article class="studio-card stage-card">
+                <header><h3>成片输出</h3><span class="pill" style="color:var(--warn)">待确认</span></header>
+                <div class="field-line"><span>模式</span><div class="field-box">自动剪辑，保留倒叙匹配</div></div>
+                <div class="field-line"><span>包装</span><div class="field-box">窄遮挡高级版，字幕烧录在遮挡区</div></div>
+                <div class="field-line"><span>音量</span><div class="field-box">TTS / 原素材 / BGM 对齐参考视频</div></div>
+              </article>
+              <article class="studio-card stage-card">
+                <header><h3>AI 设置</h3><span class="pill">全工作间</span></header>
+                <div class="field-line"><span>模型</span><div class="field-box">doubao-seed-2-0-lite-260215</div></div>
+                <div class="field-line"><span>作用</span><div class="field-box">只修正明显错字，轻改写只对解说生效</div></div>
+                <div class="field-line"><span>保护</span><div class="field-box">不改变停顿，不介入对白分类</div></div>
+              </article>
+              <article class="studio-card stage-card">
+                <header><h3>BGM</h3><span class="pill" style="color:var(--accent)">本地曲库</span></header>
+                <div class="field-line"><span>流程</span><div class="field-box">分离 BGM -> Chromaprint -> AudioMuse</div></div>
+                <div class="field-line"><span>候选</span><div class="field-box">Fight - BeatBrothers.mp3</div></div>
+                <div class="field-line"><span>曲库</span><div class="field-box">D:\BGM库，全工作间通用</div></div>
+              </article>
+            </section>
+          </main>
+          <aside class="studio-right">
+            <section class="studio-card timeline">
+              <h3>运行流水线</h3>
+              <div class="step done"><i></i><div><b>下载与导入</b><div class="tiny">素材 25/25 已到位</div></div></div>
+              <div class="step done"><i></i><div><b>参考视频分析</b><div class="tiny">识别字幕区与 BGM 音量</div></div></div>
+              <div class="step run"><i></i><div><b>音频字幕提取</b><div class="tiny">QWEN 模型正在切分真实停顿</div></div></div>
+              <div class="step"><i></i><div><b>帧匹配与音频兜底</b><div class="tiny">对白窗口声学核验</div></div></div>
+              <div class="step"><i></i><div><b>合成输出</b><div class="tiny">目标 50fps</div></div></div>
+            </section>
+            <section class="studio-card" style="padding:16px">
+              <h3 style="margin-bottom:12px">并发</h3>
+              <div class="field-line"><span>网盘下载</span><div class="field-box">1</div></div>
+              <div class="field-line"><span>抖音下载</span><div class="field-box">3</div></div>
+              <div class="field-line"><span>工作间</span><div class="field-box">2</div></div>
+            </section>
+            <section class="studio-card logbox">
+              <div>[13:51:08] Audio-first transcription: QWEN model ready</div>
+              <div>[13:51:32] voice seed expanded: 3 -> 10 narration anchors</div>
+              <div>[13:52:11] subtitle mask fixed region, dynamic edge soften</div>
+              <div>[13:52:46] BGM candidate: Fight, similarity 0.92</div>
+              <div>[13:53:08] rendering preview segment, fps source locked to 50</div>
+            </section>
+          </aside>
+        </div>
+      </div>
+      <div class="caption"><span><b>适合：</b>你要长时间盯任务、日志、模型判断、进度条时。左栏独立滚动，右侧固定诊断与日志，不会再出现“右边拉到底左边才好选”的感受。</span><span class="mono">Concept 01</span></div>
+    </section>
+
+    <section id="concept-editorial" class="concept">
+      <div class="concept-frame editorial">
+        <div class="editorial-wrap">
+          <aside class="editorial-sidebar">
+            <div class="paper-card paper-head">
+              <div class="kicker" style="color:var(--green)">Auto Clip Studio</div>
+              <h2>工作间</h2>
+              <p>浅色方案保留你现在的使用习惯，但删掉大量说明文字，让每个模块像“任务卡”一样清楚。</p>
+            </div>
+            <div class="paper-card paper-list">
+              <div class="paper-workspace active">
+                <div style="display:flex;justify-content:space-between"><b>外来媳妇</b><span class="pill" style="color:var(--green)">运行中</span></div>
+                <p class="tiny" style="margin-top:8px;color:var(--sub)">字幕提取，84%</p>
+              </div>
+              <div class="paper-workspace">
+                <div style="display:flex;justify-content:space-between"><b>父爱如山</b><span class="pill">已保存</span></div>
+                <p class="tiny" style="margin-top:8px;color:var(--sub)">原素材 25，参考视频 1</p>
+              </div>
+              <div class="paper-workspace">
+                <div style="display:flex;justify-content:space-between"><b>乡下老公</b><span class="pill" style="color:var(--orange)">等待</span></div>
+                <p class="tiny" style="margin-top:8px;color:var(--sub)">网盘客户端监控</p>
+              </div>
+            </div>
+          </aside>
+          <main class="paper-main">
+            <section class="paper-card editorial-hero">
+              <div>
+                <div class="kicker" style="color:var(--green)">Workspace Detail</div>
+                <h2>把复杂流程，压成一张清爽的工作台。</h2>
+                <p>这个方向重点解决“模块多、说明文字多、空隙大”。功能不删，只把低频设置收进折叠区，高频操作固定在卡片顶部。</p>
+              </div>
+              <div class="paper-actions">
+                <button>刷新</button>
+                <button>保存</button>
+                <button class="primary">保存并启动</button>
+              </div>
+            </section>
+            <section class="paper-kpis">
+              <div class="paper-card metric"><span>当前工作间</span><b>84%</b><span>音频字幕提取</span></div>
+              <div class="paper-card metric"><span>原素材</span><b>25</b><span>全部已导入</span></div>
+              <div class="paper-card metric"><span>参考视频</span><b>1</b><span>抖音链接</span></div>
+              <div class="paper-card metric"><span>输出帧率</span><b>50</b><span>跟随原素材</span></div>
+            </section>
+            <section class="paper-modules">
+              <div class="paper-stack">
+                <article class="paper-card paper-module">
+                  <h3>下载与导入</h3>
+                  <div class="clean-row"><b>百度网盘</b><div class="clean-value">交给官方百度网盘客户端</div><button>提取内容</button></div>
+                  <div class="clean-row"><b>本地原素材</b><div class="clean-value">浏览本地视频 / 选择视频文件夹</div><button>导入</button></div>
+                  <div class="clean-row"><b>参考视频</b><div class="clean-value">抖音链接 1 条，下载到 downloads/douyin</div><button>检查</button></div>
+                </article>
+                <article class="paper-card paper-module">
+                  <h3>成片输出</h3>
+                  <div class="clean-row"><b>输出目录</b><div class="clean-value">E:\成片输出\外来媳妇</div><button>选择</button></div>
+                  <div class="clean-row"><b>成片模式</b><div class="clean-value">自动剪辑，保留倒叙逻辑</div><button>设置</button></div>
+                  <div class="clean-row"><b>包装</b><div class="clean-value">窄遮挡高级版，上下渐隐</div><button>预览</button></div>
+                </article>
+              </div>
+              <div class="paper-stack">
+                <article class="paper-card paper-module">
+                  <h3>BGM</h3>
+                  <div class="clean-row"><b>模式</b><div class="clean-value">参考视频自动匹配</div><span class="pill" style="color:var(--green)">推荐</span></div>
+                  <div class="clean-row"><b>曲库</b><div class="clean-value">D:\BGM库</div><button>扫描</button></div>
+                  <div class="clean-row"><b>结果</b><div class="clean-value">Fight - BeatBrothers.mp3</div><span class="pill">92%</span></div>
+                </article>
+                <article class="paper-card paper-module">
+                  <h3>AI 设置</h3>
+                  <div class="clean-row"><b>全局模型</b><div class="clean-value">doubao-seed-2-0-lite-260215</div><button>测试</button></div>
+                  <div class="clean-row"><b>用途</b><div class="clean-value">错字修正，解说轻改写</div><span class="pill">保护停顿</span></div>
+                </article>
+                <article class="paper-card paper-module">
+                  <h3>运行日志</h3>
+                  <div class="editorial-log">13:51:08 Audio-first transcription started
+13:51:32 progress heartbeat 12%
+13:52:10 subtitle mask preview rendered
+13:53:08 source fps locked to 50</div>
+                </article>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+      <div class="caption"><span><b>适合：</b>你想保留浅色控制台，但希望更精致、空隙更少、入口更直接。真实改造时风险最低。</span><span class="mono">Concept 02</span></div>
+    </section>
+
+    <section id="concept-cinema" class="concept">
+      <div class="concept-frame cinema">
+        <div class="cinema-stage">
+          <aside class="cinema-nav">
+            <div class="brand-row" style="align-items:flex-start;margin-bottom:14px">
+              <div class="brand-mark compact running" aria-label="运行中的控制台 Logo">
+                <img class="mark-shield" src="../../../assets/logo_layers/app_logo_shield.png" alt="">
+                <img class="mark-weapon-shadow" src="../../../assets/logo_layers/app_logo_mace_shadow.png" alt="">
+                <img class="mark-hammer" src="../../../assets/logo_layers/app_logo_mace.png" alt="">
+              </div>
+              <div>
+                <div class="kicker" style="color:var(--blue)">Brand Anchor</div>
+                <h2>盾槌剪辑室</h2>
+              </div>
+            </div>
+            <div class="kicker" style="color:var(--blue)">Clip Room</div>
+            <h2>剪辑室</h2>
+            <p>把控制台设计成“成片生产线”，更强调短剧、字幕、音轨、帧匹配这些视频语义。</p>
+            <div class="nav-shot">
+              <div class="shot active"><b>外来媳妇</b><div class="tiny">正在合成预览</div></div>
+              <div class="shot"><b>父爱如山</b><div class="tiny">待跑成片</div></div>
+              <div class="shot"><b>乡下老公</b><div class="tiny">历史缓存</div></div>
+            </div>
+          </aside>
+          <main class="cinema-main">
+            <section class="cinema-hero">
+              <div class="brand-mark hero running cinema-brand-float" aria-label="运行中的控制台 Logo">
+                <img class="mark-shield" src="../../../assets/logo_layers/app_logo_shield.png" alt="">
+                <img class="mark-weapon-shadow" src="../../../assets/logo_layers/app_logo_mace_shadow.png" alt="">
+                <img class="mark-hammer" src="../../../assets/logo_layers/app_logo_mace.png" alt="">
+              </div>
+              <div class="cinema-hero-copy">
+                <div class="kicker" style="color:var(--gold)">Reference Driven Render</div>
+                <h2>按参考视频的节奏，重新生成整条短剧。</h2>
+                <p>顶部直接显示“参考视频分析结果”，让 BGM、字幕遮挡、停顿、帧率这些关键质量指标更像剪辑软件里的主控面板。</p>
+              </div>
+              <div class="reel-card">
+                <div style="display:flex;justify-content:space-between;gap:12px"><b>BGM 相似度</b><span class="pill" style="color:var(--gold)">92%</span></div>
+                <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="tiny">分离 BGM 后匹配：Fight - BeatBrothers.mp3</div>
+              </div>
+            </section>
+            <section class="timeline-grid">
+              <article class="track-panel">
+                <h3>时间线状态</h3>
+                <div class="track"><b>参考视频</b><div class="bar"><i style="width:100%"></i></div><span>3:42</span></div>
+                <div class="track"><b>解说 TTS</b><div class="bar narration"><i style="width:83%"></i></div><span>对齐中</span></div>
+                <div class="track"><b>对白原声</b><div class="bar"><i style="width:72%"></i></div><span>声学核验</span></div>
+                <div class="track"><b>BGM</b><div class="bar bgm"><i style="width:100%"></i></div><span>-18LUFS</span></div>
+                <div class="track"><b>遮挡字幕</b><div class="bar narration"><i style="width:64%"></i></div><span>渐隐</span></div>
+              </article>
+              <article class="track-panel">
+                <h3>模块入口</h3>
+                <div class="track"><b>下载</b><div>百度网盘，抖音链接，本地素材</div><button class="ghost">进入</button></div>
+                <div class="track"><b>AI</b><div>全局设置，只作用解说轻改写</div><button class="ghost">测试</button></div>
+                <div class="track"><b>输出</b><div>50fps，包装预览，音量对齐</div><button>启动</button></div>
+              </article>
+              <article class="track-panel">
+                <h3>质量检查</h3>
+                <div class="track"><b>停顿</b><div>音频真实停顿主导，视觉字幕只辅助分段</div><span class="pill" style="color:var(--gold)">重点</span></div>
+                <div class="track"><b>音色</b><div>解说种子滚雪球，灰区上下句辅助</div><span class="pill">7 灰区</span></div>
+                <div class="track"><b>帧匹配</b><div>对白窗口音频字幕兜底，避免错句</div><span class="pill" style="color:var(--blue)">已启用</span></div>
+              </article>
+              <article class="track-panel">
+                <h3>运行日志</h3>
+                <div class="tiny mono" style="line-height:1.8">[clip] source fps: 50
+[subtitle] true pause groups: 186
+[speaker] narration anchors: 10
+[mask] fixed subtitle band + soft vertical edge
+[render] output path ready</div>
+              </article>
+            </section>
+          </main>
+        </div>
+      </div>
+      <div class="caption"><span><b>适合：</b>更有短剧剪辑产品感，质量指标很直观。缺点是相比浅色方案改造成本稍高。</span><span class="mono">Concept 03</span></div>
+    </section>
+
+    <section id="concept-operator" class="concept">
+      <div class="concept-frame operator">
+        <div class="ops-grid">
+          <aside class="ops-side">
+            <section class="ops-panel ops-head">
+              <div class="kicker" style="color:var(--blue)">Operator Console</div>
+              <h2>工作间队列</h2>
+              <p>信息密度最高，适合以后工作间数量很多、批量跑任务时使用。</p>
+            </section>
+            <section class="ops-panel ops-table">
+              <table>
+                <thead><tr><th>工作间</th><th>状态</th><th>素材</th></tr></thead>
+                <tbody>
+                  <tr class="active"><td>外来媳妇</td><td>运行 84%</td><td>25/1</td></tr>
+                  <tr><td>父爱如山</td><td>待启动</td><td>25/1</td></tr>
+                  <tr><td>乡下老公</td><td>等待网盘</td><td>18/1</td></tr>
+                  <tr><td>短剧 A</td><td>草稿</td><td>0/0</td></tr>
+                  <tr><td>短剧 B</td><td>已完成</td><td>36/1</td></tr>
+                </tbody>
+              </table>
+            </section>
+          </aside>
+          <main class="ops-main">
+            <section class="ops-panel ops-top">
+              <div>
+                <h2>外来媳妇本地生成</h2>
+                <p class="tiny">音频字幕提取中，最近输出 18 秒前，日志正常刷新。</p>
+              </div>
+              <div class="ops-actions">
+                <button>重新载入</button>
+                <button>保存</button>
+                <button class="primary">保存并启动</button>
+                <button>停止</button>
+              </div>
+            </section>
+            <section class="ops-kpis">
+              <div class="ops-panel metric"><span>进度</span><b>84%</b><span>字幕提取</span></div>
+              <div class="ops-panel metric"><span>并发</span><b>2</b><span>工作间</span></div>
+              <div class="ops-panel metric"><span>输出</span><b>50</b><span>fps</span></div>
+              <div class="ops-panel metric"><span>灰区</span><b>7</b><span>音色</span></div>
+              <div class="ops-panel metric"><span>BGM</span><b>92</b><span>相似度</span></div>
+            </section>
+            <section class="ops-modules">
+              <article class="ops-panel ops-module">
+                <h3>下载与导入</h3>
+                <div class="ops-form">
+                  <div class="ops-line"><b>百度模式</b><div class="ops-input">交给官方百度网盘客户端</div></div>
+                  <div class="ops-line"><b>网盘目标</b><div class="ops-input">已保存 25 个视频目标</div></div>
+                  <div class="ops-line"><b>本地导入</b><div class="ops-input">浏览视频 / 选择文件夹</div></div>
+                  <div class="ops-line"><b>参考视频</b><div class="ops-input">抖音链接 1 条</div></div>
+                </div>
+              </article>
+              <article class="ops-panel ops-module">
+                <h3>成片输出</h3>
+                <div class="ops-form">
+                  <div class="ops-line"><b>目录</b><div class="ops-input">E:\成片输出</div></div>
+                  <div class="ops-line"><b>包装</b><div class="ops-input">窄遮挡高级版</div></div>
+                  <div class="ops-line"><b>帧率</b><div class="ops-input">跟随原素材 50fps</div></div>
+                  <div class="ops-line"><b>音量</b><div class="ops-input">参考视频默认</div></div>
+                </div>
+              </article>
+              <article class="ops-panel ops-module">
+                <h3>AI 与字幕</h3>
+                <div class="ops-form">
+                  <div class="ops-line"><b>AI</b><div class="ops-input">全局设置，解说轻改写</div></div>
+                  <div class="ops-line"><b>停顿</b><div class="ops-input">音频真实停顿主导</div></div>
+                  <div class="ops-line"><b>视觉字幕</b><div class="ops-input">辅助分段与错字修正</div></div>
+                </div>
+              </article>
+              <article class="ops-panel ops-module">
+                <h3>BGM</h3>
+                <div class="ops-form">
+                  <div class="ops-line"><b>曲库</b><div class="ops-input">D:\BGM库</div></div>
+                  <div class="ops-line"><b>流程</b><div class="ops-input">分离 -> Chromaprint -> AudioMuse</div></div>
+                  <div class="ops-line"><b>选中</b><div class="ops-input">Fight - BeatBrothers.mp3</div></div>
+                </div>
+              </article>
+            </section>
+          </main>
+          <aside class="ops-right">
+            <section class="ops-panel queue">
+              <h3>阶段队列</h3>
+              <div class="queue-item"><b>Done</b><div>下载与导入</div><span>100</span></div>
+              <div class="queue-item"><b>Done</b><div>参考视频分析</div><span>100</span></div>
+              <div class="queue-item"><b>Run</b><div>音频字幕提取</div><span>64</span></div>
+              <div class="queue-item"><b>Next</b><div>帧匹配与音频兜底</div><span>0</span></div>
+              <div class="queue-item"><b>Next</b><div>合成输出</div><span>0</span></div>
+            </section>
+            <section class="ops-panel ops-log">
+              <h3>运行日志</h3>
+              <div>[13:51:08] Audio-first transcription using QWEN</div>
+              <div>[13:51:42] visual subtitle correction limited to add-only</div>
+              <div>[13:52:17] speaker gray zone propagation finished</div>
+              <div>[13:53:08] source fps locked, output render pending</div>
+              <div>[13:54:22] heartbeat: progress unchanged, model still active</div>
+            </section>
+          </aside>
+        </div>
+      </div>
+      <div class="caption"><span><b>适合：</b>批量跑很多工作间时。这个方案最不“好看优先”，但效率最高，适合以后规模变大。</span><span class="mono">Concept 04</span></div>
+    </section>
+  </div>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const concepts = Array.from(document.querySelectorAll(".concept"));
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.dataset.target;
+        tabs.forEach((item) => item.classList.toggle("active", item === tab));
+        concepts.forEach((item) => item.classList.toggle("active", item.id === target));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+  </script>
+</body>
+</html>

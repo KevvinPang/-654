@@ -81,8 +81,7 @@ def _slice_segment(
     return clip
 
 
-def _encode_segment(model, signal, sample_rate: int, start: float, end: float, item: Optional[Dict[str, object]] = None):
-    import numpy as np
+def _encode_segment(processor, model, signal, sample_rate: int, start: float, end: float, item: Optional[Dict[str, object]] = None):
     import torch
 
     item = item or {}
@@ -95,10 +94,26 @@ def _encode_segment(model, signal, sample_rate: int, start: float, end: float, i
         desired_min=float(item.get("min_duration", 0.45) or 0.45),
         allow_context_extension=bool(item.get("allow_context_extension", True)),
     )
-    wav = clip.squeeze(0).detach().cpu().numpy().astype(np.float32, copy=False)
+    wav = clip.squeeze(0).detach().cpu().numpy()
+    inputs = processor(
+        wav,
+        sampling_rate=sample_rate,
+        return_tensors="pt",
+        padding=True,
+    )
+    inputs = {key: value.to(model.device) for key, value in inputs.items()}
     with torch.no_grad():
-        embedding = model(wav)
-    return torch.as_tensor(embedding, dtype=torch.float32).reshape(-1).detach().cpu()
+        output = model(**inputs)
+    if hasattr(output, "embeddings"):
+        embedding = output.embeddings
+    elif isinstance(output, (tuple, list)) and output:
+        embedding = output[0]
+    else:
+        raise RuntimeError("UniSpeech-SAT output does not contain embeddings")
+    return torch.nn.functional.normalize(
+        torch.as_tensor(embedding, dtype=torch.float32).reshape(-1),
+        dim=0,
+    ).detach().cpu()
 
 
 def _cosine_similarity(left, right) -> float:
@@ -158,8 +173,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         repo_root = Path(__file__).resolve().parents[2]
         os.chdir(str(repo_root))
 
+        import torch
         import torchaudio
-        from espnet2.bin.spk_inference import Speech2Embedding
+        from transformers import AutoFeatureExtractor, UniSpeechSatForXVector
 
         audio_path = Path(str(payload.get("audio_path") or ""))
         signal, sample_rate = torchaudio.load(str(audio_path))
@@ -167,12 +183,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         model_dir = Path(str(payload.get("model_dir") or ""))
         if not model_dir.exists():
-            raise RuntimeError("espnet wavlm model dir not found")
-        model = Speech2Embedding(
-            model_file=str(model_dir / "8epoch.pth"),
-            train_config=str(model_dir / "config.yaml"),
-            device=str(payload.get("device") or "cpu"),
-        )
+            raise RuntimeError("UniSpeech-SAT model dir not found")
+        device = str(payload.get("device") or "cpu")
+        processor = AutoFeatureExtractor.from_pretrained(str(model_dir), local_files_only=True)
+        model = UniSpeechSatForXVector.from_pretrained(str(model_dir), local_files_only=True)
+        model.to(torch.device(device))
+        model.eval()
 
         seed_groups = payload.get("seed_groups") or {}
         entries = payload.get("entries") or []
@@ -191,7 +207,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cached = segment_embedding_cache.get(cache_key)
             if cached is not None:
                 return cached
-            vector = _encode_segment(model, signal, sample_rate, start, end, item)
+            vector = _encode_segment(processor, model, signal, sample_rate, start, end, item)
             segment_embedding_cache[cache_key] = vector
             return vector
 
@@ -274,7 +290,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _write_output(
             output_path,
             {
-                "engine": "espnet_wavlm_joint_jt11",
+                "engine": "unispeech_sat_large_sv",
                 "entries": output_entries,
                 "seed_stats": seed_stats,
             },

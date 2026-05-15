@@ -24,6 +24,22 @@ function Get-ControlCenterProcess {
     return $null
 }
 
+function Get-ControlCenterProcesses {
+    try {
+        $items = Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction Stop
+    } catch {
+        return @()
+    }
+
+    return @(
+        $items | Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -like '*control_center.py*' -and
+            $_.CommandLine -like "*$root*"
+        }
+    )
+}
+
 $controlCenterPid = $null
 if (Test-Path -LiteralPath $pidFile) {
     $firstLine = Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -38,6 +54,10 @@ if (Test-Path -LiteralPath $pidFile) {
 }
 
 $processInfo = Get-ControlCenterProcess -ProcessId $controlCenterPid
+$allProcesses = @(Get-ControlCenterProcesses)
+if (-not $processInfo -and $allProcesses.Count -gt 0) {
+    $processInfo = $allProcesses | Sort-Object ProcessId | Select-Object -First 1
+}
 if (-not $processInfo) {
     if (Test-Path -LiteralPath $pidFile) {
         Remove-Item -LiteralPath $pidFile -Force
@@ -46,7 +66,9 @@ if (-not $processInfo) {
     exit 0
 }
 
-Stop-Process -Id $processInfo.ProcessId -Force
+foreach ($item in $allProcesses) {
+    Stop-Process -Id $item.ProcessId -Force -ErrorAction SilentlyContinue
+}
 
 if (Test-Path -LiteralPath $pidFile) {
     Remove-Item -LiteralPath $pidFile -Force

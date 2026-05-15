@@ -25,7 +25,7 @@
     .rail-stat{display:grid;gap:4px;padding:10px 8px;border-radius:16px;background:var(--surface-soft);text-align:center}
     .rail-stat strong{font-size:18px}
     .workspace-header-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .layout.sidebar-collapsed .workspace-panel,.layout.sidebar-collapsed .jobs-panel{display:none}
+    .layout.sidebar-collapsed .workspace-panel{display:none}
     .layout.sidebar-collapsed .sidebar-rail{display:grid;position:sticky;top:18px}
     .workspace-card{position:relative;overflow:hidden}
     .workspace-card::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;transition:background .16s ease}
@@ -45,10 +45,12 @@
     .progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;font-weight:900;color:var(--ink)}
     .progress-head strong{font-size:12px}
     .progress-bar{position:relative;overflow:hidden;height:8px;border-radius:999px;background:#e6eeea}
-    .progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#8cbcae,#2f8a71);transition:width .2s ease}
+    .progress-fill{position:relative;overflow:hidden;height:100%;border-radius:999px;background:linear-gradient(90deg,#8cbcae,#2f8a71);transition:width 1.05s cubic-bezier(.22,.61,.36,1),filter .18s ease}
     .progress-fill.good{background:linear-gradient(90deg,#87d2a1,#21834a)}
     .progress-fill.warn{background:linear-gradient(90deg,#f1cb7f,#c4832c)}
     .progress-fill.bad{background:linear-gradient(90deg,#f2aaa2,#c5453b)}
+    .progress-fill.live::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.06) 38%,rgba(255,255,255,.24) 50%,rgba(255,255,255,.06) 62%,transparent 100%);transform:translateX(-115%);animation:progressSweep 1.75s linear infinite;pointer-events:none}
+    .progress-wrap.compact .progress-fill.live::after{animation-duration:1.45s}
     .progress-note{color:var(--muted);font-size:12px;line-height:1.55}
     .progress-wrap.compact .progress-note{font-size:11px}
     .pill.idle{background:#edf2ef;color:var(--muted)}
@@ -103,10 +105,748 @@
     .bgm-advanced summary::-webkit-details-marker{display:none}
     .bgm-advanced summary::after{content:"展开";margin-left:8px;font-size:12px;color:var(--muted)}
     .bgm-advanced[open] summary::after{content:"收起"}
+    .packaging-box{display:grid;gap:12px;padding:13px;border:1px solid rgba(8,120,95,.18);border-radius:18px;background:rgba(255,255,255,.78)}
+    .packaging-controls-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .segmented-control{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:4px;border:1px solid var(--line);border-radius:16px;background:#fff}
+    .segmented-control button{padding:9px 8px;border-radius:12px;background:transparent;color:var(--muted);box-shadow:none}
+    .segmented-control button.active{background:var(--ink);color:#fff}
+    .segmented-control button:hover:not(:disabled){transform:none;box-shadow:none}
+    .packaging-disabled .packaging-active-only{opacity:.45;pointer-events:none}
+    .packaging-preview{display:grid;grid-template-columns:minmax(138px,180px) minmax(0,1fr);gap:13px;align-items:center;padding:10px;border:1px solid rgba(14,23,20,.10);border-radius:16px;background:#fff}
+    .packaging-preview button{display:block;width:100%;padding:0;border:0;border-radius:14px;background:transparent;box-shadow:none;cursor:zoom-in}
+    .packaging-preview img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:14px;border:1px solid rgba(14,23,20,.12);background:#121614;box-shadow:0 12px 24px rgba(0,0,0,.14)}
+    .packaging-preview-meta{display:grid;gap:4px;min-width:0}
+    .packaging-preview-title{font-weight:900;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .packaging-preview-desc{font-size:12px;line-height:1.45;color:var(--muted)}
+    .packaging-style-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:10px}
+    .packaging-style-card{display:grid;gap:7px;justify-items:start;padding:8px;border:1px solid rgba(14,23,20,.10);border-radius:14px;background:#fff;color:var(--ink);box-shadow:none;text-align:left}
+    .packaging-style-card.active{border-color:rgba(8,120,95,.46);box-shadow:0 0 0 2px rgba(8,120,95,.10)}
+    .packaging-style-card img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:10px;border:1px solid rgba(14,23,20,.12);background:#121614}
+    .packaging-style-card span{font-size:12px;font-weight:900;line-height:1.25}
+    @media(max-width:760px){.packaging-controls-grid{grid-template-columns:1fr}}
+    .preview-modal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(7,10,12,.78);backdrop-filter:blur(8px)}
+    .preview-modal.open{display:flex}
+    .preview-modal-panel{display:grid;gap:12px;justify-items:center;max-width:min(92vw,560px)}
+    .preview-modal img{max-width:min(92vw,520px);max-height:86vh;aspect-ratio:9/16;object-fit:contain;border-radius:18px;background:#111;border:1px solid rgba(255,255,255,.18);box-shadow:0 28px 80px rgba(0,0,0,.45)}
+    .preview-modal .actions{justify-content:center}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(8,120,95,.3)}70%{box-shadow:0 0 0 10px rgba(8,120,95,0)}100%{box-shadow:0 0 0 0 rgba(8,120,95,0)}}
+    @keyframes progressSweep{from{transform:translateX(-115%)}to{transform:translateX(115%)}}
     @keyframes panelPulse{0%{box-shadow:var(--shadow)}45%{box-shadow:0 0 0 4px rgba(8,120,95,.16),var(--shadow-tight)}100%{box-shadow:var(--shadow)}}
     @media (max-width:1180px){.fallback-row{grid-template-columns:1fr}}
-    @media (max-width:1180px){.layout.sidebar-collapsed{grid-template-columns:1fr}.layout.sidebar-collapsed .workspace-panel,.layout.sidebar-collapsed .jobs-panel{display:grid}.layout.sidebar-collapsed .sidebar-rail{display:none}.runtime-diag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:1180px){.layout.sidebar-collapsed{grid-template-columns:1fr}.layout.sidebar-collapsed .workspace-panel{display:grid}.layout.sidebar-collapsed .sidebar-rail{display:none}.runtime-diag-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    /* Deep Command UI: production skin, keeping every existing id/function entry intact. */
+    :root{
+      --bg:#05080c;--surface:rgba(15,20,24,.88);--surface-soft:rgba(19,27,31,.76);
+      --ink:#f4f8f6;--muted:#a3afad;--line:rgba(255,255,255,.105);--line-strong:rgba(135,255,220,.28);
+      --accent:#5cffd3;--accent-strong:#35d9b4;--accent-soft:rgba(92,255,211,.12);
+      --bad:#ff6f61;--bad-soft:rgba(255,111,97,.13);--good:#72ffac;--warn:#ffd078;
+      --shadow:0 24px 70px rgba(0,0,0,.38);--shadow-tight:0 16px 38px rgba(0,0,0,.34);
+      --radius:24px;
+    }
+    html{background:#05080c}
+    body{
+      background:
+        radial-gradient(circle at 10% -8%,rgba(92,255,211,.18),transparent 30rem),
+        radial-gradient(circle at 82% 2%,rgba(255,208,120,.13),transparent 26rem),
+        radial-gradient(circle at 52% 108%,rgba(47,104,255,.12),transparent 34rem),
+        linear-gradient(135deg,#06111a 0%,#090c10 44%,#15100d 100%);
+      background-attachment:fixed;
+    }
+    body::before{
+      content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+      background:
+        linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);
+      background-size:48px 48px;
+      mask-image:radial-gradient(circle at 55% 26%,#000 0%,transparent 72%);
+      opacity:.42;
+    }
+    button{background:linear-gradient(135deg,var(--accent),#9dffe4);color:#06110e;box-shadow:0 12px 28px rgba(92,255,211,.16)}
+    button:hover:not(:disabled){background:linear-gradient(135deg,#8affdf,var(--accent-strong));box-shadow:0 18px 36px rgba(92,255,211,.22)}
+    button.secondary{background:rgba(255,255,255,.08);color:var(--ink);border:1px solid rgba(255,255,255,.10);box-shadow:none}
+    button.secondary:hover:not(:disabled){background:rgba(255,255,255,.14)}
+    button.ghost{color:var(--accent);border-color:rgba(92,255,211,.32);background:rgba(92,255,211,.045)}
+    button.danger{background:linear-gradient(135deg,#ff7064,#d94438);color:#fff}
+    button.danger-soft{background:rgba(255,111,97,.12);color:#ff9b91;border:1px solid rgba(255,111,97,.24)}
+    input,textarea,select{background:rgba(4,8,12,.62);border-color:var(--line);color:var(--ink)}
+    input:hover,textarea:hover,select:hover{border-color:var(--line-strong)}
+    input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(92,255,211,.12);background:rgba(4,8,12,.84)}
+    input:disabled{background:rgba(255,255,255,.045);color:#77827f}
+    input::placeholder,textarea::placeholder{color:rgba(215,225,221,.42)}
+    input[type="checkbox"]{accent-color:var(--accent)}
+    .app{max-width:1680px;padding:22px 24px}
+    .topbar{
+      position:relative;overflow:hidden;padding:10px 14px;border:1px solid rgba(255,255,255,.08);
+      border-radius:22px;background:rgba(7,10,14,.72);
+      box-shadow:0 10px 28px rgba(0,0,0,.20);isolation:isolate;
+    }
+    .topbar::after{content:"";position:absolute;inset:auto -12% -86% 38%;height:180%;background:radial-gradient(circle,rgba(255,208,120,.18),transparent 62%);z-index:-1}
+    .brand-lockup{gap:20px}
+    .brand-logo{width:58px;height:58px}
+    .brand-mark{
+      position:relative;display:grid;place-items:center;isolation:isolate;border-radius:27px;
+      background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.13);
+      filter:drop-shadow(0 22px 34px rgba(0,0,0,.48));
+    }
+    .brand-mark::before{content:"";position:absolute;inset:-18px;border-radius:34px;background:radial-gradient(circle at 50% 52%,rgba(255,219,129,.20),transparent 42%),radial-gradient(circle at 60% 22%,rgba(98,255,209,.18),transparent 46%);filter:blur(6px);opacity:.9;z-index:-2}
+    .brand-mark::after{content:"";position:absolute;inset:7px;border-radius:22px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,0));z-index:-1}
+    .brand-mark img{position:absolute;width:100%;height:100%;object-fit:contain;user-select:none;pointer-events:none;backface-visibility:hidden;will-change:transform,opacity,filter}
+    .brand-mark .mark-shield{z-index:4;transform-origin:50% 58%;filter:saturate(1.04) contrast(1.03)}
+    .brand-mark .mark-hammer{z-index:3;transform-origin:54% 55%;filter:drop-shadow(0 10px 13px rgba(0,0,0,.28))}
+    .brand-mark .mark-weapon-shadow{z-index:2;opacity:.55;transform-origin:54% 55%;filter:blur(2px)}
+    .brand-mark.running .mark-shield{animation:shieldRecoil 1.28s cubic-bezier(.28,.76,.2,1) infinite}
+    .brand-mark.running .mark-hammer{animation:maceStrike 1.28s cubic-bezier(.28,.78,.22,1) infinite}
+    .brand-mark.running .mark-weapon-shadow{animation:maceShadowStrike 1.28s cubic-bezier(.28,.78,.22,1) infinite}
+    .brand-mark.running::before{animation:brandPulse 1.28s ease infinite}
+    .command-tabs{display:flex;gap:12px;align-items:center;overflow-x:auto;padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:26px;background:rgba(7,10,14,.78);box-shadow:0 14px 40px rgba(0,0,0,.24)}
+    .command-tab{flex:0 0 auto;padding:12px 18px;border-radius:18px;color:rgba(235,241,239,.72);font-size:18px;font-weight:900;letter-spacing:-.02em}
+    .command-tab.active{background:#fff;color:#0a0d0f}
+    .command-right{display:grid;gap:16px;align-content:start}
+    .workspace-hero{overflow:hidden;position:relative}
+    .workspace-hero::after{content:"";position:absolute;right:-8%;top:-70%;width:45%;height:170%;background:radial-gradient(circle,rgba(92,255,211,.18),transparent 68%);pointer-events:none}
+    .workspace-hero>.panel-head,.workspace-hero>#workspaceBadges,.workspace-hero>#workspaceRuntimeBanner{position:relative;z-index:1}
+    .workspace-hero .panel-head{align-items:start}
+    .workspace-hero .actions{justify-content:flex-end;max-width:520px}
+    .workspace-hero #workspacePrimaryRunButton{font-size:16px;padding:13px 20px}
+    .workspace-identity{overflow:hidden;position:relative;min-height:218px}
+    .workspace-identity::after{content:"";position:absolute;right:-45px;top:-55px;width:170px;height:170px;border-radius:999px;background:radial-gradient(circle,rgba(92,255,211,.16),transparent 66%)}
+    .workspace-identity-inner{position:relative;z-index:1;display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center}
+    .workspace-identity .brand-mark{width:116px;height:116px}
+    .identity-kicker{color:var(--accent);font-size:12px;letter-spacing:.22em;font-weight:900}
+    .identity-title{margin-top:6px;font-size:30px;font-weight:950;letter-spacing:-.05em}
+    .identity-note{position:relative;z-index:1;margin-top:22px;color:var(--muted);line-height:1.65}
+    .pipeline-list{position:relative;display:grid;gap:18px;padding:4px 0 4px 20px}
+    .pipeline-list::before{content:"";position:absolute;left:9px;top:18px;bottom:18px;width:1px;background:rgba(255,255,255,.12)}
+    .pipeline-step{position:relative;display:grid;gap:3px}
+    .pipeline-step::before{content:"";position:absolute;left:-20px;top:4px;width:18px;height:18px;border-radius:999px;background:rgba(255,255,255,.14);box-shadow:0 0 0 6px rgba(255,255,255,.04)}
+    .pipeline-step.done::before,.pipeline-step.active::before{background:var(--accent);box-shadow:0 0 0 8px rgba(92,255,211,.10)}
+    .pipeline-step.warn::before{background:var(--warn);box-shadow:0 0 0 8px rgba(255,208,120,.10)}
+    .pipeline-step strong{font-size:18px}
+    .pipeline-step span{color:var(--muted);font-size:13px;line-height:1.4}
+    .concurrency-panel .grid3{grid-template-columns:1fr}
+    .eyebrow{color:var(--accent)}
+    h1{font-size:clamp(20px,2.1vw,30px);line-height:1;color:#fff;text-shadow:0 12px 34px rgba(0,0,0,.34)}
+    h2,h3{color:var(--ink)}
+    .server-chip{background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.12);color:#d9e7e3}
+    .layout{gap:16px}
+    .main>.panel:not(.workspace-hero){padding:20px}
+    .main>.panel:not(.workspace-hero)>.section-title{margin-bottom:12px}
+    .main>.panel:not(.workspace-hero)>.grid2{gap:16px}
+    .main>.panel:not(.workspace-hero)>.grid2>.card{min-height:260px}
+    .main>.panel:not(.workspace-hero) .card>.field,.main>.panel:not(.workspace-hero) .card>.grid2,.main>.panel:not(.workspace-hero) .card>.grid3,.main>.panel:not(.workspace-hero) .card>details,.main>.panel:not(.workspace-hero) .card>.file-picker,.main>.panel:not(.workspace-hero) .card>.packaging-box{margin-top:4px}
+    .panel,.card,.workspace-card,.job-card,.runtime-banner,.packaging-box,.runtime-diagnosis{
+      background:linear-gradient(145deg,rgba(18,25,29,.86),rgba(11,14,18,.72));
+      border-color:var(--line);box-shadow:0 16px 46px rgba(0,0,0,.28);
+      backdrop-filter:blur(18px);
+    }
+    .card{background:rgba(13,18,22,.72)}
+    .workspace-card,.job-card{background:rgba(12,17,21,.78)}
+    .workspace-card:hover{border-color:var(--line-strong);box-shadow:0 18px 34px rgba(0,0,0,.32);background:rgba(17,25,29,.86)}
+    .workspace-card.active,.job-card.active{background:linear-gradient(145deg,rgba(24,56,49,.88),rgba(13,18,22,.86));border-color:rgba(92,255,211,.48);box-shadow:inset 4px 0 0 var(--accent),0 20px 46px rgba(0,0,0,.32)}
+    .pill{background:rgba(255,255,255,.08);color:#bac9c5;border:1px solid rgba(255,255,255,.08)}
+    .pill.good{background:rgba(114,255,172,.12);color:var(--good);border-color:rgba(114,255,172,.18)}
+    .pill.warn{background:rgba(255,208,120,.12);color:var(--warn);border-color:rgba(255,208,120,.18)}
+    .pill.bad{background:rgba(255,111,97,.13);color:#ff9c93;border-color:rgba(255,111,97,.18)}
+    .pill.run{background:rgba(92,255,211,.13);color:var(--accent);border-color:rgba(92,255,211,.18)}
+    .pill.idle{background:rgba(255,255,255,.07);color:var(--muted)}
+    .muted,.hint,.empty,.status-detail,.runtime-detail,.packaging-preview-desc,.progress-note,.check{color:var(--muted)}
+    .empty{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.14)}
+    .num{background:linear-gradient(135deg,var(--accent),#ffe08a);color:#06110e}
+    .file-picker{background:rgba(4,8,12,.42);border-color:var(--line);scrollbar-gutter:stable}
+    .file-row,.baidu-folder,.runtime-diag-stat,.runtime-diag-item,.job-preview,.upload-note,.packaging-preview,.packaging-style-card,.segmented-control,.bgm-mode-select,.bgm-advanced{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.10);color:var(--ink)}
+    .file-row:hover{background:rgba(92,255,211,.10)}
+    .progress-bar{background:rgba(255,255,255,.10)}
+    .progress-fill{background:linear-gradient(90deg,#4cffc9,#ffe08a)}
+    .progress-head{color:var(--ink)}
+    .runtime-banner.run,.runtime-banner.good,.runtime-banner.warn,.runtime-banner.bad{background:linear-gradient(145deg,rgba(18,31,30,.88),rgba(12,15,19,.82))}
+    .bgm-card{background:linear-gradient(145deg,rgba(14,36,32,.90),rgba(12,16,20,.82) 58%,rgba(42,30,18,.72));border-color:rgba(92,255,211,.20)}
+    .packaging-style-card.active{border-color:rgba(92,255,211,.52);box-shadow:0 0 0 2px rgba(92,255,211,.12)}
+    .segmented-control button.active{background:linear-gradient(135deg,var(--accent),#ffe08a);color:#06110e}
+    pre{background:#05080c;color:#d9fff1;border:1px solid rgba(92,255,211,.14);max-height:360px}
+    .log-panel{min-height:0}
+    .log-panel pre{max-height:280px}
+    .sidebar-tools{display:grid;gap:14px;min-height:0}
+    .workspace-panel,.jobs-panel{min-height:0}
+    .workspace-list,.job-list{min-height:0}
+    .baidu-folder-summary{color:var(--ink)}
+    .baidu-folder-children{border-left-color:rgba(255,255,255,.12)}
+    .preview-modal{background:rgba(2,4,8,.84)}
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-track{background:rgba(255,255,255,.035);border-radius:999px}
+    ::-webkit-scrollbar-thumb{background:rgba(92,255,211,.22);border:2px solid rgba(5,8,12,.72);border-radius:999px}
+    ::-webkit-scrollbar-thumb:hover{background:rgba(92,255,211,.38)}
+    @media (min-width:1181px){
+      html,body{min-height:100%;overflow-x:hidden;overflow-y:auto}
+      .app{max-width:none;display:grid;gap:14px;padding:14px 24px 28px}
+      .topbar{margin-bottom:0}
+      .layout{align-items:start;grid-template-columns:minmax(300px,360px) minmax(0,1fr) minmax(340px,430px)}
+      .layout.sidebar-collapsed{grid-template-columns:88px minmax(0,1fr) minmax(340px,430px)}
+      .sidebar{position:sticky;top:16px;max-height:calc(100vh - 32px);min-height:0;overflow:hidden;padding-right:0;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+      .command-right{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;padding-right:4px}
+      .workspace-panel{display:grid;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
+      .jobs-panel,.log-panel{display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+      .log-panel pre{min-height:0;overflow:auto}
+      .workspace-panel>.stack{margin-bottom:12px}
+      .workspace-list,.job-list{overflow:auto;padding-right:4px}
+      .workspace-list{max-height:680px}
+      .main{min-height:0;align-content:start}
+      #baiduFilePicker{max-height:380px;min-height:220px}
+      #sourceAssetList,#referenceAssetList,#bgmAssetList{max-height:260px;min-height:132px}
+      #douyinLinkList{max-height:250px;overflow:auto;padding-right:4px}
+      .main .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .main .grid3{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+      .sidebar .grid2,.sidebar .grid3{grid-template-columns:1fr}
+      .layout.sidebar-collapsed .sidebar{grid-template-rows:auto}
+      .layout.sidebar-collapsed .workspace-identity{display:none}
+    }
+    @media (max-width:1180px){
+      body{overflow:auto}
+      .topbar{grid-template-columns:1fr}
+      .brand-logo{width:86px;height:86px}
+      .layout{grid-template-columns:1fr}
+      .command-right{display:grid;gap:14px}
+      .command-tab{font-size:15px}
+      .workspace-identity .brand-mark{width:92px;height:92px}
+      .file-picker{max-height:360px}
+      .log-panel pre{max-height:260px}
+    }
+    /* Command deck layout polish: match the compact dark dashboard mockup. */
+    .topbar{display:none}
+    .command-tabs{justify-content:space-between;gap:18px}
+    .command-tab-list{display:flex;gap:12px;min-width:0;overflow-x:auto;padding-bottom:1px}
+    .command-actions{flex:0 0 auto;margin-left:auto}
+    .panel,.card,.main,.sidebar,.command-right,.grid2,.grid3{min-width:0}
+    .panel{overflow:hidden}
+    .main>.panel:not(.workspace-hero)>.grid2>.card{min-height:0}
+    .main .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .main .grid3{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+    .card>.grid2,.card>.grid3{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+    .workspace-hero .panel-head{display:grid;grid-template-columns:minmax(360px,1fr) minmax(280px,auto);align-items:start}
+    .workspace-hero .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch;max-width:500px}
+    .workspace-hero .actions button{white-space:nowrap}
+    .workspace-hero .actions #workspacePrimaryRunButton{grid-column:1/-1}
+    .workspace-hero h2{font-size:clamp(28px,3vw,44px);line-height:1.02;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .workspace-hero #workspaceMeta{max-width:720px;white-space:normal;word-break:keep-all;overflow-wrap:break-word;line-height:1.55}
+    .workspace-hero .panel-head>div:first-child{min-width:360px}
+    .hero-kicker{color:var(--accent);font-size:12px;letter-spacing:.22em;font-weight:900;margin-bottom:6px}
+    .workspace-identity{min-height:0}
+    .workspace-panel .stack{gap:10px}
+    .workspace-card .actions{display:none}
+    .workspace-card .chips{margin-top:8px}
+    .workspace-card .chips .pill:nth-child(n+3){display:none}
+    .job-card .job-preview{max-height:92px;overflow:auto}
+    .log-tail-panel{display:none}
+    .deck-collapse{
+      border:1px solid rgba(255,255,255,.10);border-radius:18px;
+      background:rgba(255,255,255,.045);overflow:hidden;
+    }
+    .deck-collapse>summary{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:11px 13px;cursor:pointer;list-style:none;font-weight:900;color:var(--ink);
+    }
+    .deck-collapse>summary::-webkit-details-marker{display:none}
+    .deck-collapse>summary::after{
+      content:"展开";flex:none;border:1px solid rgba(92,255,211,.20);border-radius:999px;
+      padding:4px 8px;color:var(--accent);font-size:12px;background:rgba(92,255,211,.06);
+    }
+    .deck-collapse[open]>summary::after{content:"收起"}
+    .deck-collapse-body{display:grid;gap:12px;padding:0 12px 12px}
+    .deck-collapse .file-picker{min-height:96px;max-height:300px}
+    .deck-mini-note{color:var(--muted);font-size:12px;font-weight:700}
+    .output-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .module-summary{
+      display:grid;grid-template-columns:128px minmax(0,1fr);gap:10px 20px;
+      padding:12px 14px;border:1px solid rgba(255,255,255,.10);border-radius:18px;
+      background:rgba(255,255,255,.04);
+    }
+    .module-summary dt{color:var(--muted);font-weight:800}
+    .module-summary dd{margin:0;min-width:0}
+    .module-chip{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      min-height:42px;padding:9px 12px;border-radius:14px;
+      background:rgba(4,8,12,.52);border:1px solid rgba(255,255,255,.09);
+      color:var(--ink);font-weight:800;overflow:hidden;
+    }
+    .module-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .module-chip button{flex:none;padding:6px 10px;border-radius:999px;font-size:12px}
+    .low-priority{opacity:.86}
+    .field-options-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+    .command-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .overview-card{
+      min-height:170px;padding:18px 20px;border-radius:24px;
+      border:1px solid rgba(255,255,255,.11);
+      background:linear-gradient(145deg,rgba(20,27,31,.92),rgba(9,12,16,.78));
+      box-shadow:0 18px 46px rgba(0,0,0,.24);display:grid;align-content:start;gap:14px;
+    }
+    .overview-card h3{font-size:26px;letter-spacing:-.05em}
+    .overview-card .row{justify-content:space-between}
+    .overview-card dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px 20px;margin:0}
+    .overview-card dt{color:var(--muted);font-weight:800}
+    .overview-card dd{margin:0;min-width:0}
+    .overview-value{
+      display:block;padding:9px 12px;border-radius:14px;background:rgba(4,8,12,.58);
+      border:1px solid rgba(255,255,255,.08);font-weight:800;line-height:1.35;
+      overflow:hidden;text-overflow:ellipsis;
+    }
+    .details-panel{padding:0;background:transparent;border:0;box-shadow:none}
+    .details-panel>summary{
+      list-style:none;cursor:pointer;margin-bottom:14px;
+      display:flex;align-items:center;justify-content:space-between;gap:14px;
+      padding:16px 18px;border:1px solid rgba(255,255,255,.10);border-radius:22px;
+      background:linear-gradient(145deg,rgba(18,25,29,.86),rgba(11,14,18,.72));
+      font-size:22px;font-weight:900;
+    }
+    .details-panel>summary::-webkit-details-marker{display:none}
+    .details-panel>summary::after{
+      content:"展开详细配置";font-size:13px;color:var(--accent);padding:6px 10px;
+      border:1px solid rgba(92,255,211,.20);border-radius:999px;background:rgba(92,255,211,.06);
+    }
+    .details-panel[open]>summary::after{content:"收起详细配置"}
+    .details-panel-body{display:grid;gap:14px}
+    @media (min-width:1181px){
+      .app{padding:16px 34px 30px}
+      .layout{grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:16px}
+      .layout.sidebar-collapsed{grid-template-columns:88px minmax(0,1fr)}
+      .sidebar{top:14px;max-height:calc(100vh - 28px)}
+      .command-right{position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-column:1/-1;padding-right:0}
+      .command-right .log-panel{grid-column:1/-1}
+      .workspace-list{max-height:calc(100vh - 522px);min-height:220px}
+      .workspace-identity .brand-mark{width:124px;height:124px}
+      #baiduFilePicker{min-height:120px;max-height:300px}
+      #sourceAssetList,#referenceAssetList,#bgmAssetList{min-height:96px;max-height:240px}
+    }
+    @media (min-width:1760px){
+      .layout{grid-template-columns:minmax(300px,360px) minmax(0,1fr) minmax(340px,430px)}
+      .layout.sidebar-collapsed{grid-template-columns:88px minmax(0,1fr) minmax(340px,430px)}
+      .command-right{position:sticky;top:14px;max-height:calc(100vh - 28px);overflow:auto;display:grid;grid-template-columns:1fr;grid-column:auto;padding-right:4px}
+      .command-right .log-panel{grid-column:auto}
+    }
+    @media (max-width:1180px){
+      .command-tabs{align-items:flex-start;flex-direction:column}
+      .command-actions{margin-left:0}
+      .workspace-hero .panel-head{grid-template-columns:1fr}
+      .workspace-hero .actions{grid-template-columns:repeat(2,minmax(0,1fr));max-width:none}
+      .output-advanced-grid{grid-template-columns:1fr}
+      .module-summary{grid-template-columns:1fr}
+      .command-overview{grid-template-columns:1fr}
+      .overview-card dl{grid-template-columns:1fr}
+    }
+    @keyframes shieldRecoil{
+      0%,51%,100%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+      57%{transform:translate3d(-1.15px,1.18px,0) rotate(-.34deg) scale(.996)}
+      64%{transform:translate3d(.42px,-.38px,0) rotate(.13deg) scale(1.002)}
+      74%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+    }
+    @keyframes maceStrike{
+      0%,50%,100%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+      54%{transform:translate3d(-3.05px,2.26px,0) rotate(-4.25deg) scale(1.006)}
+      58%{transform:translate3d(-1.02px,.72px,0) rotate(-1.25deg) scale(1.001)}
+      65%{transform:translate3d(.48px,-.42px,0) rotate(.4deg) scale(.998)}
+      76%{transform:translate3d(0,0,0) rotate(0deg) scale(1)}
+    }
+    @keyframes maceShadowStrike{
+      0%,50%,100%{transform:translate3d(1.6px,3.8px,0) rotate(0deg);opacity:.26}
+      54%{transform:translate3d(-1.15px,5.95px,0) rotate(-4.25deg);opacity:.43}
+      65%{transform:translate3d(2.18px,3.48px,0) rotate(.4deg);opacity:.3}
+      76%{transform:translate3d(1.6px,3.8px,0) rotate(0deg);opacity:.26}
+    }
+    @keyframes brandPulse{
+      0%,50%,100%{opacity:.66;transform:scale(.96)}
+      58%{opacity:1;transform:scale(1.065)}
+      74%{opacity:.78;transform:scale(.985)}
+    }
+    /* Final command deck tuning: less copy, stronger hierarchy, better workspace scrolling. */
+    .workspace-identity{padding:12px;min-height:0}
+    .workspace-identity-inner{grid-template-columns:1fr;justify-items:center;text-align:center;gap:9px}
+    .workspace-identity .brand-mark{width:118px;height:118px}
+    .workspace-identity-copy{display:grid;gap:0;justify-items:center}
+    .identity-kicker,.identity-title{display:none}
+    .identity-chips{justify-content:center;margin-top:0!important}
+    .workspace-card{min-height:76px;padding:12px 13px;border-radius:18px;overflow:visible}
+    .workspace-card-main{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center}
+    .workspace-select-check{align-self:center;gap:0}
+    .workspace-select-check span{display:none}
+    .workspace-card-body{min-width:0;display:grid;gap:5px}
+    .workspace-card-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+    .workspace-card h3{margin:0;font-size:16px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+    .workspace-card-sub{color:var(--muted);font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .workspace-card .workspace-status{margin:9px 0 0}
+    .workspace-card:not(.is-running) .workspace-status{display:none}
+    .workspace-card .chips{display:none}
+    .workspace-card-mini-actions{display:flex;gap:6px;margin-top:10px}
+    .workspace-card-mini-actions button{padding:6px 9px;border-radius:999px;font-size:12px;box-shadow:none}
+    .overview-card{min-height:122px;padding:16px 18px;gap:12px}
+    .overview-card h3{font-size:24px}
+    .overview-card dl{grid-template-columns:72px minmax(0,1fr);gap:9px 14px}
+    .overview-card dt{font-size:13px}
+    .overview-value{padding:8px 11px;line-height:1.28;white-space:nowrap}
+    .pipeline-panel{border-color:rgba(92,255,211,.20);background:linear-gradient(145deg,rgba(18,31,30,.92),rgba(8,12,16,.84))}
+    .pipeline-list{gap:14px}
+    .pipeline-step strong{font-size:17px}
+    .pipeline-step span{font-size:12px;line-height:1.35}
+    @media (min-width:1181px){
+      .app{padding:16px 28px 30px}
+      .layout{grid-template-columns:minmax(280px,330px) minmax(0,1fr) minmax(300px,380px);gap:16px}
+      .layout.sidebar-collapsed{grid-template-columns:88px minmax(0,1fr) minmax(300px,380px)}
+      .sidebar{height:calc(100vh - 28px);max-height:calc(100vh - 28px);grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+      .workspace-panel{height:100%;min-height:0;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
+      .workspace-panel>.stack{min-height:0;flex:none}
+      .workspace-list{align-content:start;min-height:0;max-height:none;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding:2px 4px 12px 2px}
+      .command-right{position:sticky;top:14px;max-height:calc(100vh - 28px);overflow:auto;display:grid;grid-template-columns:1fr;grid-column:auto;padding-right:4px}
+      .command-right .log-panel{grid-column:auto}
+      .pipeline-panel{order:-4}
+      .concurrency-panel{order:-3}
+      .jobs-panel{order:-2}
+      .log-panel{order:-1}
+      .workspace-hero .panel-head{grid-template-columns:minmax(280px,1fr) minmax(260px,auto)}
+    }
+    @media (min-width:1181px) and (max-width:1360px){
+      .app{padding-left:18px;padding-right:18px}
+      .layout{grid-template-columns:minmax(260px,300px) minmax(0,1fr) minmax(278px,326px)}
+      .layout.sidebar-collapsed{grid-template-columns:78px minmax(0,1fr) minmax(278px,326px)}
+      .overview-card dl{grid-template-columns:58px minmax(0,1fr);gap-column:10px}
+      .overview-card{padding:15px}
+      .workspace-hero .actions{grid-template-columns:1fr}
+      .workspace-identity .brand-mark{width:96px;height:96px}
+      .workspace-panel>.stack{gap:8px}
+      .workspace-panel>.stack .grid2{gap:8px}
+      .workspace-card{min-height:72px}
+    }
+    @media (min-width:1181px) and (max-height:820px){
+      .workspace-identity{padding:10px}
+      .workspace-identity .brand-mark{width:82px;height:82px}
+      .identity-chips{display:none}
+      .workspace-panel>.stack{gap:7px;margin-bottom:8px}
+      .workspace-panel>.stack input{min-height:38px;padding-top:8px;padding-bottom:8px}
+      .workspace-panel>.stack button{min-height:38px;padding-top:8px;padding-bottom:8px}
+      .workspace-list{padding-bottom:8px}
+    }
+    @media (max-width:1180px){
+      .workspace-card-mini-actions{display:none}
+      .overview-value{white-space:normal}
+    }
+    /* Compact detailed configuration: tighter spacing while keeping module boundaries obvious. */
+    .workspace-hero::after{
+      right:2%;
+      top:-42%;
+      width:24%;
+      height:120%;
+      opacity:.42;
+    }
+    .workspace-hero .actions{
+      padding:12px;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:22px;
+      background:linear-gradient(145deg,rgba(15,20,24,.88),rgba(8,11,15,.82));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 14px 38px rgba(0,0,0,.22);
+      backdrop-filter:blur(14px);
+    }
+    .workspace-hero .actions button{
+      min-height:44px;
+      padding:10px 14px;
+      border-radius:15px;
+    }
+    .workspace-hero .actions #workspacePrimaryRunButton{
+      min-height:48px;
+      padding:12px 18px;
+      border-radius:16px;
+    }
+    .details-panel>summary{
+      margin-bottom:10px;
+      padding:13px 16px;
+      border-radius:18px;
+      font-size:20px;
+    }
+    .details-panel-body{
+      gap:10px;
+    }
+    .details-panel-body>.panel{
+      padding:13px;
+      border-radius:20px;
+      background:linear-gradient(145deg,rgba(16,22,26,.86),rgba(9,12,16,.76));
+    }
+    .details-panel-body>.panel>.section-title{
+      margin-bottom:10px;
+      padding-bottom:9px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .details-panel-body>.panel>.section-title h2{
+      font-size:20px;
+    }
+    .details-panel-body .num{
+      width:26px;
+      height:26px;
+      border-radius:10px;
+      font-size:12px;
+    }
+    .details-panel-body .grid2,
+    .details-panel-body .grid3{
+      gap:10px;
+    }
+    .details-panel-body .grid2[style*="margin-top"],
+    .details-panel-body .grid3[style*="margin-top"]{
+      margin-top:10px!important;
+    }
+    .details-panel-body .card{
+      padding:12px;
+      border-radius:17px;
+      background:rgba(12,17,21,.72);
+    }
+    .details-panel-body .stack{
+      gap:9px;
+    }
+    .details-panel-body .row,
+    .details-panel-body .actions,
+    .details-panel-body .checks,
+    .details-panel-body .chips{
+      gap:7px;
+    }
+    .details-panel-body h3{
+      font-size:16px;
+      line-height:1.25;
+    }
+    .details-panel-body .field{
+      gap:5px;
+    }
+    .details-panel-body .field span,
+    .details-panel-body .check span{
+      font-size:12px;
+    }
+    .details-panel-body input,
+    .details-panel-body select,
+    .details-panel-body textarea{
+      min-height:40px;
+      padding:9px 11px;
+      border-radius:13px;
+    }
+    .details-panel-body textarea{
+      min-height:72px;
+    }
+    .details-panel-body button{
+      min-height:38px;
+      padding:8px 11px;
+      border-radius:13px;
+    }
+    .details-panel-body .module-summary{
+      grid-template-columns:92px minmax(0,1fr);
+      gap:8px 12px;
+      padding:10px;
+      border-radius:15px;
+    }
+    .details-panel-body .module-summary dt{
+      font-size:12px;
+    }
+    .details-panel-body .deck-collapse{
+      border-radius:15px;
+    }
+    .details-panel-body .deck-collapse>summary{
+      padding:9px 11px;
+    }
+    .details-panel-body .deck-collapse-body{
+      gap:9px;
+      padding:0 10px 10px;
+    }
+    .details-panel-body .deck-mini-note{
+      display:none;
+    }
+    .details-panel-body .upload-note,
+    .details-panel-body .muted,
+    .details-panel-body .hint{
+      font-size:12px;
+      line-height:1.45;
+    }
+    .details-panel-body .packaging-box,
+    .details-panel-body .bgm-mode-select{
+      padding:10px;
+      border-radius:16px;
+    }
+    .details-panel-body .packaging-preview{
+      grid-template-columns:minmax(88px,116px) minmax(0,1fr);
+      gap:10px;
+      padding:8px;
+      border-radius:14px;
+    }
+    .details-panel-body .packaging-preview-desc{
+      display:none;
+    }
+    .details-panel-body .packaging-style-grid{
+      grid-template-columns:repeat(auto-fit,minmax(104px,1fr));
+      gap:8px;
+    }
+    .details-panel-body .packaging-style-card{
+      padding:7px;
+      border-radius:12px;
+    }
+    .details-panel-body .fallback-row{
+      gap:8px;
+    }
+    .concurrency-dock{
+      padding:0;
+      border:0;
+      background:transparent;
+      box-shadow:none;
+      overflow:visible;
+    }
+    .command-right>.concurrency-panel{
+      overflow:visible;
+    }
+    .command-right .concurrency-panel{
+      padding:13px;
+      border-radius:22px;
+    }
+    .command-right .concurrency-panel .section-title{
+      margin-bottom:12px;
+      padding-bottom:8px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .command-right .concurrency-panel .grid3{
+      gap:10px;
+    }
+    .command-right .concurrency-panel input{
+      min-height:42px;
+    }
+    /* Stability pass: keep the command deck usable at real workspace counts. */
+    .brand-mark{
+      border:0!important;
+      background:transparent!important;
+      box-shadow:none!important;
+      border-radius:0!important;
+      filter:drop-shadow(0 22px 34px rgba(0,0,0,.44));
+    }
+    .brand-mark::after{display:none}
+    .workspace-identity{
+      display:grid;
+      place-items:center;
+      padding:14px 10px 12px;
+      overflow:visible;
+      border-color:transparent!important;
+      background:transparent!important;
+      box-shadow:none!important;
+      backdrop-filter:none!important;
+    }
+    .workspace-identity .brand-mark{
+      width:174px!important;
+      height:174px!important;
+    }
+    .workspace-identity-inner{gap:8px}
+    .identity-chips{margin-top:-3px!important}
+    .workspace-panel{
+      display:grid!important;
+      grid-template-rows:auto auto minmax(0,1fr)!important;
+      min-height:0;
+      overflow:hidden;
+    }
+    .workspace-panel>.stack{
+      flex:none;
+      min-height:0;
+      margin-bottom:10px;
+    }
+    .workspace-list{
+      display:grid!important;
+      grid-auto-rows:max-content;
+      align-content:start!important;
+      gap:12px!important;
+      min-height:0!important;
+      max-height:none!important;
+      overflow-y:auto!important;
+      overflow-x:hidden!important;
+      padding:2px 6px 18px 2px!important;
+      scrollbar-gutter:stable;
+    }
+    .workspace-card{
+      display:block;
+      min-height:0!important;
+      height:auto!important;
+      padding:13px 14px!important;
+      overflow:hidden!important;
+      isolation:isolate;
+    }
+    .workspace-card-main{
+      display:grid;
+      grid-template-columns:auto minmax(0,1fr);
+      align-items:center;
+      gap:10px;
+    }
+    .workspace-card-title-row{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      align-items:center;
+      gap:8px;
+    }
+    .workspace-card-title-actions{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      flex:none;
+    }
+    .workspace-card-run{
+      min-height:28px!important;
+      padding:5px 10px!important;
+      border-radius:999px!important;
+      font-size:12px!important;
+      line-height:1!important;
+      box-shadow:none!important;
+      white-space:nowrap;
+    }
+    .workspace-card-mini-actions{display:none!important}
+    .workspace-card-sub{margin-top:1px}
+    .workspace-card .workspace-status{margin-top:8px}
+    .layout.sidebar-collapsed .workspace-panel{display:none!important}
+    .command-right .concurrency-panel{
+      display:grid;
+      gap:10px;
+      order:-3;
+      overflow:visible!important;
+    }
+    .command-right .concurrency-panel .section-title{
+      margin-bottom:6px;
+    }
+    .command-right .concurrency-panel .grid3{
+      grid-template-columns:repeat(auto-fit,minmax(92px,1fr));
+    }
+    .details-panel-body{
+      gap:12px!important;
+    }
+    .details-panel-body>.panel{
+      padding:14px!important;
+      border-radius:22px!important;
+    }
+    .details-panel-body>.panel>.grid2{
+      grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+      gap:12px!important;
+    }
+    .details-panel-body .card{
+      min-height:0!important;
+      align-content:start;
+    }
+    @media (min-width:1181px) and (max-width:1360px){
+      .workspace-identity .brand-mark{width:156px!important;height:156px!important}
+      .command-right .concurrency-panel .grid3{grid-template-columns:1fr}
+    }
+    @media (min-width:1181px) and (max-height:820px){
+      .workspace-identity .brand-mark{width:142px!important;height:142px!important}
+      .identity-chips{display:flex}
+    }
+    @media (max-width:1180px){
+      .workspace-identity .brand-mark{width:136px!important;height:136px!important}
+      .command-right .concurrency-panel .grid3{grid-template-columns:1fr}
+      .details-panel-body>.panel>.grid2{grid-template-columns:1fr}
+    }
+    @media (min-width:1181px){
+      .details-panel-body .card>.grid2,
+      .details-panel-body .card>.grid3{
+        grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+      }
+    }
+    @media (max-width:1180px){
+      .workspace-hero .actions{
+        padding:10px;
+      }
+      .details-panel-body .module-summary{
+        grid-template-columns:1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -114,18 +854,31 @@
   <div class="app">
     <header class="topbar">
       <div class="brand-lockup">
-        <img class="brand-logo" src="/app-logo.png" alt="短剧自动剪辑 Logo">
+        <div class="brand-logo brand-mark" aria-label="短剧自动剪辑控制台 Logo">
+          <img class="mark-weapon-shadow" src="/logo-layers/app_logo_mace_shadow.png" alt="">
+          <img class="mark-hammer" src="/logo-layers/app_logo_mace.png" alt="">
+          <img class="mark-shield" src="/logo-layers/app_logo_shield.png" alt="">
+        </div>
         <div>
           <div class="eyebrow">SERVER AUTO CLIP</div>
           <h1>短剧自动剪辑控制台</h1>
         </div>
       </div>
-      <div class="top-actions">
+    </header>
+
+    <nav class="command-tabs" aria-label="控制台视图">
+      <div class="command-tab-list">
+        <span class="command-tab active">01 深色指挥台</span>
+        <span class="command-tab">02 浅色高级工作台</span>
+        <span class="command-tab">03 电影时间线</span>
+        <span class="command-tab">04 密集调度台</span>
+      </div>
+      <div class="top-actions command-actions">
         <div id="serverInfo" class="server-chip">正在连接控制台...</div>
         <button class="secondary" type="button" onclick="loadStatus(false,this)">刷新</button>
         <button class="ghost" type="button" onclick="shutdownControlCenter(this)">关闭服务</button>
       </div>
-    </header>
+    </nav>
 
     <div class="layout" id="layoutRoot">
       <aside class="sidebar" id="workspaceSidebar">
@@ -138,6 +891,19 @@
           <div class="rail-stat">
             <strong id="railRunningCount">0</strong>
             <span class="muted">运行中</span>
+          </div>
+        </section>
+
+        <section class="panel workspace-identity">
+          <div class="workspace-identity-inner">
+            <div id="sidebarBrandMark" class="brand-mark" aria-label="控制台 Logo">
+              <img class="mark-weapon-shadow" src="/logo-layers/app_logo_mace_shadow.png" alt="">
+              <img class="mark-hammer" src="/logo-layers/app_logo_mace.png" alt="">
+              <img class="mark-shield" src="/logo-layers/app_logo_shield.png" alt="">
+            </div>
+            <div class="workspace-identity-copy">
+              <div class="chips identity-chips"><span id="identityRunPill" class="pill idle">待命</span><span class="pill">指挥台</span></div>
+            </div>
           </div>
         </section>
 
@@ -166,19 +932,13 @@
           <div id="workspaceList" class="workspace-list" style="margin-top:14px"></div>
         </section>
 
-        <section class="panel jobs-panel">
-          <div class="panel-head">
-            <h2>运行任务</h2>
-            <button class="secondary" type="button" onclick="loadStatus(false,this)">刷新</button>
-          </div>
-          <div id="jobList" class="job-list"></div>
-        </section>
       </aside>
 
       <main class="main">
-        <section class="panel">
+        <section class="panel workspace-hero">
           <div class="panel-head">
             <div>
+              <div class="hero-kicker">CURRENT WORKSPACE</div>
               <h2 id="currentWorkspaceName">当前工作间</h2>
               <div id="workspaceMeta" class="muted">先新建或选择一个工作间。</div>
             </div>
@@ -187,7 +947,7 @@
               <button class="secondary" type="button" onclick="reloadCurrentTask(this)">重新载入</button>
               <button class="secondary" type="button" onclick="renameCurrentWorkspace(this)">改名</button>
               <button class="secondary" type="button" onclick="saveCurrentWorkspace(true,this)">保存</button>
-              <button type="button" onclick="saveAndRunCurrentWorkspace(this)">保存并启动</button>
+              <button id="workspacePrimaryRunButton" type="button" onclick="handleWorkspacePrimaryAction(this)">保存并启动</button>
               <button class="danger-soft" type="button" onclick="deleteWorkspace('',this)">删除工作间</button>
             </div>
           </div>
@@ -204,6 +964,64 @@
           </div>
         </section>
 
+        <section class="command-overview" aria-label="工作间核心配置概览">
+          <article class="overview-card">
+            <div class="row">
+              <h3>下载与导入</h3>
+              <span id="overviewImportPill" class="pill run">可运行</span>
+            </div>
+            <dl>
+              <dt>原素材</dt>
+              <dd><span id="overviewSource" class="overview-value">百度网盘官方客户端</span></dd>
+              <dt>参考视频</dt>
+              <dd><span id="overviewReference" class="overview-value">抖音 0 条</span></dd>
+              <dt>本地导入</dt>
+              <dd><span id="overviewLocalImport" class="overview-value">素材 0 / 参考 0 / 字幕 0</span></dd>
+            </dl>
+          </article>
+          <article class="overview-card">
+            <div class="row">
+              <h3>成片输出</h3>
+              <span id="overviewOutputPill" class="pill warn">待确认</span>
+            </div>
+            <dl>
+              <dt>模式</dt>
+              <dd><span id="overviewClipMode" class="overview-value">自动剪辑</span></dd>
+              <dt>包装</dt>
+              <dd><span id="overviewPackaging" class="overview-value">字幕遮挡区</span></dd>
+              <dt>音量</dt>
+              <dd><span id="overviewAudioMix" class="overview-value">对齐参考</span></dd>
+            </dl>
+          </article>
+          <article class="overview-card">
+            <div class="row">
+              <h3>AI 设置</h3>
+              <span class="pill">全工作间</span>
+            </div>
+            <dl>
+              <dt>模型</dt>
+              <dd><span id="overviewAiModel" class="overview-value">doubao-seed-2-0-lite-260215</span></dd>
+              <dt>作用</dt>
+              <dd><span id="overviewAiRole" class="overview-value">纠错 + 解说轻改</span></dd>
+            </dl>
+          </article>
+          <article class="overview-card">
+            <div class="row">
+              <h3>BGM</h3>
+              <span id="overviewBgmPill" class="pill good">本地曲库</span>
+            </div>
+            <dl>
+              <dt>流程</dt>
+              <dd><span id="overviewBgmFlow" class="overview-value">分离 -> 指纹 -> 相似</span></dd>
+              <dt>候选</dt>
+              <dd><span id="overviewBgmCandidate" class="overview-value">本地曲库自动匹配</span></dd>
+            </dl>
+          </article>
+        </section>
+
+        <details class="details-panel">
+          <summary>详细配置</summary>
+          <div class="details-panel-body">
         <section class="panel">
           <div class="section-title"><span class="num">1</span><h2>下载与导入</h2></div>
           <div class="grid2">
@@ -226,44 +1044,47 @@
               <div class="row">
                 <div id="baiduLoginStatus" class="pill warn">百度未检查</div>
               </div>
-              <div class="grid3">
-                <label class="field">
-                  <span>下载到</span>
-                  <input id="baiduOutputPath" type="text" value="downloads/baidu" placeholder="downloads/baidu 或 E:\样片">
-                </label>
-                <label class="field">
-                  <span>单文件并行分段数</span>
-                  <input id="baiduDownloadThreads" type="number" min="1" max="16" value="4">
-                </label>
-                <label class="check" style="align-self:end">
-                  <input id="baiduSkipExisting" type="checkbox" checked>
-                  <span>已有文件跳过</span>
-                </label>
-              </div>
-              <div style="margin-top:12px">
-                <label class="field">
-                  <span>下载模式</span>
+              <input id="baiduDownloadThreads" type="hidden" value="1">
+              <dl class="module-summary">
+                <dt>下载到</dt>
+                <dd><input id="baiduOutputPath" type="text" value="downloads/baidu" placeholder="downloads/baidu 或 E:\样片"></dd>
+                <dt>下载模式</dt>
+                <dd>
                   <select id="baiduDownloadMode">
                     <option value="official_client">交给官方百度网盘客户端</option>
                     <option value="api">工具直连下载</option>
                   </select>
-                </label>
-              </div>
-              <div id="baiduFilePicker" class="file-picker"></div>
-              <div class="card stack" style="padding:12px">
-                <div class="row">
-                  <h3>当前封面</h3>
+                </dd>
+                <dt>选项</dt>
+                <dd class="field-options-row">
+                  <label class="check">
+                    <input id="baiduSkipExisting" type="checkbox" checked>
+                    <span>已有文件跳过</span>
+                  </label>
+                </dd>
+              </dl>
+              <details class="deck-collapse">
+                <summary><span>网盘文件选择</span><span class="deck-mini-note">提取后默认勾选视频，可展开调整</span></summary>
+                <div class="deck-collapse-body">
+                  <div id="baiduFilePicker" class="file-picker"></div>
+                </div>
+              </details>
+              <details class="deck-collapse">
+                <summary><span>封面设置</span><span class="deck-mini-note">可从网盘图片设为封面</span></summary>
+                <div class="deck-collapse-body">
                   <div class="actions">
                     <button class="secondary" type="button" onclick="refreshCoverPreview(this)">刷新预览</button>
                     <button class="secondary" type="button" onclick="clearWorkspaceCover(this)">清空封面</button>
                   </div>
+                  <div id="coverPreviewPanel" class="empty">还没有选中封面。提取网盘内容后，找到图片并点击“设为封面”。</div>
                 </div>
-                <div id="coverPreviewPanel" class="empty">还没有选中封面。提取网盘内容后，找到图片并点击“设为封面”。</div>
-              </div>
-              <label class="field">
-                <span>当前工作间已导入原素材</span>
-                <div id="sourceAssetList" class="file-picker"></div>
-              </label>
+              </details>
+              <details class="deck-collapse">
+                <summary><span>已导入原素材</span><span class="deck-mini-note">展开查看当前工作间素材</span></summary>
+                <div class="deck-collapse-body">
+                  <div id="sourceAssetList" class="file-picker"></div>
+                </div>
+              </details>
             </div>
 
             <div class="card stack">
@@ -279,24 +1100,27 @@
                 <button class="secondary" type="button" onclick="addDouyinLinkRow()">添加链接</button>
                 <button class="secondary" type="button" onclick="clearDouyinLinks()">清空链接</button>
               </div>
-              <div class="grid2">
-                <label class="field">
-                  <span>下载到</span>
-                  <input id="douyinOutputPath" type="text" value="downloads/douyin" placeholder="downloads/douyin 或 E:\参考视频">
-                </label>
-                <label class="check" style="align-self:end">
+              <dl class="module-summary">
+                <dt>下载到</dt>
+                <dd><input id="douyinOutputPath" type="text" value="downloads/douyin" placeholder="downloads/douyin 或 E:\参考视频"></dd>
+                <dt>选项</dt>
+                <dd class="field-options-row">
+                  <label class="check">
                   <input id="douyinOverwrite" type="checkbox">
                   <span>覆盖同名文件</span>
-                </label>
-              </div>
-              <label class="check">
-                <input id="douyinWithWatermark" type="checkbox">
-                <span>下载带水印版本</span>
-              </label>
-              <label class="field">
-                <span>当前工作间已导入参考视频</span>
-                <div id="referenceAssetList" class="file-picker"></div>
-              </label>
+                  </label>
+                  <label class="check">
+                    <input id="douyinWithWatermark" type="checkbox">
+                    <span>下载带水印版本</span>
+                  </label>
+                </dd>
+              </dl>
+              <details class="deck-collapse">
+                <summary><span>已导入参考视频</span><span class="deck-mini-note">展开查看当前工作间参考视频</span></summary>
+                <div class="deck-collapse-body">
+                  <div id="referenceAssetList" class="file-picker"></div>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -376,7 +1200,12 @@
                   <div id="bgmImportStatus" class="hint upload-note">当前工作间还没有导入 BGM，可直接点击上方按钮浏览导入。</div>
                 </div>
               </details>
-              <div id="bgmAssetList" class="file-picker bgm-active-only"></div>
+              <details class="deck-collapse bgm-active-only">
+                <summary><span>当前 BGM 文件</span><span class="deck-mini-note">展开查看或手动选择</span></summary>
+                <div class="deck-collapse-body">
+                  <div id="bgmAssetList" class="file-picker"></div>
+                </div>
+              </details>
             </div>
             <div class="card stack">
               <h3>成片模式</h3>
@@ -386,26 +1215,80 @@
                 <span>账号水印文字</span>
                 <input id="outputWatermarkText" type="text" placeholder="例如：抖音号@你的账号">
               </label>
+              <div class="packaging-box" id="outputPackagingBox">
+                <div class="row">
+                  <h3>成片包装</h3>
+                  <span id="outputPackagingPill" class="pill good">款式 B</span>
+                </div>
+                <div class="packaging-controls-grid">
+                  <label class="field">
+                    <span>包装款式</span>
+                    <select id="outputPackagingStyle" onchange="updatePackagingUi()"></select>
+                  </label>
+                  <label class="field packaging-active-only">
+                    <span>包装字体（剧名/底部提示）</span>
+                    <select id="outputPackagingFont" onchange="updatePackagingUi()"></select>
+                  </label>
+                </div>
+                <div class="packaging-preview" id="outputPackagingPreviewWrap">
+                  <button type="button" onclick="openPackagingPreviewModal()">
+                    <img id="outputPackagingPreviewImage" alt="成片包装预览">
+                  </button>
+                  <div class="packaging-preview-meta">
+                    <div class="packaging-preview-title" id="outputPackagingPreviewTitle">款式 B 预览</div>
+                    <div class="packaging-preview-desc">使用实际短剧画面预览，点击图片可放大查看。</div>
+                  </div>
+                </div>
+                <details class="deck-collapse packaging-active-only">
+                  <summary><span>包装细节</span><span class="deck-mini-note">全部款式、剧名与底部提示</span></summary>
+                  <div class="deck-collapse-body">
+                    <div class="packaging-style-grid" id="outputPackagingStyleGrid"></div>
+                    <label class="field">
+                      <span>剧名文字</span>
+                      <input id="outputPackagingTitleText" type="text" placeholder="留空则使用工作间名称" oninput="updatePackagingUi()">
+                    </label>
+                    <div class="field">
+                      <span>剧名位置</span>
+                      <input id="outputPackagingTitleAlign" type="hidden" value="left">
+                      <div class="segmented-control" id="outputPackagingTitleAlignButtons">
+                        <button type="button" data-align="left" onclick="setPackagingTitleAlign('left')">居左</button>
+                        <button type="button" data-align="center" onclick="setPackagingTitleAlign('center')">居中</button>
+                        <button type="button" data-align="right" onclick="setPackagingTitleAlign('right')">居右</button>
+                      </div>
+                    </div>
+                    <label class="field">
+                      <span>底部提示</span>
+                      <input id="outputPackagingBottomText" type="text" placeholder="热门短剧 剧情需要 请勿模仿" oninput="updatePackagingUi()">
+                    </label>
+                  </div>
+                </details>
+                <div id="outputPackagingHint" class="hint"></div>
+              </div>
             </div>
           </div>
           <div class="grid2" style="margin-top:14px">
             <div class="card stack">
               <h3>AI 设置（全工作间通用）</h3>
               <label class="check"><input id="enableAiNarrationRewrite" type="checkbox" checked><span>启用 AI 轻改写</span></label>
-              <label class="field"><span>API Key</span><input id="aiApiKey" type="text"></label>
-              <label class="field"><span>主模型</span><input id="aiModel" type="text" value="doubao-seed-2-0-lite-260215"></label>
-              <label class="field"><span>API 地址</span><input id="aiApiUrl" type="text" value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"></label>
-              <div id="apiTestStatus" class="hint"></div>
-              <div class="field">
-                <span>备用模型</span>
-                <div id="aiFallbackModelList" class="fallback-list"></div>
-                <div id="aiFallbackModelEmpty" class="muted">未添加备用模型时，仅使用主模型。</div>
-                <div class="fallback-toolbar">
-                  <button id="addFallbackModelButton" class="secondary" type="button" onclick="addFallbackModelRow()">添加备用模型</button>
-                  <button class="secondary" type="button" onclick="saveGlobalAiSettings(this)">保存全局 AI 设置</button>
-                  <button class="secondary" type="button" onclick="testAiApi(this)">测试主模型</button>
+              <details class="deck-collapse">
+                <summary><span>模型与备用配置</span><span class="deck-mini-note">低频设置，默认收起</span></summary>
+                <div class="deck-collapse-body">
+                  <label class="field"><span>API Key</span><input id="aiApiKey" type="text"></label>
+                  <label class="field"><span>主模型</span><input id="aiModel" type="text" value="doubao-seed-2-0-lite-260215"></label>
+                  <label class="field"><span>API 地址</span><input id="aiApiUrl" type="text" value="https://ark.cn-beijing.volces.com/api/v3/chat/completions"></label>
+                  <div id="apiTestStatus" class="hint"></div>
+                  <div class="field">
+                    <span>备用模型</span>
+                    <div id="aiFallbackModelList" class="fallback-list"></div>
+                    <div id="aiFallbackModelEmpty" class="muted">未添加备用模型时，仅使用主模型。</div>
+                    <div class="fallback-toolbar">
+                      <button id="addFallbackModelButton" class="secondary" type="button" onclick="addFallbackModelRow()">添加备用模型</button>
+                      <button class="secondary" type="button" onclick="saveGlobalAiSettings(this)">保存全局 AI 设置</button>
+                      <button class="secondary" type="button" onclick="testAiApi(this)">测试主模型</button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </details>
             </div>
             <div class="card stack">
               <h3>画面处理</h3>
@@ -416,30 +1299,61 @@
           </div>
         </section>
 
-        <section class="grid2">
-          <div class="panel">
-            <div class="section-title"><span class="num">3</span><h2>同时处理数量</h2></div>
-            <div class="grid3">
-              <label class="field"><span>网盘下载</span><input id="concurrencyBaidu" type="number" min="1" max="8" value="1"></label>
-              <label class="field"><span>抖音下载</span><input id="concurrencyDouyin" type="number" min="1" max="8" value="3"></label>
-              <label class="field"><span>自动剪辑</span><input id="concurrencyAutoClip" type="number" min="1" max="4" value="1"></label>
-            </div>
           </div>
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>最近日志</h2>
-                <div id="logTitle" class="muted">暂无运行日志。</div>
-              </div>
-              <div class="actions">
-                <button class="secondary" type="button" onclick="loadStatus(false,this)">刷新</button>
-                <button class="danger" type="button" id="stopActiveJobButton" onclick="stopActiveJob(this)" disabled>停止任务</button>
-              </div>
-            </div>
-            <pre id="logOutput">暂无运行日志。</pre>
+        </details>
+      </main>
+
+      <aside class="command-right">
+        <section class="panel pipeline-panel">
+          <div class="panel-head">
+            <h2>运行流水线</h2>
+            <span class="pill run">实时</span>
+          </div>
+          <div class="pipeline-list" aria-label="自动剪辑流程">
+            <div class="pipeline-step active"><strong>下载与导入</strong><span>素材 / 参考 / 封面</span></div>
+            <div class="pipeline-step active"><strong>参考分析</strong><span>字幕 / 音轨 / BGM</span></div>
+            <div class="pipeline-step warn"><strong>音频字幕</strong><span>停顿主导</span></div>
+            <div class="pipeline-step"><strong>帧匹配</strong><span>对白音频兜底</span></div>
+            <div class="pipeline-step"><strong>合成输出</strong><span>跟随原素材帧率</span></div>
           </div>
         </section>
-      </main>
+
+        <section class="panel concurrency-panel">
+          <div class="section-title"><span class="num">3</span><h2>同时处理数量</h2></div>
+          <div class="grid3">
+            <label class="field"><span>网盘下载</span><input id="concurrencyBaidu" type="number" min="1" max="8" value="1"></label>
+            <label class="field"><span>抖音下载</span><input id="concurrencyDouyin" type="number" min="1" max="8" value="3"></label>
+            <label class="field"><span>自动剪辑</span><input id="concurrencyAutoClip" type="number" min="1" max="4" value="1"></label>
+          </div>
+        </section>
+
+        <section class="panel jobs-panel">
+          <div class="panel-head">
+            <h2>运行任务</h2>
+            <button class="secondary" type="button" onclick="loadStatus(false,this)">刷新</button>
+          </div>
+          <div id="jobList" class="job-list"></div>
+        </section>
+
+        <section class="panel log-panel">
+          <div class="panel-head">
+            <div>
+              <h2>运行日志</h2>
+              <div id="logTitle" class="muted">暂无运行日志。</div>
+            </div>
+            <button id="stopActiveJobButton" class="danger-soft" type="button" onclick="stopActiveJob(this)" disabled>停止</button>
+          </div>
+          <pre id="logOutput">暂无运行日志。</pre>
+        </section>
+
+        <section class="panel log-tail-panel">
+          <div class="panel-head">
+            <h2>最近事件</h2>
+            <span class="pill">自动刷新</span>
+          </div>
+          <div class="job-preview">运行后会展示最近日志摘要，方便不用滚到左侧也能判断当前卡点。</div>
+        </section>
+      </aside>
     </div>
   </div>
 
@@ -449,10 +1363,25 @@
   <input id="referenceFolderUploadInput" type="file" accept=".mp4,.mkv,.mov,.avi,.m4v,video/*" webkitdirectory directory multiple hidden onchange="uploadLocalFiles(this,'reference')">
   <input id="bgmAudioUploadInput" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,audio/*" multiple hidden onchange="uploadLocalFiles(this,'bgm')">
   <input id="bgmFolderUploadInput" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,audio/*" webkitdirectory directory multiple hidden onchange="uploadLocalFiles(this,'bgm')">
+  <div class="preview-modal" id="packagingPreviewModal" onclick="closePackagingPreviewModal(event)">
+    <div class="preview-modal-panel">
+      <img id="packagingPreviewModalImage" alt="成片包装放大预览">
+      <div class="actions">
+        <button class="secondary" type="button" onclick="closePackagingPreviewModal()">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <script>
-const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-2-0-lite-260215",ai_fallback_models:[],prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_source_mode:"auto",bgm_search_query:"",bgm_external_dirs:["D:\\BGM库"],bgm_chromaprint_fpcalc_path:"",bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
+const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.com/api/v3/chat/completions",ai_model:"doubao-seed-2-0-lite-260215",ai_fallback_models:[],prefer_funasr_audio_subtitles:true,disable_ai_subtitle_review:false,disable_ai_narration_rewrite:false,prefer_funasr_sentence_pauses:true,force_no_narration_mode:false,narration_background_percent:3,output_watermark_text:"",output_packaging_style:"douyin_handwritten",output_packaging_font:"style_default",output_packaging_title_text:"",output_packaging_title_align:"left",output_packaging_bottom_text:"热门短剧 剧情需要 请勿模仿",enable_random_episode_flip:true,random_episode_flip_ratio:.4,enable_random_visual_filter:true,bgm_audio_path:"",bgm_source_mode:"auto",bgm_search_query:"",bgm_external_dirs:["D:\\BGM库"],bgm_chromaprint_fpcalc_path:"",bgm_volume_percent:12,tts_voice:"zh-CN-YunxiNeural",tts_rate:"+8%",enable_backup_tts:false,azure_tts_key:"",azure_tts_region:"",azure_tts_voice:"",clip_output_root:""};
+    const DEFAULT_PACKAGING_STYLES=[{id:"none",label:"不使用包装",description:"保留原成片画面，不叠加上下遮挡和提示文字。"},{id:"douyin_handwritten",label:"款式 B 参考图手写版",description:"参考图 B 的手写标题感，上下遮挡对称，边缘柔黑但不过度压画面。"},{id:"v8_deep_gradient",label:"款式 A 窄幕黑边",description:"重新设计为短剧窄黑边字幕条，边缘更像烧录黑幕，不走 B/C 的雾化风格。"},{id:"narrow_premium",label:"款式 C 电影厚雾边",description:"最边缘接近实黑，向画面内大幅渐隐，适合需要强聚焦的成片。"},{id:"premium_silk_balanced",label:"款式 D1 深幕平衡版",description:"保留参考图 B 的手写感，上下遮挡对称，边缘更厚，整体更稳。"},{id:"premium_silk_soft",label:"款式 D2 深幕柔化版",description:"遮挡面积略大，中间过渡更柔，适合画面偏亮的成片。"},{id:"premium_mist_controlled",label:"款式 F1 收雾标准版",description:"C 方向的收雾版，雾感更克制，边缘仍保持明确遮挡。"},{id:"premium_mist_deep_edge",label:"款式 F2 收雾厚边版",description:"比 F1 更压暗，底部更稳，适合亮度偏高或需要强聚焦的画面。"},{id:"premium_theatre_vignette",label:"款式 H1 剧场暗角版",description:"上下面边缘带轻微暗角感，不做左右遮挡，画面更有剧场感。"},{id:"premium_theatre_dense",label:"款式 H2 剧场浓影版",description:"暗角更重、底部更稳，整体更戏剧化。"}];
+    const DEFAULT_PACKAGING_FONTS=[{id:"style_default",label:"跟随款式",description:"使用当前包装款式自带的推荐字体。"},{id:"mashan_zheng",label:"马善政手写",description:"粗一些的手写艺术字，适合短剧标题。"},{id:"long_cang",label:"龙藏手写",description:"细长一点的书写感，画面更轻。"},{id:"zcool_kuaile",label:"站酷快乐体",description:"更醒目的综艺感字体，适合强提示。"}];
     let latestStatus=null,currentWorkspace="",currentTask=null,selectedWorkspaces=new Set(),activeJobId="",baiduFiles=[],baiduSavedEntries=[],baiduListingUrl="",selectedBaiduKeys=new Set(),baiduExpandedFolders=new Set(),baiduLoginState=null,baiduListingPending=false,baiduCacheAutosaveTimer=null,toastCounter=0,sidebarCollapsed=false,workspaceFocusTimer=null,lastSystemNoticeId="";
+    let packagingStyles=[...DEFAULT_PACKAGING_STYLES];
+    let packagingFonts=[...DEFAULT_PACKAGING_FONTS];
+    let packagingPreviewKey="";
+    const progressMotionState=new Map();
+    let progressMotionFrame=0;
     const baiduOfficialDiagnosisCache=new Map();
     const $=id=>document.getElementById(id);
     const esc=value=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
@@ -469,10 +1398,28 @@ const DEFAULT_SETTINGS={ai_api_key:"",ai_api_url:"https://ark.cn-beijing.volces.
 function repairText(value,workspaceName=""){let text=String(value??"");if(!text)return"";for(const [broken,fixed]of LOG_REPLACEMENTS)text=text.split(broken).join(fixed);if(workspaceName){for(const broken of BROKEN_WORKSPACE_NAMES)text=text.split(broken).join(workspaceName)}return text}
 function isLikelyBrokenText(value){const text=String(value??"");if(!text)return false;return text.includes("\uFFFD")||text.includes("锟斤拷")||text.includes("\uFFFD\uFFFD")}
 function normalizeDisplayText(value,workspaceName=""){const repaired=repairText(value,workspaceName);if(!isLikelyBrokenText(repaired))return repaired;return repaired.replaceAll("\ufffd","").trim()}
-    function applySidebarState(){const layout=$("layoutRoot"),toggle=$("sidebarToggleButton"),workspaces=latestStatus?.workspaces||[],jobs=latestStatus?.jobs||[];if(layout)layout.classList.toggle("sidebar-collapsed",sidebarCollapsed&&isDesktopLayout());if(toggle)toggle.textContent=sidebarCollapsed&&isDesktopLayout()?"显示工作间":"隐藏左栏";if($("railWorkspaceCount"))$("railWorkspaceCount").textContent=String(workspaces.length);if($("railRunningCount"))$("railRunningCount").textContent=String(jobs.filter(job=>["running","stopping"].includes(job.status)).length)}
+function mountCommandDeckPanels(){
+  const dock=document.querySelector(".concurrency-dock"),panel=document.querySelector(".concurrency-panel"),right=document.querySelector(".command-right"),pipeline=document.querySelector(".pipeline-panel");
+  if(!panel||!right)return;
+  if(panel.parentElement!==right)right.insertBefore(panel,pipeline?.nextSibling||right.firstChild);
+  else if(pipeline&&panel.previousElementSibling!==pipeline)right.insertBefore(panel,pipeline.nextSibling);
+  if(dock)dock.remove();
+}
+    function applyRunVisualState(){
+      const runningCount=(latestStatus?.jobs||[]).filter(job=>["running","stopping"].includes(job.status)).length;
+      document.querySelectorAll(".brand-mark").forEach(mark=>mark.classList.toggle("running",runningCount>0));
+      const pill=$("identityRunPill");
+      if(pill){
+        pill.className=`pill ${runningCount?"run":"idle"}`;
+        pill.textContent=runningCount?`运行中 ${runningCount}`:"待命";
+      }
+    }
+    function applySidebarState(){const layout=$("layoutRoot"),toggle=$("sidebarToggleButton"),workspaces=latestStatus?.workspaces||[],jobs=latestStatus?.jobs||[];if(layout)layout.classList.toggle("sidebar-collapsed",sidebarCollapsed&&isDesktopLayout());if(toggle)toggle.textContent=sidebarCollapsed&&isDesktopLayout()?"显示工作间":"隐藏左栏";if($("railWorkspaceCount"))$("railWorkspaceCount").textContent=String(workspaces.length);if($("railRunningCount"))$("railRunningCount").textContent=String(jobs.filter(job=>["running","stopping"].includes(job.status)).length);applyRunVisualState()}
     function toggleSidebar(forceCollapse=null){sidebarCollapsed=typeof forceCollapse==="boolean"?forceCollapse:!sidebarCollapsed;saveSidebarState();applySidebarState()}
     function collapseSidebarAfterRun(){if(!isDesktopLayout())return;sidebarCollapsed=true;saveSidebarState();applySidebarState()}
 function focusWorkspaceEditor(){const panel=$("currentWorkspaceName")?.closest(".panel");if(!panel)return;panel.scrollIntoView({behavior:"smooth",block:"start"});panel.classList.remove("panel-emphasis");window.clearTimeout(workspaceFocusTimer);void panel.offsetWidth;panel.classList.add("panel-emphasis");workspaceFocusTimer=window.setTimeout(()=>panel.classList.remove("panel-emphasis"),1100);const focusTarget=$("baiduShareUrl")||panel.querySelector("input,textarea,select,button");if(focusTarget){try{focusTarget.focus({preventScroll:true})}catch(error){focusTarget.focus()}}}
+    function openPackagingPreviewModal(){const source=$("outputPackagingPreviewImage"),modal=$("packagingPreviewModal"),image=$("packagingPreviewModalImage");if(!source||!modal||!image)return;image.src=source.src;modal.classList.add("open")}
+    function closePackagingPreviewModal(event=null){if(event&&event.target!==$("packagingPreviewModal"))return;const modal=$("packagingPreviewModal");if(modal)modal.classList.remove("open")}
 const STAGE_ORDER=["baidu_share","douyin_download","subtitle_extract","visual_subtitle_extract","auto_clip"];
 const STAGE_LABELS={baidu_share:"原素材下载",douyin_download:"参考视频下载",subtitle_extract:"音频字幕提取",visual_subtitle_extract:"视觉字幕提取",auto_clip:"改写与剪辑"};
     function jobWorkspaceMembers(job){const members=Array.isArray(job?.workspace_members)&&job.workspace_members.length?job.workspace_members:[job?.workspace];return members.map(item=>String(item||"").trim()).filter(Boolean)}
@@ -481,6 +1428,12 @@ const STAGE_LABELS={baidu_share:"原素材下载",douyin_download:"参考视频�
     function safeJson(value){try{return JSON.parse(value)}catch(error){return null}}
     function shortText(value,limit=160){const text=String(value||"");return text.length>limit?`${text.slice(0,limit)}...`:text}
     function formatDurationSeconds(value){const total=Math.max(0,Math.floor(Number(value||0)));if(total>=3600){const hours=Math.floor(total/3600),minutes=Math.floor((total%3600)/60);return minutes?`${hours}小时${minutes}分钟`:`${hours}小时`}if(total>=60){const minutes=Math.floor(total/60),seconds=total%60;return seconds?`${minutes}分钟${seconds}秒`:`${minutes}分钟`}return`${total}秒`}
+    function parseLogTimestampMillis(value){const matched=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3})$/);if(!matched)return NaN;return new Date(Number(matched[1]),Number(matched[2])-1,Number(matched[3]),Number(matched[4]),Number(matched[5]),Number(matched[6]),Number(matched[7])).getTime()}
+    function progressMotionDisplayPercent(key,target){const state=key?progressMotionState.get(key):null;if(!state||!Number.isFinite(state.displayPercent))return target;return Math.max(0,Math.min(100,Number(state.displayPercent)||0))}
+    function progressSoftTarget(progress,key,rawPercent){const raw=Math.max(0,Math.min(100,Number(rawPercent)||0));if(!progress||!key||!["running","stopping"].includes(progress.status)||raw>=100)return raw;const total=Math.max(1,Number(progress.totalStages)||1),index=Math.max(1,Number(progress.stageIndex)||1),stageStart=((index-1)/total)*100,stageEnd=(index/total)*100,stageWidth=Math.max(1,stageEnd-stageStart),safeCap=Math.max(raw,Math.min(stageEnd-.8,stageStart+stageWidth*.94));if(raw>=safeCap)return raw;const now=Date.now(),state=progressMotionState.get(key)||{},sameStage=state.stageKey===progress.stageKey&&Number(state.stageIndex)===index,rawDropped=Number.isFinite(state.rawPercent)&&raw+1<Number(state.rawPercent),reset=!sameStage||rawDropped,previous=reset?raw:Math.max(raw,Number(state.softPercent)||Number(state.targetPercent)||raw),elapsed=!reset&&Number.isFinite(state.softUpdatedAt)?Math.max(0,(now-state.softUpdatedAt)/1000):0,lastLogAge=Number(progress.lastLogAgeSeconds);const quietBoost=Number.isFinite(lastLogAge)&&lastLogAge>8?Math.min(.35,(lastLogAge-8)*.006):0,step=Math.min(12,elapsed)*.018+quietBoost,next=Math.min(safeCap,Math.max(raw,previous+step));progressMotionState.set(key,{...state,stageKey:progress.stageKey,stageIndex:index,rawPercent:raw,softPercent:next,softUpdatedAt:now});return next}
+    function progressPercentLabel(progress,displayPercent,rawPercent){const raw=Math.max(0,Math.min(100,Number(rawPercent)||0));const shown=Math.max(raw,Math.min(100,Number(displayPercent)||raw));if(progress&&["running","stopping"].includes(progress.status)&&shown>raw+.6)return`约 ${Math.floor(shown)}%`;return`${Math.round(raw)}%`}
+    function queueProgressMotionSync(){if(progressMotionFrame)window.cancelAnimationFrame(progressMotionFrame);progressMotionFrame=window.requestAnimationFrame(syncProgressMotion)}
+    function syncProgressMotion(){progressMotionFrame=0;const now=Date.now();document.querySelectorAll(".progress-fill[data-progress-key]").forEach(fill=>{const key=String(fill.dataset.progressKey||"").trim();const target=Math.max(0,Math.min(100,Number(fill.dataset.progressTarget||0)));const live=fill.dataset.progressLive==="1";const state=key?progressMotionState.get(key):null;const current=state&&Number.isFinite(state.displayPercent)?Math.max(0,Math.min(100,Number(state.displayPercent)||0)):target;fill.style.width=`${current}%`;fill.classList.toggle("live",live&&target<100);if(!key)return;if(!state||Math.abs(target-current)<=0.5){progressMotionState.set(key,{...(state||{}),displayPercent:target,targetPercent:target,updatedAt:now});return}window.requestAnimationFrame(()=>{fill.style.width=`${target}%`});progressMotionState.set(key,{...(state||{}),displayPercent:target,targetPercent:target,updatedAt:now})})}
     function joinPreviewList(values,max=6){const list=(Array.isArray(values)?values:[]).map(item=>repairText(item,currentWorkspace)).filter(Boolean);if(!list.length)return"";if(list.length<=max)return list.join("、");return`${list.slice(0,max).join("、")} 等 ${list.length} 个文件`}
     function stageLabel(stageKey){return STAGE_LABELS[stageKey]||repairText(stageKey)}
     function stageFlowText(stageKeys){const labels=(Array.isArray(stageKeys)?stageKeys:[]).map(stageLabel).filter(Boolean);return labels.length?`本次流程：${labels.join(" -> ")}`:""}
@@ -665,9 +1618,12 @@ const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin
       let latestStageKey="";
       let latestMessage="";
       let waitInfo=null;
+      let lastLogMillis=NaN;
 
       for(const line of rawLines){
         const parts=parseLogParts(line,workspaceName);
+        const parsedMillis=parseLogTimestampMillis(parts.timestamp);
+        if(Number.isFinite(parsedMillis))lastLogMillis=parsedMillis;
         const stageKey=stageKeyFromScope(parts.scope);
         if(stageKey){
           stageSignals.add(stageKey);
@@ -732,10 +1688,9 @@ const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin
       if(job.status!=="completed"&&latestStageKey&&configuredStages.includes(latestStageKey)&&!stageMetrics(latestStageKey).complete)currentStage=latestStageKey;
       const currentIndex=Math.max(0,configuredStages.indexOf(currentStage));
       const metrics=stageMetrics(currentStage);
-      let completedBefore=0;
-      for(let index=0;index<currentIndex;index+=1){
-        if(stageMetrics(configuredStages[index]).complete)completedBefore+=1;
-      }
+      // Once a later stage emits logs, all earlier configured stages have already been passed.
+      // Recent logs only keep a rolling window, so relying on old summary lines makes the bar jump backward.
+      let completedBefore=currentIndex;
       let currentRatio=0;
       if(job.status==="completed")currentRatio=1;
       else if(Number.isFinite(metrics.ratioHint))currentRatio=Math.max(0,Math.min(1,Number(metrics.ratioHint)||0));
@@ -749,11 +1704,16 @@ const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin
       else if(metrics.complete)detail="当前阶段已完成";
       const waitSeconds=waitInfo?waitInfo.waitRound*6:0;
       const blocked=Boolean(waitInfo&&waitInfo.pendingCount>0&&waitSeconds>=900);
+      const lastLogAgeSeconds=Number.isFinite(lastLogMillis)?Math.max(0,(Date.now()-lastLogMillis)/1000):null;
       let note=latestStageMessages[currentStage]||latestMessage||"";
       if(waitInfo&&currentStage==="baidu_share"&&waitInfo.pendingCount>0){
         note=`百度网盘官方客户端仍有 ${waitInfo.pendingCount} 个文件没完成下载并搬运：${joinPreviewList(waitInfo.pendingLabels,6)||"待确认文件"}。已等待约 ${formatDurationSeconds(waitSeconds)}，正在检查 ${waitInfo.searchRootCount} 个下载目录。${blocked?" 这一步已经明显卡住，请检查官方客户端是否仍在下载，或下载目录是否被改动。":""}`;
       }
       if(metrics.activity&&note===metrics.activity)note="";
+      if(job.status!=="completed"&&lastLogAgeSeconds!==null){
+        const ageText=formatDurationSeconds(lastLogAgeSeconds);
+        note=note?`${note} · 最近输出 ${ageText}前`:`最近输出 ${ageText}前`;
+      }
       return{
         status:job.status||"idle",
         percent,
@@ -766,13 +1726,19 @@ const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin
         flowText,
         note,
         blocked,
+        lastLogAgeSeconds,
       };
     }
-    function renderProgressMarkup(progress,compact=false){
+    function renderProgressMarkup(progress,compact=false,motionKey=""){
       if(!progress||!progress.totalStages)return"";
       const tone=progress.blocked?"warn":(progress.status==="failed"?"bad":(progress.status==="completed"?"good":"run"));
       const noteLines=(compact?[progress.detail,progress.note]:[progress.detail]).filter(Boolean);
-      return`<div class="progress-wrap ${compact?"compact":""} ${tone}"><div class="progress-head"><strong>${esc(progress.stepText||"处理中")}</strong><span>${esc(`${progress.percent}%`)}</span></div><div class="progress-bar"><div class="progress-fill ${tone}" style="width:${Math.max(0,Math.min(100,Number(progress.percent)||0))}%"></div></div><div class="progress-note">${noteLines.map(line=>esc(line)).join("<br>")}</div></div>`;
+      const key=String(motionKey||"").trim();
+      const rawPercent=Math.max(0,Math.min(100,Number(progress.percent)||0));
+      const targetPercent=progressSoftTarget(progress,key,rawPercent);
+      const initialPercent=key?progressMotionDisplayPercent(key,targetPercent):targetPercent;
+      const live=progress.status==="running"||progress.status==="stopping";
+      return`<div class="progress-wrap ${compact?"compact":""} ${tone}"><div class="progress-head"><strong>${esc(progress.stepText||"处理中")}</strong><span>${esc(progressPercentLabel(progress,targetPercent,rawPercent))}</span></div><div class="progress-bar"><div class="progress-fill ${tone}${live?" live":""}" data-progress-key="${esc(key)}" data-progress-target="${esc(String(targetPercent))}" data-progress-live="${live?"1":"0"}" style="width:${initialPercent}%"></div></div><div class="progress-note">${noteLines.map(line=>esc(line)).join("<br>")}</div></div>`;
     }
     function runtimeForWorkspace(workspaceName){
       const jobs=(latestStatus?.jobs||[]).filter(job=>jobMatchesWorkspace(job,workspaceName));
@@ -809,6 +1775,9 @@ const labels={baidu:"百度下载",baidu_official:"百度客户端下载",douyin
       }
       return{status:"idle",className:"idle",label:"空闲",badge:"未启动",detail:"还没有启动记录。",preview:"等待启动后显示实时摘要。",progress:emptyProgressState(),job:null};
     }
+    function workspacePrimaryRuntime(runtime=null){return runtime||runtimeForWorkspace(currentWorkspace)}
+    function workspacePrimaryActiveJob(runtime=null){const resolved=workspacePrimaryRuntime(runtime);return resolved?.job&&["running","stopping"].includes(resolved.job.status)?resolved.job:null}
+    function updateWorkspacePrimaryAction(runtime=null){const button=$("workspacePrimaryRunButton");if(!button)return;const activeJob=workspacePrimaryActiveJob(runtime);button.classList.toggle("danger",!!activeJob);button.classList.remove("secondary","danger-soft");if(!currentWorkspace){button.textContent="保存并启动";button.disabled=true;return}if(activeJob?.status==="stopping"){button.textContent="停止中";button.disabled=true;return}if(activeJob){button.textContent="停止";button.disabled=false;return}button.textContent="保存并启动";button.disabled=false}
 
 function baseTask(name){return{workspace_name:name||"",concurrency:{baidu_share:1,douyin_download:3,subtitle_extract:1,visual_subtitle_extract:1,auto_clip:1},settings:{...DEFAULT_SETTINGS},baidu_share:[],douyin_download:[],subtitle_extract:[],visual_subtitle_extract:[],auto_clip:[{reference_video_glob:"downloads/douyin/*",reference_subtitle_glob:"subtitles/audio/*.srt",reference_visual_subtitle_glob:"subtitles/visual/*.srt",source_dir:"downloads/baidu",output_subdir:"clips",temp_subdir:"temp/auto_clip",title:"{workspace_name}_{reference_stem}",match_all_references:true,skip_existing:false,keep_temp:false}]}}
 function normalizeTask(task,name){const base=baseTask(name),source=task||{},merged={...base,...source};merged.workspace_name=name||merged.workspace_name||"";merged.concurrency={...base.concurrency,...(source.concurrency||{})};merged.settings={...base.settings,...(source.settings||{})};if(!Array.isArray(merged.settings.ai_fallback_models))merged.settings.ai_fallback_models=[];merged.baidu_share=Array.isArray(merged.baidu_share)?merged.baidu_share:[];merged.douyin_download=Array.isArray(merged.douyin_download)?merged.douyin_download:[];merged.subtitle_extract=Array.isArray(merged.subtitle_extract)?merged.subtitle_extract:[];merged.visual_subtitle_extract=Array.isArray(merged.visual_subtitle_extract)?merged.visual_subtitle_extract:[];merged.auto_clip=Array.isArray(merged.auto_clip)&&merged.auto_clip.length?merged.auto_clip:base.auto_clip;return merged}
@@ -844,7 +1813,7 @@ function createBaiduTreeNode(name,id){return{name,id,folders:new Map(),files:[]}
 function baiduFileExtension(file){const raw=String(file.path||file.name||file.server_filename||"").trim().toLowerCase();const matched=raw.match(/\.[a-z0-9]+$/i);return matched?matched[0]:""}
 function detectBaiduFileKind(file){const extension=baiduFileExtension(file);if(BAIDU_VIDEO_EXTENSIONS.has(extension))return"video";if(BAIDU_IMAGE_EXTENSIONS.has(extension))return"image";return"other"}
 function buildBaiduTree(files){const root=createBaiduTreeNode("root","root");for(const file of files){const parts=baiduPathSegments(file);if(!parts.length)continue;let cursor=root;for(let index=0;index<parts.length;index+=1){const part=parts[index],isFile=index===parts.length-1;if(isFile){cursor.files.push({...file,_treeName:part});continue}const folderId=`${cursor.id}/${part}`;if(!cursor.folders.has(part))cursor.folders.set(part,createBaiduTreeNode(part,folderId));cursor=cursor.folders.get(part)}}return root}
-function collectDefaultOpenBaiduFolders(node,depth=0,maxDepth=1,bucket=new Set()){for(const folder of node.folders.values()){if(depth<=maxDepth)bucket.add(folder.id);collectDefaultOpenBaiduFolders(folder,depth+1,maxDepth,bucket)}return bucket}
+function collectDefaultOpenBaiduFolders(node,depth=0,maxDepth=0,bucket=new Set()){for(const folder of node.folders.values()){if(depth<=maxDepth)bucket.add(folder.id);collectDefaultOpenBaiduFolders(folder,depth+1,maxDepth,bucket)}return bucket}
 function baiduFolderVideoCount(node){let total=node.files.filter(file=>detectBaiduFileKind(file)==="video").length;for(const child of node.folders.values())total+=baiduFolderVideoCount(child);return total}
 function baiduFolderSelectedCount(node){let total=0;for(const file of node.files){if(detectBaiduFileKind(file)==="video"&&selectedBaiduKeys.has(baiduFileKey(file)))total+=1}for(const child of node.folders.values())total+=baiduFolderSelectedCount(child);return total}
 function findBaiduFolderNode(node,folderId){if(!node)return null;if(node.id===folderId)return node;for(const child of node.folders.values()){const found=findBaiduFolderNode(child,folderId);if(found)return found}return null}
@@ -898,6 +1867,18 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     async function testFallbackModelApi(button){const row=button?.closest(".fallback-row");if(!row)return;const model=row.querySelector("[data-fallback-model]")?.value.trim()||"",apiUrl=row.querySelector("[data-fallback-api-url]")?.value.trim()||$("aiApiUrl").value.trim()||DEFAULT_SETTINGS.ai_api_url,apiKey=row.querySelector("[data-fallback-api-key]")?.value.trim()||$("aiApiKey").value.trim();if(!model){const message="请先填写这一条备用模型名。";setFallbackTestStatus(row,message,"error");toast(message,"error");return}if(!apiKey){const message="请先填写可用于这条链路的 API Key。";setFallbackTestStatus(row,message,"error");toast(message,"error");return}setFallbackTestStatus(row,"正在测试这条备用模型链路，请稍等。","info");await withBusy(button,async()=>{const data=await api("/api/test-ai",{method:"POST",body:JSON.stringify({ai_api_key:apiKey,ai_model:model,ai_api_url:apiUrl,ai_fallback_models:[]})});const label=data.active_label||data.active_model||model,message=`连接成功：${label}`;setFallbackTestStatus(row,message,"success");toast(`备用模型连接成功：${label}`,"success")}).catch(error=>{const message=error.message||String(error);setFallbackTestStatus(row,message,"error");toast(message,"error")})}
     async function pickFolderForInput(inputId,button=null){const input=$(inputId);if(!input){toast("没有找到要填写的输入框。","error");return}await withBusy(button,async()=>{const data=await api("/api/pick-folder",{method:"POST",body:JSON.stringify({initial_path:input.value.trim()})});if(data.cancelled)return;input.value=data.selected_path||"";input.dispatchEvent(new Event("input",{bubbles:true}))}).catch(error=>toast(error.message,"error"))}
     function renderClipOutputPreview(){const root=$("clipOutputRoot").value.trim();$("clipOutputPreview").textContent=root&&currentWorkspace?`${joinOutputPath(root,currentWorkspace)}`:"未设置时沿用工作间内部默认 clips 目录。"}
+    function normalizePackagingStyle(value){const raw=String(value||"").trim();return packagingStyles.some(item=>item.id===raw)?raw:DEFAULT_SETTINGS.output_packaging_style}
+    function normalizePackagingFont(value){const raw=String(value||"").trim();return packagingFonts.some(item=>item.id===raw)?raw:DEFAULT_SETTINGS.output_packaging_font}
+    function packagingStyleLabel(styleId){const style=packagingStyles.find(item=>item.id===styleId);return style?.label||styleId||"成片包装"}
+    function packagingPreviewUrl(styleId){const params=new URLSearchParams({style:styleId,font:normalizePackagingFont($("outputPackagingFont")?.value),title:$("outputPackagingTitleText")?.value.trim()||currentWorkspace||"",align:normalizePackagingAlign($("outputPackagingTitleAlign")?.value),bottom:$("outputPackagingBottomText")?.value.trim()||DEFAULT_SETTINGS.output_packaging_bottom_text});return`/api/packaging-preview.png?${params.toString()}`}
+    function renderPackagingStyleCards(selected=DEFAULT_SETTINGS.output_packaging_style){const grid=$("outputPackagingStyleGrid");if(!grid)return;const current=normalizePackagingStyle(selected);grid.innerHTML=packagingStyles.map(style=>`<button type="button" class="packaging-style-card ${style.id===current?"active":""}" data-style="${esc(style.id)}" onclick="selectPackagingStyle('${enc(style.id)}')"><img alt="${esc(style.label)}预览" src="${packagingPreviewUrl(style.id)}"><span>${esc(style.label)}</span></button>`).join("")}
+    function selectPackagingStyle(encodedStyle){const styleId=decodeURIComponent(encodedStyle||"");if($("outputPackagingStyle"))$("outputPackagingStyle").value=normalizePackagingStyle(styleId);updatePackagingUi()}
+    function renderPackagingStyleOptions(selected=DEFAULT_SETTINGS.output_packaging_style){const select=$("outputPackagingStyle");if(!select)return;const current=normalizePackagingStyle(selected);select.innerHTML=packagingStyles.map(style=>`<option value="${esc(style.id)}">${esc(style.label)}</option>`).join("");select.value=current;renderPackagingStyleCards(current)}
+    function renderPackagingFontOptions(selected=DEFAULT_SETTINGS.output_packaging_font){const select=$("outputPackagingFont");if(!select)return;const current=normalizePackagingFont(selected);select.innerHTML=packagingFonts.map(font=>`<option value="${esc(font.id)}">${esc(font.label)}</option>`).join("");select.value=current}
+    function normalizePackagingAlign(value){const raw=String(value||"").trim().toLowerCase();return["left","center","right"].includes(raw)?raw:DEFAULT_SETTINGS.output_packaging_title_align}
+    function setPackagingTitleAlign(value){const align=normalizePackagingAlign(value),input=$("outputPackagingTitleAlign"),buttons=$("outputPackagingTitleAlignButtons");if(input)input.value=align;if(buttons){for(const button of buttons.querySelectorAll("button"))button.classList.toggle("active",button.dataset.align===align)}updatePackagingUi()}
+    function updatePackagingPreview(styleId,style={}){const image=$("outputPackagingPreviewImage"),title=$("outputPackagingPreviewTitle"),nextUrl=packagingPreviewUrl(styleId),nextKey=nextUrl;if(!image)return;if(nextKey!==packagingPreviewKey){packagingPreviewKey=nextKey;image.src=nextUrl}if(title)title.textContent=styleId==="none"?"不使用包装预览":`${style.label||packagingStyleLabel(styleId)}预览`;renderPackagingStyleCards(styleId)}
+    function updatePackagingUi(){const styleId=normalizePackagingStyle($("outputPackagingStyle")?.value),fontId=normalizePackagingFont($("outputPackagingFont")?.value),box=$("outputPackagingBox"),pill=$("outputPackagingPill"),hint=$("outputPackagingHint"),style=packagingStyles.find(item=>item.id===styleId)||{},font=packagingFonts.find(item=>item.id===fontId)||{};if($("outputPackagingStyle"))$("outputPackagingStyle").value=styleId;if($("outputPackagingFont"))$("outputPackagingFont").value=fontId;if(box)box.classList.toggle("packaging-disabled",styleId==="none");if(pill){pill.className=`pill ${styleId==="none"?"warn":"good"}`;pill.textContent=styleId==="none"?"已关闭":(style.label||"已开启").replace(/^款式\s*/,"").slice(0,12)}if(hint)hint.textContent=styleId==="none"?"关闭后导出的成片不会叠加剧名、底部提示和上下遮挡。":`${style.description||"导出时会烧录上下渐隐遮挡、剧名和底部提示。"}${fontId==="style_default"?"":` 字体：${font.label||fontId}。`}`;updatePackagingPreview(styleId,style)}
     function populate(task){
       const normalized=normalizeTask(task,currentWorkspace),firstBaidu=one(normalized.baidu_share),firstDouyin=one(normalized.douyin_download),firstAutoClip={...baseTask(currentWorkspace).auto_clip[0],...one(normalized.auto_clip)},settings=normalized.settings||{};
       currentTask=normalized;
@@ -912,7 +1893,7 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       baiduExpandedFolders=cachedListing?.expanded_folders?.length?new Set(cachedListing.expanded_folders):(baiduFiles.length?collectDefaultOpenBaiduFolders(buildBaiduTree(baiduFiles)):new Set());
       setValue("baiduShareUrl",shareUrl);
       setValue("baiduOutputPath",firstBaidu.output_subdir||"downloads/baidu");
-      setValue("baiduDownloadThreads",firstBaidu.download_threads||4);
+      setValue("baiduDownloadThreads",firstBaidu.download_threads||1);
       setValue("baiduDownloadMode",firstBaidu.download_mode||"official_client");
       setChecked("baiduSkipExisting",firstBaidu.skip_existing!==false);
       renderBaiduFiles();
@@ -925,6 +1906,12 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
       setChecked("forceNoNarrationMode",settings.force_no_narration_mode===true);
       setValue("narrationBackgroundPercent",settings.narration_background_percent??DEFAULT_SETTINGS.narration_background_percent);
       setValue("outputWatermarkText",settings.output_watermark_text||DEFAULT_SETTINGS.output_watermark_text);
+      renderPackagingStyleOptions(settings.output_packaging_style||DEFAULT_SETTINGS.output_packaging_style);
+      renderPackagingFontOptions(settings.output_packaging_font||DEFAULT_SETTINGS.output_packaging_font);
+      setValue("outputPackagingTitleText",settings.output_packaging_title_text||DEFAULT_SETTINGS.output_packaging_title_text);
+      setPackagingTitleAlign(settings.output_packaging_title_align||DEFAULT_SETTINGS.output_packaging_title_align);
+      setValue("outputPackagingBottomText",settings.output_packaging_bottom_text||DEFAULT_SETTINGS.output_packaging_bottom_text);
+      updatePackagingUi();
       setValue("bgmSourceMode",settings.bgm_source_mode||DEFAULT_SETTINGS.bgm_source_mode);
       setValue("bgmSearchQuery",settings.bgm_search_query||DEFAULT_SETTINGS.bgm_search_query);
       setValue("bgmExternalDirs",Array.isArray(settings.bgm_external_dirs)?settings.bgm_external_dirs.join("\n"):(settings.bgm_external_dirs||""));
@@ -947,7 +1934,7 @@ function renderBaiduTreeChildren(node,depth=0){const folders=Array.from(node.fol
     }
     function buildTask(){
       if(!currentWorkspace)throw new Error("请先新建或选择一个工作间。");
-      const task=normalizeTask(currentTask||{},currentWorkspace),shareUrl=$("baiduShareUrl").value.trim(),selectedKeys=Array.from(selectedBaiduKeys),baiduOutput=$("baiduOutputPath").value.trim()||"downloads/baidu",baiduThreads=asInt("baiduDownloadThreads",4),baiduMode=$("baiduDownloadMode").value||"official_client",douyinOutput=$("douyinOutputPath").value.trim()||"downloads/douyin",douyinItems=readDouyinLinkItems(),baiduLookup=new Map([...baiduSavedEntries,...baiduFiles].map(item=>[baiduFileKey(item),item]));
+      const task=normalizeTask(currentTask||{},currentWorkspace),shareUrl=$("baiduShareUrl").value.trim(),selectedKeys=Array.from(selectedBaiduKeys),baiduOutput=$("baiduOutputPath").value.trim()||"downloads/baidu",baiduThreads=asInt("baiduDownloadThreads",1),baiduMode=$("baiduDownloadMode").value||"official_client",douyinOutput=$("douyinOutputPath").value.trim()||"downloads/douyin",douyinItems=readDouyinLinkItems(),baiduLookup=new Map([...baiduSavedEntries,...baiduFiles].map(item=>[baiduFileKey(item),item]));
       if(shareUrl&&!selectedKeys.length)throw new Error("已填写网盘链接，请先提取内容并勾选要下载的视频。");
 task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(key)||{};return{share_url:shareUrl,target_filename:String(matched.name||matched.server_filename||"").trim(),target_path:String(matched.path||"").trim(),target_fsid:String(matched.fs_id||"").trim(),target_size:Number(matched.size||0)||0,output_subdir:baiduOutput,download_threads:baiduThreads,download_mode:baiduMode,skip_existing:$("baiduSkipExisting").checked}}):[];
       const baiduListingCache=currentBaiduListingCache(shareUrl);if(baiduListingCache)task.baidu_share_listing_cache=baiduListingCache;else delete task.baidu_share_listing_cache;
@@ -956,7 +1943,7 @@ task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(k
       task.subtitle_extract=douyinItems.length?douyinItems.map((item,index)=>({input_glob:joinPathText(douyinOutput,`${douyinReferencePrefix(index+1)}*`),output_subdir:subtitleOutputSubdir,skip_existing:false})):([{input_glob:"downloads/douyin/*",output_subdir:subtitleOutputSubdir,skip_existing:false}]);
       task.visual_subtitle_extract=douyinItems.length?douyinItems.map((item,index)=>({input_glob:joinPathText(douyinOutput,`${douyinReferencePrefix(index+1)}*`),output_subdir:visualSubtitleOutputSubdir,temp_subdir:"temp/visual_subtitle",auto_detect_subtitle_area:true,language:"ch",mode:"accurate",extract_frequency:"auto",probe_extract_frequency:"auto",generate_txt:true,skip_existing:false})):([{input_glob:"downloads/douyin/*",output_subdir:visualSubtitleOutputSubdir,temp_subdir:"temp/visual_subtitle",auto_detect_subtitle_area:true,language:"ch",mode:"accurate",extract_frequency:"auto",probe_extract_frequency:"auto",generate_txt:true,skip_existing:false}]);
       const clipOutputRoot=$("clipOutputRoot").value.trim(),rawBgmMode=normalizeBgmMode($("bgmSourceMode").value),bgmAudioPath=$("bgmAudioSelect").value.trim(),bgmSourceMode=rawBgmMode==="manual"&&!bgmAudioPath?"none":rawBgmMode,autoClipBase={...baseTask(currentWorkspace).auto_clip[0],...one(task.auto_clip)},flipRatioValue=Number.parseFloat($("autoRandomEpisodeFlipRatio").value),flipRatio=Number.isFinite(flipRatioValue)?Math.max(0,Math.min(1,flipRatioValue)):.4,aiSettings=collectAiSettings();
-      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,...aiSettings,prefer_funasr_audio_subtitles:true,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmSourceMode==="manual"?bgmAudioPath:"",bgm_source_mode:bgmSourceMode,bgm_search_query:$("bgmSearchQuery").value.trim(),bgm_external_dirs:readPathList("bgmExternalDirs"),bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
+      task.settings={...(task.settings||{}),clip_output_root:clipOutputRoot,...aiSettings,prefer_funasr_audio_subtitles:true,prefer_funasr_sentence_pauses:true,force_no_narration_mode:$("forceNoNarrationMode").checked,narration_background_percent:Math.max(0,Math.min(100,asInt("narrationBackgroundPercent",DEFAULT_SETTINGS.narration_background_percent,0))),output_watermark_text:$("outputWatermarkText").value.trim(),output_packaging_style:normalizePackagingStyle($("outputPackagingStyle").value),output_packaging_font:normalizePackagingFont($("outputPackagingFont")?.value),output_packaging_title_text:$("outputPackagingTitleText").value.trim(),output_packaging_title_align:normalizePackagingAlign($("outputPackagingTitleAlign").value),output_packaging_bottom_text:$("outputPackagingBottomText").value.trim()||DEFAULT_SETTINGS.output_packaging_bottom_text,enable_random_episode_flip:$("autoEnableRandomEpisodeFlip").checked,random_episode_flip_ratio:flipRatio,enable_random_visual_filter:$("autoEnableRandomVisualFilter").checked,bgm_audio_path:bgmSourceMode==="manual"?bgmAudioPath:"",bgm_source_mode:bgmSourceMode,bgm_search_query:$("bgmSearchQuery").value.trim(),bgm_external_dirs:readPathList("bgmExternalDirs"),bgm_volume_percent:Math.max(0,Math.min(100,asInt("bgmVolumePercent",DEFAULT_SETTINGS.bgm_volume_percent,0)))};
       if(douyinItems.length){
         task.auto_clip=douyinItems.map((item,index)=>{const prefix=douyinReferencePrefix(index+1),forceNoNarration=$("forceNoNarrationMode").checked||item.force_no_narration_mode===true,titleTemplate=douyinItems.length>1?`{workspace_name}_${prefix}{reference_stem}`:(autoClipBase.title||"{workspace_name}_{reference_stem}");return{...autoClipBase,reference_video_glob:joinPathText(douyinOutput,`${prefix}*`),reference_subtitle_glob:joinPathText(subtitleOutputSubdir,"*.srt"),reference_visual_subtitle_glob:joinPathText(visualSubtitleOutputSubdir,"*.srt"),source_dir:autoClipBase.source_dir||"downloads/baidu",output_subdir:clipOutputRoot?joinOutputPath(clipOutputRoot,currentWorkspace):(autoClipBase.output_subdir||"clips"),title:titleTemplate,match_all_references:false,skip_existing:false,keep_temp:!!autoClipBase.keep_temp,force_no_narration_mode:forceNoNarration}})
       }else{
@@ -1040,8 +2027,11 @@ task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(k
         const name=esc(workspace.name);
         const encoded=enc(workspace.name);
         const savedState=workspace.has_task?"good":"warn";
-        const progressMarkup=renderProgressMarkup(runtime.progress,true);
-        return`<article class="workspace-card ${workspace.name===currentWorkspace?"active":""}" onclick="selectWorkspace('${encoded}',true)"><div class="row"><label class="check" onclick="event.stopPropagation()"><input type="checkbox" data-name="${name}" ${selectedWorkspaces.has(workspace.name)?"checked":""} onchange="toggleWorkspace(this)"><span>勾选</span></label><span class="pill ${runtime.status!=="idle"?runtime.className:savedState}">${runtime.status!=="idle"?runtime.badge:(workspace.has_task?"已保存":"未保存")}</span></div><h3>${name}</h3><div class="workspace-status"><div class="status-line"><div class="status-main ${runtime.className}"><span class="status-dot ${runtime.status==='running'?'is-running':''}"></span>${esc(runtime.label)}</div>${runtime.job?`<span class="pill ${runtime.className}">${esc(runtime.badge)}</span>`:""}</div><div class="status-detail">${esc(runtime.detail)}<br>${esc(runtime.preview)}</div>${progressMarkup}</div><div class="chips"><span class="pill">原素材文件 ${sourceCount}</span><span class="pill">参考视频 ${referenceCount}</span><span class="pill">字幕文件 ${subtitleCount}</span><span class="pill">剪辑任务 ${summary.auto_clip||0}</span></div><div class="actions" style="margin-top:10px"><button class="secondary" type="button" onclick="event.stopPropagation();selectWorkspace('${encoded}',true)">进入编辑</button><button type="button" onclick="event.stopPropagation();runWorkspace('${encoded}',this)">启动</button><button class="danger-soft" type="button" onclick="event.stopPropagation();deleteWorkspace('${encoded}',this)">删除</button></div></article>`
+        const progressMarkup=renderProgressMarkup(runtime.progress,true,`workspace-card:${workspace.name}:${runtime.job?.job_id||runtime.status||"idle"}`);
+        const runningClass=runtime.status!=="idle"?" is-running":"";
+        const savedText=runtime.status!=="idle"?runtime.badge:(workspace.has_task?"已保存":"未保存");
+        const assetText=`素材 ${sourceCount} / 参考 ${referenceCount} / 字幕 ${subtitleCount}`;
+        return`<article class="workspace-card ${workspace.name===currentWorkspace?"active":""}${runningClass}" onclick="selectWorkspace('${encoded}',true)" title="${name}"><div class="workspace-card-main"><label class="check workspace-select-check" onclick="event.stopPropagation()"><input type="checkbox" data-name="${name}" ${selectedWorkspaces.has(workspace.name)?"checked":""} onchange="toggleWorkspace(this)"><span>勾选</span></label><div class="workspace-card-body"><div class="workspace-card-title-row"><h3>${name}</h3><div class="workspace-card-title-actions"><span class="pill ${runtime.status!=="idle"?runtime.className:savedState}">${esc(savedText)}</span><button class="workspace-card-run" type="button" onclick="event.stopPropagation();runWorkspace('${encoded}',this)">启动</button></div></div><div class="workspace-card-sub">${esc(assetText)} · 剪辑 ${summary.auto_clip||0}</div></div></div><div class="workspace-status"><div class="status-line"><div class="status-main ${runtime.className}"><span class="status-dot ${runtime.status==='running'?'is-running':''}"></span>${esc(runtime.label)}</div>${runtime.job?`<span class="pill ${runtime.className}">${esc(runtime.badge)}</span>`:""}</div><div class="status-detail">${esc(runtime.preview||runtime.detail)}</div>${progressMarkup}</div></article>`
       }).join("");
       applySidebarState();
     }
@@ -1062,10 +2052,27 @@ task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(k
         const progress=analyzeJobProgress(job,displayWorkspace);
         const preview=progress.note||latestJobPreview(job);
         const title=members.length>1?`批量运行：${members.length} 个工作间`:repairText(job.workspace||job.job_id,members[0]||currentWorkspace);
-        return`<article class="job-card ${job.job_id===activeJobId?"active":""}"><div class="row"><h3>${esc(title)}</h3><span class="pill ${statusClass(job.status)}">${esc(progress.totalStages?progressBadgeText(progress,job.status):jobStatusLabel(job.status))}</span></div><div class="muted">${esc(formatJobMeta(job))}</div>${renderProgressMarkup(progress,true)}<div class="job-preview">${esc(preview)}</div><div class="actions" style="margin-top:10px"><button class="secondary" type="button" onclick="setActiveJob('${encoded}')">看日志</button><button class="danger" type="button" onclick="stopJob('${encoded}',this)" ${job.status!=="running"?"disabled":""}>停止</button></div></article>`
+        return`<article class="job-card ${job.job_id===activeJobId?"active":""}" onclick="setActiveJob('${encoded}')"><div class="row"><h3>${esc(title)}</h3><span class="pill ${statusClass(job.status)}">${esc(progress.totalStages?progressBadgeText(progress,job.status):jobStatusLabel(job.status))}</span></div><div class="muted">${esc(formatJobMeta(job))}</div>${renderProgressMarkup(progress,true,`job-card:${job.job_id}`)}<div class="job-preview">${esc(preview)}</div><div class="actions" style="margin-top:10px"><button class="danger" type="button" onclick="event.stopPropagation();stopJob('${encoded}',this)" ${job.status!=="running"?"disabled":""}>停止</button></div></article>`
       }).join("");
       updateLog();
       applySidebarState();
+    }
+    function setTextIfPresent(id,text){const node=$(id);if(node)node.textContent=text}
+    function renderCommandOverview(workspace=null,assets={}){
+      const settings=currentTask?.settings||{},sourceCount=assetSectionCount(assets.source),referenceCount=assetSectionCount(assets.reference),subtitleCount=assetSectionCount(assets.subtitle),douyinCountValue=readDouyinLinkItems().length,selectedBaiduCount=selectedBaiduKeys.size,baiduMode=$("baiduDownloadMode")?.selectedOptions?.[0]?.textContent||"百度网盘",bgmMode=normalizeBgmMode($("bgmSourceMode")?.value),bgmModeLabel={auto:"本地曲库自动匹配",local_auto:"只用本地曲库",manual:"手动指定",none:"不使用 BGM"}[bgmMode]||"自动匹配",packagingLabel=packagingStyleLabel($("outputPackagingStyle")?.value||settings.output_packaging_style||DEFAULT_SETTINGS.output_packaging_style),aiModel=($("aiModel")?.value||settings.ai_model||DEFAULT_SETTINGS.ai_model).trim();
+      setTextIfPresent("overviewSource",`${baiduMode} · ${selectedBaiduCount||sourceCount} 个`);
+      setTextIfPresent("overviewReference",`抖音 ${douyinCountValue||referenceCount} 条`);
+      setTextIfPresent("overviewLocalImport",`素材 ${sourceCount} / 参考 ${referenceCount} / 字幕 ${subtitleCount}`);
+      setTextIfPresent("overviewClipMode",$("forceNoNarrationMode")?.checked?"无解说":"自动剪辑");
+      setTextIfPresent("overviewPackaging",packagingLabel==="不使用包装"?"不使用包装":packagingLabel);
+      setTextIfPresent("overviewAudioMix","对齐参考");
+      setTextIfPresent("overviewAiModel",aiModel||DEFAULT_SETTINGS.ai_model);
+      setTextIfPresent("overviewAiRole",$("enableAiNarrationRewrite")?.checked?"纠错 + 解说轻改":"AI 已关闭");
+      setTextIfPresent("overviewBgmFlow",bgmMode==="none"?"不加入 BGM":"分离 -> 指纹 -> 相似");
+      setTextIfPresent("overviewBgmCandidate",bgmModeLabel);
+      const importPill=$("overviewImportPill");if(importPill){importPill.className=`pill ${sourceCount&&referenceCount?"good":"run"}`;importPill.textContent=sourceCount&&referenceCount?"素材就绪":"可运行"}
+      const outputPill=$("overviewOutputPill");if(outputPill){outputPill.className=`pill ${workspace?.has_task?"good":"warn"}`;outputPill.textContent=workspace?.has_task?"已保存":"待确认"}
+      const bgmPill=$("overviewBgmPill");if(bgmPill){bgmPill.className=`pill ${bgmMode==="none"?"warn":"good"}`;bgmPill.textContent=bgmMode==="none"?"无 BGM":"本地曲库"}
     }
     function renderMeta(){
       const workspace=(latestStatus?.workspaces||[]).find(item=>item.name===currentWorkspace);
@@ -1073,10 +2080,12 @@ task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(k
       const assets=workspace?.asset_summary||{};
       const runtime=runtimeForWorkspace(currentWorkspace);
       const banner=$("workspaceRuntimeBanner");
-      $("currentWorkspaceName").textContent=currentWorkspace?`当前工作间：${currentWorkspace}`:"当前工作间";
-      $("workspaceMeta").textContent=currentWorkspace?`${repairText(workspace?.task_path||"task.json",currentWorkspace)} | ${repairText(workspace?.path||"",currentWorkspace)}`:"先新建或选择一个工作间。";
+      updateWorkspacePrimaryAction(runtime);
+      $("currentWorkspaceName").textContent=currentWorkspace||"当前工作间";
+      $("workspaceMeta").textContent=currentWorkspace?`原素材 ${assetSectionCount(assets.source)} 个，参考视频 ${assetSectionCount(assets.reference)} 个，字幕 ${assetSectionCount(assets.subtitle)} 个。输出跟随原素材帧率，BGM 音量对齐参考视频。`:"先新建或选择一个工作间。";
       $("workspaceBadges").innerHTML=currentWorkspace?`<span class="pill">原素材文件 ${assetSectionCount(assets.source)}</span><span class="pill">参考视频 ${assetSectionCount(assets.reference)}</span><span class="pill">字幕文件 ${assetSectionCount(assets.subtitle)}</span><span class="pill">剪辑任务 ${summary.auto_clip||0}</span>`:"";
       renderImportStatuses();
+      renderCommandOverview(workspace,assets);
       if(!banner)return;
       if(!currentWorkspace){
         banner.className="runtime-banner idle";
@@ -1084,10 +2093,10 @@ task.baidu_share=shareUrl?selectedKeys.map(key=>{const matched=baiduLookup.get(k
         return;
       }
       banner.className=`runtime-banner ${runtime.className}`;
-      banner.innerHTML=`<div class="runtime-top"><div class="runtime-title ${runtime.className}"><span class="status-dot ${runtime.status==='running'?'is-running':''}"></span>当前状态：${esc(runtime.label)}</div><span class="pill ${runtime.className}">${esc(runtime.badge)}</span></div><div class="runtime-detail">${esc(runtime.detail)}<br>${esc(runtime.preview)}</div>${renderProgressMarkup(runtime.progress,false)}<div class="runtime-meta"><span class="pill ${runtime.className}">${runtime.job?`最近状态：${jobStatusLabel(runtime.job.status)}`:"暂无运行记录"}</span>${runtime.job?.log_path?`<span class="pill">${esc(repairText(runtime.job.log_path,currentWorkspace))}</span>`:""}</div>${renderBaiduDiagnosisMarkup(workspace,runtime)}`;
+      banner.innerHTML=`<div class="runtime-top"><div class="runtime-title ${runtime.className}"><span class="status-dot ${runtime.status==='running'?'is-running':''}"></span>当前状态：${esc(runtime.label)}</div><span class="pill ${runtime.className}">${esc(runtime.badge)}</span></div><div class="runtime-detail">${esc(runtime.detail)}<br>${esc(runtime.preview)}</div>${renderProgressMarkup(runtime.progress,false,`runtime-banner:${currentWorkspace}:${runtime.job?.job_id||runtime.status||"idle"}`)}<div class="runtime-meta"><span class="pill ${runtime.className}">${runtime.job?`最近状态：${jobStatusLabel(runtime.job.status)}`:"暂无运行记录"}</span>${runtime.job?.log_path?`<span class="pill">${esc(repairText(runtime.job.log_path,currentWorkspace))}</span>`:""}</div>${renderBaiduDiagnosisMarkup(workspace,runtime)}`;
       maybeAutoDiagnoseBlockedRuntime(workspace,runtime);
     }
-async function loadStatus(silent=true,button=null){await withBusy(button,async()=>{latestStatus=await api("/api/status");showSystemNotice(latestStatus.system_notice);const server=latestStatus.server||{},runningCount=(latestStatus.jobs||[]).filter(job=>["running","stopping"].includes(job.status)).length;$("serverInfo").textContent=`${server.host}:${server.port} | 进程 ${server.pid||"-"} | 运行中 ${runningCount}`;if(currentWorkspace&&!latestStatus.workspaces.some(item=>item.name===currentWorkspace)){clearBaiduDiagnosisState(currentWorkspace);currentWorkspace="";currentTask=null;selectedWorkspaces.clear();populate(baseTask(""))}if(!currentWorkspace&&latestStatus.workspaces.length){currentWorkspace=latestStatus.workspaces[0].name;selectedWorkspaces.add(currentWorkspace);await loadTask()}renderWorkspaces();renderJobs();renderMeta();applySidebarState()}).catch(error=>{if(!silent)toast(error.message,"error")})}
+async function loadStatus(silent=true,button=null){await withBusy(button,async()=>{latestStatus=await api("/api/status");if(Array.isArray(latestStatus.packaging_styles)&&latestStatus.packaging_styles.length){packagingStyles=latestStatus.packaging_styles;renderPackagingStyleOptions($("outputPackagingStyle")?.value||DEFAULT_SETTINGS.output_packaging_style)}if(Array.isArray(latestStatus.packaging_fonts)&&latestStatus.packaging_fonts.length){packagingFonts=latestStatus.packaging_fonts;renderPackagingFontOptions($("outputPackagingFont")?.value||DEFAULT_SETTINGS.output_packaging_font)}if(Array.isArray(latestStatus.packaging_styles)&&latestStatus.packaging_styles.length)updatePackagingUi();showSystemNotice(latestStatus.system_notice);const server=latestStatus.server||{},runningCount=(latestStatus.jobs||[]).filter(job=>["running","stopping"].includes(job.status)).length;$("serverInfo").textContent=`${server.host}:${server.port} | 进程 ${server.pid||"-"} | 运行中 ${runningCount}`;if(currentWorkspace&&!latestStatus.workspaces.some(item=>item.name===currentWorkspace)){clearBaiduDiagnosisState(currentWorkspace);currentWorkspace="";currentTask=null;selectedWorkspaces.clear();populate(baseTask(""))}if(!currentWorkspace&&latestStatus.workspaces.length){currentWorkspace=latestStatus.workspaces[0].name;selectedWorkspaces.add(currentWorkspace);await loadTask()}renderWorkspaces();renderJobs();renderMeta();applySidebarState();queueProgressMotionSync()}).catch(error=>{if(!silent)toast(error.message,"error")})}
     async function loadTask(){if(!currentWorkspace){populate(baseTask(""));return}const data=await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/task`);populate(normalizeTask(data.task,currentWorkspace));renderMeta()}
     async function reloadCurrentTask(button=null){if(!currentWorkspace){toast("请先选择工作间。","error");return}await withBusy(button,async()=>{await loadTask();toast("已重新载入当前配置。","success")}).catch(error=>toast(error.message,"error"))}
 function selectWorkspace(name,revealEditor=false){const nextWorkspace=decodeURIComponent(name),unchanged=nextWorkspace===currentWorkspace;currentWorkspace=nextWorkspace;selectedWorkspaces.add(currentWorkspace);if(revealEditor)focusWorkspaceEditor();if(unchanged){renderMeta();return}loadTask().then(()=>{loadStatus(true);if(revealEditor)focusWorkspaceEditor()}).catch(error=>toast(error.message,"error"))}
@@ -1096,14 +2105,16 @@ function selectWorkspace(name,revealEditor=false){const nextWorkspace=decodeURIC
     async function renameCurrentWorkspace(button){await withBusy(button,async()=>{if(!currentWorkspace)throw new Error("请先选择要改名的工作间。");const oldName=currentWorkspace,nextRaw=window.prompt("请输入新的工作间名称。",oldName);if(nextRaw===null)return;const newName=String(nextRaw||"").trim();if(!newName)throw new Error("新的工作间名称不能为空。");if(newName===oldName){toast("工作间名称没有变化。","info");return}await saveCurrentWorkspace(false);const data=await api(`/api/workspaces/${encodeURIComponent(oldName)}/rename`,{method:"POST",body:JSON.stringify({new_name:newName})});clearBaiduDiagnosisState(oldName);selectedWorkspaces.delete(oldName);currentWorkspace=data.workspace||newName;selectedWorkspaces.add(currentWorkspace);currentTask=null;await loadStatus(true);await loadTask();toast(`已将工作间改名为：${currentWorkspace}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function deleteWorkspace(encodedName="",button=null){const workspace=encodedName?decodeURIComponent(encodedName):currentWorkspace;if(!workspace){toast("请先选择要删除的工作间。","error");return}if(!window.confirm(`确定删除工作间「${workspace}」吗？该工作间里的下载、字幕、日志和相关缓存都会一起删除。`))return;await withBusy(button,async()=>{const data=await api(`/api/workspaces/${encodeURIComponent(workspace)}/delete`,{method:"POST",body:JSON.stringify({})});clearBaiduDiagnosisState(workspace);selectedWorkspaces.delete(workspace);if(currentWorkspace===workspace){currentWorkspace="";currentTask=null;populate(baseTask(""))}await loadStatus(true);const cacheCount=Number(data.cleared_job_cache_count||0)+Number(data.cleared_external_log_count||0);toast(`已删除工作间：${workspace}${cacheCount?`，并清理 ${cacheCount} 项相关缓存`:""}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function saveCurrentWorkspace(showToast=true,button=null){return await withBusy(button,async()=>{const task=buildTask(),global_ai_settings=collectAiSettings();await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/task`,{method:"POST",body:JSON.stringify({task,global_ai_settings})});currentTask=task;await loadStatus(true);if(showToast)toast(`已保存：${currentWorkspace}`,"success");return task}).catch(error=>{toast(error.message,"error");throw error})}
-    async function saveAndRunCurrentWorkspace(button){await withBusy(button,async()=>{await saveCurrentWorkspace(false);clearBaiduDiagnosisState(currentWorkspace);const data=await api("/api/run-workspace",{method:"POST",body:JSON.stringify({workspace:currentWorkspace})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动：${currentWorkspace}`,"success")}).catch(error=>toast(error.message,"error"))}
+    async function handleWorkspacePrimaryAction(button){const activeJob=workspacePrimaryActiveJob();if(activeJob){await stopCurrentWorkspaceJob(activeJob,button);return}await saveAndRunCurrentWorkspace(button)}
+    async function saveAndRunCurrentWorkspace(button){await withBusy(button,async()=>{await saveCurrentWorkspace(false);clearBaiduDiagnosisState(currentWorkspace);const data=await api("/api/run-workspace",{method:"POST",body:JSON.stringify({workspace:currentWorkspace})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动：${currentWorkspace}`,"success")}).catch(error=>toast(error.message,"error")).finally(()=>updateWorkspacePrimaryAction())}
+    async function stopCurrentWorkspaceJob(job,button=null){await withBusy(button,async()=>{await api("/api/stop-job",{method:"POST",body:JSON.stringify({job_id:job.job_id})});await loadStatus(true);toast(`已请求停止：${currentWorkspace}`,"info")}).catch(error=>toast(error.message,"error")).finally(()=>updateWorkspacePrimaryAction())}
     async function runWorkspace(name,button=null){await withBusy(button,async()=>{const workspace=decodeURIComponent(name);clearBaiduDiagnosisState(workspace);const data=await api("/api/run-workspace",{method:"POST",body:JSON.stringify({workspace})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动：${workspace}`,"success")}).catch(error=>toast(error.message,"error"))}
     async function runSelectedWorkspaces(button){await withBusy(button,async()=>{const workspaces=Array.from(selectedWorkspaces);if(!workspaces.length&&currentWorkspace)workspaces.push(currentWorkspace);if(!workspaces.length)throw new Error("请先勾选至少一个工作间。");if(currentWorkspace&&workspaces.includes(currentWorkspace))await saveCurrentWorkspace(false);for(const workspace of workspaces)clearBaiduDiagnosisState(workspace);const data=await api("/api/run-batch",{method:"POST",body:JSON.stringify({workspaces,workspace_parallel:asInt("workspaceParallel",2)})});activeJobId=data?.job?.job_id||activeJobId;collapseSidebarAfterRun();await loadStatus(true);toast(`已启动 ${workspaces.length} 个工作间。`,"success")}).catch(error=>toast(error.message,"error"))}
     async function importLocalPaths(kind,textareaId,button){await withBusy(button,async()=>{if(!currentWorkspace)throw new Error("请先选择工作间。");const paths=lines($(textareaId).value);if(!paths.length)throw new Error("请先填写本地文件或文件夹路径。");const data=await api(`/api/workspaces/${encodeURIComponent(currentWorkspace)}/import-local`,{method:"POST",body:JSON.stringify({kind,paths})});$(textareaId).value="";await loadStatus(true);toast(`已导入 ${data.count||0} 个文件。`,"success")}).catch(error=>toast(error.message,"error"))}
     async function stopJob(id,button=null){await withBusy(button,async()=>{const job_id=decodeURIComponent(id);await api("/api/stop-job",{method:"POST",body:JSON.stringify({job_id})});await loadStatus(true);toast("停止请求已发出。","info")}).catch(error=>toast(error.message,"error"))}
-    function setActiveJob(id){activeJobId=decodeURIComponent(id);updateLog()}
+    function setActiveJob(id){activeJobId=decodeURIComponent(id);renderJobs();updateLog()}
     function stopActiveJob(button){if(activeJobId)stopJob(enc(activeJobId),button)}
-    function updateLog(){const job=(latestStatus?.jobs||[]).find(item=>item.job_id===activeJobId);if(!job){$("logTitle").textContent="暂无运行日志。";$("logOutput").textContent="暂无运行日志。";$("stopActiveJobButton").disabled=true;return}const members=jobWorkspaceMembers(job),displayWorkspace=members.includes(currentWorkspace)?currentWorkspace:(members[0]||currentWorkspace),label=members.length>1?`批量运行：${members.join("、")}`:repairText(job.workspace||job.job_id,members[0]||currentWorkspace),lines=localizedJobLines(job),progress=analyzeJobProgress(job,displayWorkspace),progressLabel=progress.totalStages?` | ${progress.stepText} | ${progress.percent}%`:"",logLabel=job.log_path?` | 日志文件：${repairText(job.log_path||"",displayWorkspace)}`:"";$("logTitle").textContent=`${label} | ${jobStatusLabel(job.status)}${progressLabel}${logLabel}`;$("logOutput").textContent=lines.join("\n")||"任务已启动，正在等待输出...";$("stopActiveJobButton").disabled=job.status!=="running"}
+    function updateLog(){const titleNode=$("logTitle"),outputNode=$("logOutput"),stopButton=$("stopActiveJobButton");if(!titleNode||!outputNode||!stopButton)return;const job=(latestStatus?.jobs||[]).find(item=>item.job_id===activeJobId);if(!job){titleNode.textContent="暂无运行日志。";outputNode.textContent="暂无运行日志。";stopButton.disabled=true;return}const members=jobWorkspaceMembers(job),displayWorkspace=members.includes(currentWorkspace)?currentWorkspace:(members[0]||currentWorkspace),label=members.length>1?`批量运行：${members.join("、")}`:repairText(job.workspace||job.job_id,members[0]||currentWorkspace),lines=localizedJobLines(job),progress=analyzeJobProgress(job,displayWorkspace),progressLabel=progress.totalStages?` | ${progress.stepText} | ${progress.percent}%`:"",logLabel=job.log_path?` | 日志文件：${repairText(job.log_path||"",displayWorkspace)}`:"";titleNode.textContent=`${label} | ${jobStatusLabel(job.status)}${progressLabel}${logLabel}`;outputNode.textContent=lines.join("\n")||"任务已启动，正在等待输出...";stopButton.disabled=job.status!=="running"}
     async function shutdownControlCenter(button){const running=(latestStatus?.jobs||[]).filter(job=>["running","stopping"].includes(job.status));if(running.length&&!window.confirm("当前还有运行任务。关闭服务会同时停止后台任务，确定继续吗？"))return;await withBusy(button,async()=>{await api("/api/shutdown",{method:"POST",body:JSON.stringify({stop_jobs:true,reason:"manual-ui-shutdown"})});toast("控制台服务正在关闭，并已请求停止后台任务。","success");$("serverInfo").textContent="服务已请求关闭";setTimeout(()=>{try{window.close()}catch(error){}},800)}).catch(error=>toast(error.message,"error"))}
     const uiSessionId=(()=>{try{const key="controlCenterUiSessionId";let value=sessionStorage.getItem(key);if(!value){value=(window.crypto&&typeof window.crypto.randomUUID==="function")?window.crypto.randomUUID():`ui_${Date.now()}_${Math.random().toString(16).slice(2)}`;sessionStorage.setItem(key,value)}return value}catch(error){return`ui_${Date.now()}_${Math.random().toString(16).slice(2)}`}})();
     let uiSessionHeartbeatTimer=0;
@@ -1114,10 +2125,12 @@ function selectWorkspace(name,revealEditor=false){const nextWorkspace=decodeURIC
     $("baiduShareUrl").addEventListener("input",()=>{const url=$("baiduShareUrl").value.trim();if(baiduListingUrl&&url!==baiduListingUrl){if(baiduCacheAutosaveTimer)window.clearTimeout(baiduCacheAutosaveTimer);baiduCacheAutosaveTimer=null;baiduListingUrl="";baiduFiles=[];baiduSavedEntries=[];selectedBaiduKeys.clear();baiduExpandedFolders.clear();renderBaiduFiles()}});
     function refreshDashboard(){loadStatus(true);refreshBaiduLoginState(null,true)}
     window.addEventListener("focus",()=>{refreshBaiduLoginState(null,true);touchUiSession()});
+    window.addEventListener("keydown",event=>{if(event.key==="Escape")closePackagingPreviewModal()});
     window.addEventListener("pagehide",()=>sendUiSessionDisconnect());
     window.addEventListener("beforeunload",()=>sendUiSessionDisconnect());
     document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshBaiduLoginState(null,true);touchUiSession()}});
     window.addEventListener("resize",()=>applySidebarState());
+    mountCommandDeckPanels();
     loadSidebarState();
     populate(baseTask(""));
     applySidebarState();

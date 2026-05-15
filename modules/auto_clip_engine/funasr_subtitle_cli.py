@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+
+import drama_clone_core as _drama_clone_core
 
 from drama_clone_core import (  # noqa: E402
     DEFAULT_FFMPEG,
@@ -15,6 +18,16 @@ from drama_clone_core import (  # noqa: E402
     run_funasr_reference_transcription,
     write_srt,
 )
+
+
+def runtime_file_fingerprint(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+        stat_info = resolved.stat()
+    except OSError:
+        return f"{path} (missing)"
+    modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat_info.st_mtime))
+    return f"{resolved} (mtime {modified}, {stat_info.st_size} bytes)"
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +44,12 @@ def main() -> int:
     if not args.reference_video.exists():
         raise SystemExit(f"Reference video not found: {args.reference_video}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    print(
+        "Runtime code: "
+        f"funasr_subtitle_cli={runtime_file_fingerprint(Path(__file__))}; "
+        f"drama_clone_core={runtime_file_fingerprint(Path(_drama_clone_core.__file__))}",
+        flush=True,
+    )
     video_processor = VideoProcessor(args.ffmpeg, args.ffprobe)
     entries = run_funasr_reference_transcription(
         args.reference_video,
