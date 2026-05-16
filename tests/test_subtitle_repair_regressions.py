@@ -2057,6 +2057,18 @@ class DualSrtFusionStressTests(unittest.TestCase):
             "\u4e00\u53e5\u6bd4\u8f83\u957f\u7684\u4e3b\u5b57\u5e55\n\u7b2c\u4e8c\u884c\u4ecd\u7136\u662f\u5b57\u5e55",
         )
 
+    def test_visual_auto_area_moves_tall_lower_band_up_to_main_subtitle(self):
+        detected = subtitle_runner.make_subtitle_area(940, 1228, 0, 720)
+        adjusted = subtitle_runner.adjust_low_banner_region(detected, 720, 1280)
+
+        self.assertIsNotNone(adjusted)
+        area, report = adjusted
+        self.assertEqual(report["reason"], "detected_lower_band_too_tall")
+        self.assertLess(area.ymax, detected.ymin)
+        self.assertLessEqual(area.ymax, int(1280 * 0.74))
+        self.assertGreaterEqual(area.ymin, int(1280 * 0.58))
+        self.assertGreaterEqual(area.ymax - area.ymin, 120)
+
     def test_aligned_visual_grouping_does_not_override_audio_primary_boundaries(self):
         visual = [
             entry(1, 0.0, 1.2, "\u6751\u957f\u513f\u5b50\u5927\u5a5a\u8fd9\u5929"),
@@ -2420,7 +2432,7 @@ class DualSrtFusionStressTests(unittest.TestCase):
         self.assertEqual([item.text for item in merged], ["\u6751\u957f\u513f\u5b50\u5927\u5a5a\u8fd9\u5929", "\u6751\u6c11\u628a\u8def\u62e6\u4f4f"])
         self.assertEqual(audio_add_count, 0)
 
-    def test_dense_divergent_visual_track_falls_back_to_visual_instead_of_wrong_audio(self):
+    def test_dense_divergent_visual_track_still_cannot_override_audio_primary_text(self):
         visual = [
             entry(1, 0.0, 1.0, "\u7236\u5973\u4fe9\u9707\u60ca\u7684\u53d1\u73b0"),
             entry(2, 1.1, 2.0, "\u52b3\u65af\u83b1\u65af\u53e4\u65af\u7279"),
@@ -2443,7 +2455,35 @@ class DualSrtFusionStressTests(unittest.TestCase):
         ]
         merged, _fix_count, _audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
 
-        self.assertEqual([item.text for item in merged], [item.text for item in visual])
+        self.assertEqual([item.text for item in merged], [item.text for item in audio])
+
+    def test_dense_but_noisy_visual_track_cannot_override_audio_primary_text(self):
+        visual = [
+            entry(1, 0.0, 0.4, "r"),
+            entry(2, 0.5, 0.9, "5."),
+            entry(3, 1.0, 1.4, "\u4e00"),
+            entry(4, 1.5, 1.9, "Dui"),
+            entry(5, 2.0, 2.4, "1:1"),
+            entry(6, 2.5, 2.9, "$-1a"),
+            entry(7, 3.0, 3.4, "\u4e00"),
+            entry(8, 3.5, 3.9, "11117t"),
+            entry(9, 4.0, 4.4, "Vt"),
+            entry(10, 4.5, 4.9, "+M+"),
+            entry(11, 5.0, 5.4, "FFETEE"),
+            entry(12, 5.5, 5.9, "1!1"),
+        ]
+        audio = [
+            entry(1, 0.0, 1.2, "\u5c0f\u4f19\u53ea\u56e0\u6551\u4e86\u8def\u8fb9\u7684\u5973\u4eba"),
+            entry(2, 1.3, 3.0, "\u53c8\u88ab\u4e00\u7fa4\u9a91\u7740\u6469\u6258\u7684\u98de\u8f66\u66b4\u8d70\u65cf\u62e6\u4f4f"),
+            entry(3, 3.1, 5.9, "\u6ca1\u60f3\u5230\u5bf9\u65b9\u7adf\u7136\u76f4\u63a5\u5bf9\u4ed6\u52a8\u624b"),
+        ]
+
+        merged, _fix_count, audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
+
+        self.assertFalse(core.visual_subtitle_track_has_reliable_full_text_quality(visual))
+        self.assertFalse(core.visual_subtitle_track_is_safe_divergent_fallback(audio, visual))
+        self.assertEqual([item.text for item in merged], [item.text for item in audio])
+        self.assertEqual(audio_add_count, 0)
 
     def test_audio_primary_repairs_unreadable_asr_word_fragments(self):
         audio = [

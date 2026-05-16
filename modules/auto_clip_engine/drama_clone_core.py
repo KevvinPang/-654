@@ -324,10 +324,10 @@ SUBTITLE_MASK_OUTPUT_MIN_HEIGHT_RATIO = 0.034
 SUBTITLE_MASK_OUTPUT_MAX_HEIGHT_RATIO = 0.060
 SUBTITLE_MASK_OUTPUT_TOP_PADDING_RATIO = 0.025
 SUBTITLE_MASK_OUTPUT_BOTTOM_PADDING_RATIO = 0.065
-SUBTITLE_MASK_COVER_MIN_HEIGHT_RATIO = 0.038
-SUBTITLE_MASK_COVER_MAX_HEIGHT_RATIO = 0.105
-SUBTITLE_MASK_COVER_TOP_PADDING_RATIO = 0.035
-SUBTITLE_MASK_COVER_BOTTOM_PADDING_RATIO = 0.050
+SUBTITLE_MASK_COVER_MIN_HEIGHT_RATIO = 0.030
+SUBTITLE_MASK_COVER_MAX_HEIGHT_RATIO = 0.065
+SUBTITLE_MASK_COVER_TOP_PADDING_RATIO = 0.020
+SUBTITLE_MASK_COVER_BOTTOM_PADDING_RATIO = 0.028
 SUBTITLE_MASK_TALL_REGION_RATIO = 0.220
 SUBTITLE_MASK_TALL_REGION_BASE_ALPHA_SCALE = 0.42
 SUBTITLE_MASK_EVENT_PAD_BEFORE = 0.06
@@ -10412,8 +10412,8 @@ def detect_subtitle_mask_region(
         component_hint_top is not None
         and component_hint_bottom is not None
         and component_hint_bottom > component_hint_top
-        and component_confidence >= 0.55
-        and (component_hint_bottom - component_hint_top) <= int(round(mask_height * 0.26))
+        and component_confidence >= 0.48
+        and (component_hint_bottom - component_hint_top) <= int(round(mask_height * 0.30))
     ):
         component_y1 = crop_top + int(round(component_hint_top * scale_y))
         component_y2 = crop_top + int(round(component_hint_bottom * scale_y))
@@ -10737,19 +10737,21 @@ def build_fixed_subtitle_band_alpha(height: int, width: int):
 
     # Center hides the original subtitle; top/bottom fade away so the mask no
     # longer reads as a hard rectangular strip.
-    alpha_y = np.full_like(distance, SUBTITLE_MASK_BASE_CENTER_ALPHA, dtype=np.float32)
+    alpha_y = np.zeros_like(distance, dtype=np.float32)
+    core_zone = distance <= core_ratio
+    alpha_y[core_zone] = SUBTITLE_MASK_BASE_CENTER_ALPHA
     shoulder_zone = (distance > core_ratio) & (distance <= shoulder_ratio)
     if bool(shoulder_zone.any()):
         t = (distance[shoulder_zone] - core_ratio) / max(1e-6, shoulder_ratio - core_ratio)
         t = np.clip(t, 0.0, 1.0)
         smooth = t * t * (3.0 - 2.0 * t)
-        alpha_y[shoulder_zone] = SUBTITLE_MASK_BASE_CENTER_ALPHA * (1.0 - 0.30 * smooth)
+        alpha_y[shoulder_zone] = SUBTITLE_MASK_BASE_CENTER_ALPHA * (1.0 - 0.72 * smooth)
     edge_zone = distance > shoulder_ratio
     if bool(edge_zone.any()):
         t = (distance[edge_zone] - shoulder_ratio) / max(1e-6, 1.0 - shoulder_ratio)
         t = np.clip(t, 0.0, 1.0)
         smooth = t * t * (3.0 - 2.0 * t)
-        edge_start_alpha = SUBTITLE_MASK_BASE_CENTER_ALPHA * 0.70
+        edge_start_alpha = SUBTITLE_MASK_BASE_CENTER_ALPHA * 0.28
         alpha_y[edge_zone] = SUBTITLE_MASK_BASE_EDGE_ALPHA + (
             edge_start_alpha - SUBTITLE_MASK_BASE_EDGE_ALPHA
         ) * (1.0 - smooth)
@@ -18689,6 +18691,45 @@ def visual_subtitle_track_aligns_with_audio_text(
     return bool(ratio >= 0.22 or (audio_coverage >= 0.28 and visual_coverage >= 0.22))
 
 
+def visual_subtitle_track_has_reliable_full_text_quality(
+    visual_entries: Sequence[SubtitleEntry],
+) -> bool:
+    visual_list = [
+        entry
+        for entry in reindex_subtitle_entries(visual_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    if len(visual_list) < 8:
+        return False
+
+    total_visible_units = 0
+    total_cjk_units = 0
+    meaningful_count = 0
+    noisy_count = 0
+    for entry in visual_list:
+        text = normalize_subtitle_text(entry.text)
+        signature = subtitle_variant_signature(text)
+        visible_units = max(1, len(signature))
+        cjk_units = sum(1 for char in text if CJK_RE.fullmatch(char))
+        total_visible_units += visible_units
+        total_cjk_units += cjk_units
+        cjk_ratio = cjk_units / visible_units
+        if cjk_units <= 1 or isolated_visual_ocr_noise_text(text) or cjk_ratio < 0.45:
+            noisy_count += 1
+        if cjk_units >= 4 and cjk_ratio >= 0.62 and not visual_text_has_ocr_noise(text):
+            meaningful_count += 1
+
+    if total_cjk_units < 48:
+        return False
+    if total_cjk_units / max(1, total_visible_units) < 0.70:
+        return False
+    if total_cjk_units / max(1, len(visual_list)) < 3.5:
+        return False
+    if noisy_count / max(1, len(visual_list)) > 0.35:
+        return False
+    return bool(meaningful_count >= max(8, int(math.ceil(len(visual_list) * 0.45))))
+
+
 def visual_subtitle_track_is_safe_divergent_fallback(
     audio_entries: Sequence[SubtitleEntry],
     visual_entries: Sequence[SubtitleEntry],
@@ -18704,6 +18745,8 @@ def visual_subtitle_track_is_safe_divergent_fallback(
         if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
     ]
     if len(visual_list) < 8:
+        return False
+    if not visual_subtitle_track_has_reliable_full_text_quality(visual_list):
         return False
 
     visual_signature = "".join(subtitle_variant_signature(entry.text) for entry in visual_list)
@@ -18739,18 +18782,10 @@ def build_dual_srt_audio_primary_display_entries(
     # merging again here can erase real reference pauses such as ".../王虎".
     audio_fragment_fix_count = 0
     if not visual_subtitle_track_aligns_with_audio_text(primary_entries, visual_entries):
-        if visual_subtitle_track_is_safe_divergent_fallback(primary_entries, visual_entries):
-            visual_fallback_entries = reindex_subtitle_entries(
-                [
-                    entry
-                    for entry in visual_entries
-                    if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
-                ]
-            )
-            visual_fallback_entries, isolated_noise_count = drop_isolated_visual_ocr_noise_entries(
-                visual_fallback_entries
-            )
-            return visual_fallback_entries, audio_fragment_fix_count + isolated_noise_count, 0, 0
+        # Visual subtitles are display/correction aids only.  Even when the two
+        # streams diverge, do not replace audio-primary text with visual OCR:
+        # wrong-source audio must be fixed by regenerating audio subtitles, not
+        # by letting hard-subtitle OCR become the narration source.
         return primary_entries, audio_fragment_fix_count, 0, 0
 
     working_entries, visual_fix_count = build_primary_entries_from_funasr_and_visual(
@@ -27227,7 +27262,7 @@ def build_processed_subtitles(
             not visual_subtitle_track_aligns_with_audio_text(funasr_entries, visual_entries)
             and visual_subtitle_track_is_safe_divergent_fallback(funasr_entries, visual_entries)
         )
-        dual_srt_visual_fallback_mode = dual_srt_visual_fallback
+        dual_srt_visual_fallback_mode = False
         working_entries, visual_text_fix_count, visual_audio_add_count, visual_audio_split_count = (
             build_dual_srt_audio_primary_display_entries(
                 funasr_entries,
@@ -27238,9 +27273,9 @@ def build_processed_subtitles(
         if log_func:
             if dual_srt_visual_fallback:
                 log_func(
-                    "  Dual SRT safeguard: audio/visual subtitle streams diverged; "
-                    "using dense visual SRT as the clean display timeline and rejecting unrelated audio text "
-                    f"({len(working_entries)} visual entries, {visual_text_fix_count} cleanup fix(es))"
+                    "  Dual SRT divergence detected: audio/visual subtitle streams differ; "
+                    "kept audio SRT as the narration source and limited visual SRT to display/correction aids "
+                    f"({len(working_entries)} audio entries)"
                 )
             else:
                 log_func(

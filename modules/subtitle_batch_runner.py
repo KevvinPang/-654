@@ -632,17 +632,24 @@ def adjust_low_banner_region(area: Any, frame_width: int, frame_height: int) -> 
     bottom_ratio = area.ymax / max(1.0, frame_height)
     height_ratio = (area.ymax - area.ymin) / max(1.0, frame_height)
     if y_ratio >= 0.58 and bottom_ratio >= 0.90 and height_ratio >= 0.22:
-        adjusted_ymin = max(int(frame_height * 0.64), area.ymin + int(round(frame_height * 0.02)))
+        # A very tall lower-band detection usually means the detector latched
+        # onto the blurred copyright/black footer below the real subtitle.  The
+        # main subtitle sits immediately above that band, so move the OCR crop
+        # upward instead of keeping the lower blank/footer area.
         adjusted_ymax = min(
-            int(frame_height * 0.84),
-            area.ymin + max(150, int(round(frame_height * 0.17))),
+            area.ymin - max(10, int(round(frame_height * 0.010))),
+            int(frame_height * 0.74),
+        )
+        adjusted_ymin = max(
+            int(frame_height * 0.58),
+            adjusted_ymax - max(120, int(round(frame_height * 0.13))),
         )
         if adjusted_ymax > adjusted_ymin + 48:
             adjusted = make_subtitle_area(
                 adjusted_ymin,
                 adjusted_ymax,
-                int(frame_width * 0.03),
-                int(frame_width * 0.97),
+                int(frame_width * 0.04),
+                int(frame_width * 0.96),
             )
             return adjusted, {
                 "reason": "detected_lower_band_too_tall",
