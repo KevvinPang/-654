@@ -375,6 +375,54 @@ class SubtitleTextRepairRegressionTests(unittest.TestCase):
         for left, right in zip(split_entries, split_entries[1:]):
             self.assertFalse(left.text.endswith("\u6210") and right.text.startswith("\u6210"))
 
+    def test_visual_delivery_split_strips_punctuation_after_duplicate_tail(self):
+        source = entry(
+            1,
+            83.92,
+            87.12,
+            "\u8fd9\u53ef\u628a\u5c0f\u4f19\u5413\u5f97\u4e0d\u77e5\u6240\u63aa"
+            "\u63aa\u3002\u4eca\u5929\u6b63\u662f\u8001\u7237\u5b50\u8ba2\u793c\u7684\u5927\u65e5\u5b50",
+        )
+        visual = [
+            entry(1, 84.00, 85.40, "\u8fd9\u53ef\u628a\u5c0f\u4f19\u5413\u5f97\u4e0d\u77e5\u6240\u63aa"),
+            entry(2, 85.40, 87.20, "\u4eca\u5929\u6b63\u662f\u8001\u7237\u5b50\u5b9a\u9057\u5631\u7684\u5927\u65e5\u5b50"),
+        ]
+
+        split_entries, split_count = core.split_long_delivery_entries_by_visual_subtitles(
+            [source],
+            visual,
+            fps=25.0,
+            max_units=18,
+        )
+
+        self.assertGreaterEqual(split_count, 1)
+        self.assertEqual(split_entries[0].text, "\u8fd9\u53ef\u628a\u5c0f\u4f19\u5413\u5f97\u4e0d\u77e5\u6240\u63aa")
+        self.assertTrue(split_entries[1].text.startswith("\u4eca\u5929"))
+        self.assertFalse(split_entries[1].text.startswith("\u3002"))
+
+    def test_adjacent_single_tail_duplicate_is_trimmed_after_visual_completion(self):
+        entries = [
+            entry(1, 83.917, 85.125, "\u8fd9\u53ef\u628a\u5c0f\u4f19\u5413\u5f97\u4e0d\u77e5\u6240\u63aa"),
+            entry(2, 85.208, 87.250, "\u63aa\u3002\u4eca\u5929\u6b63\u662f\u8001\u7237\u5b50\u8ba2\u793c\u7684\u5927\u65e5\u5b50"),
+        ]
+
+        repaired, fix_count = core.repair_adjacent_single_cjk_duplicate_boundaries(entries)
+
+        self.assertEqual(fix_count, 1)
+        self.assertEqual(repaired[0].text, "\u8fd9\u53ef\u628a\u5c0f\u4f19\u5413\u5f97\u4e0d\u77e5\u6240\u63aa")
+        self.assertEqual(repaired[1].text, "\u4eca\u5929\u6b63\u662f\u8001\u7237\u5b50\u8ba2\u793c\u7684\u5927\u65e5\u5b50")
+
+    def test_adjacent_single_tail_duplicate_keeps_distant_repetition(self):
+        entries = [
+            entry(1, 0.0, 1.0, "\u7537\u4eba\u4e0d\u77e5\u6240\u63aa"),
+            entry(2, 1.8, 3.0, "\u63aa\u624b\u4e0d\u53ca\u7684\u5c0f\u4f19\u8d76\u7d27\u8eb2\u5f00"),
+        ]
+
+        repaired, fix_count = core.repair_adjacent_single_cjk_duplicate_boundaries(entries)
+
+        self.assertEqual(fix_count, 0)
+        self.assertEqual([item.text for item in repaired], [item.text for item in entries])
+
     def test_audio_sentence_info_is_repaired_from_qwen_master_text(self):
         parsed = {
             "text": "因为被他们欺负的老实人终于爆发了原来就在三天前",
@@ -1426,6 +1474,41 @@ class StrictTtsPausePlanningRegressionTests(unittest.TestCase):
         self.assertAlmostEqual(groups[0]["scheduled_start"], 0.0, places=2)
         self.assertAlmostEqual(groups[0]["scheduled_end"], 2.0, places=2)
 
+    def test_strict_tts_schedule_hard_window_does_not_absorb_action_gap(self):
+        groups = [
+            {
+                "strict_start": 0.0,
+                "strict_end": 2.0,
+                "window_end": 2.28,
+                "hard_window_end": 2.0,
+                "latest_start": 0.28,
+                "target_duration": 2.0,
+                "effective_duration": 2.90,
+                "raw_duration": 2.90,
+                "text": "\u7537\u4eba\u8d70\u4e86\u8fc7\u6765",
+            },
+            {
+                "strict_start": 4.0,
+                "strict_end": 5.0,
+                "window_end": 5.28,
+                "latest_start": 4.28,
+                "target_duration": 1.0,
+                "effective_duration": 0.80,
+                "raw_duration": 0.80,
+                "text": "\u4ed6\u518d\u6b21\u5f00\u53e3",
+            },
+        ]
+
+        stats = core.schedule_prepared_tts_groups(
+            groups,
+            total_duration=6.0,
+            prefer_strict_windows=True,
+        )
+
+        self.assertEqual(stats["hard_trim_count"], 1.0)
+        self.assertLessEqual(groups[0]["scheduled_end"], groups[0]["hard_window_end"])
+        self.assertAlmostEqual(groups[0]["target_duration"], 2.0, places=2)
+
     def test_strict_audio_fit_can_slow_tts_to_reference_speech_window(self):
         speed, output_duration = core.compute_audio_fit_plan(
             source_duration=1.30,
@@ -1518,6 +1601,145 @@ class StrictTtsPausePlanningRegressionTests(unittest.TestCase):
         self.assertIn("reference_activity_duration", groups[0])
         self.assertGreater(groups[0]["reference_activity_duration"], 1.0)
 
+    def test_reference_activity_window_records_hard_end_for_silent_tail(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        sample_rate = 1000
+        samples = core.np.zeros(int(sample_rate * 4.0), dtype=core.np.float32)
+        for sample_index in range(int(0.20 * sample_rate), int(1.32 * sample_rate)):
+            time_value = sample_index / sample_rate
+            samples[sample_index] = 0.35 * math.sin(2.0 * math.pi * 180.0 * time_value)
+        groups = [
+            {
+                "strict_start": 0.00,
+                "strict_end": 3.20,
+                "window_start": 0.00,
+                "window_end": 3.48,
+                "latest_start": 0.28,
+                "target_duration": 3.20,
+                "text": "\u4ed6\u8d70\u5230\u5a5a\u8f66\u65c1",
+            }
+        ]
+
+        count = core.apply_reference_audio_activity_tts_windows(
+            groups,
+            total_duration=4.0,
+            primary_samples=samples,
+            primary_sample_rate=sample_rate,
+            overflow_seconds=0.28,
+        )
+
+        self.assertEqual(count, 1)
+        self.assertIn("hard_window_end", groups[0])
+        self.assertLess(groups[0]["hard_window_end"], 1.60)
+
+    def test_reference_activity_window_extends_asr_tail_cutoff(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(0.12, 1.18)], duration=1.8, sample_rate=1000)
+        groups = [
+            {
+                "strict_start": 0.00,
+                "strict_end": 1.00,
+                "window_start": 0.00,
+                "window_end": 1.28,
+                "latest_start": 0.28,
+                "target_duration": 1.00,
+                "text": "\u5973\u4eba\u4e0d\u77e5\u6240\u63aa",
+                "entries": [entry(1, 0.0, 1.0, "\u5973\u4eba\u4e0d\u77e5\u6240\u63aa")],
+            }
+        ]
+
+        count = core.apply_reference_audio_activity_tts_windows(
+            groups,
+            total_duration=1.8,
+            primary_samples=samples,
+            primary_sample_rate=sample_rate,
+            overflow_seconds=0.28,
+        )
+
+        self.assertEqual(count, 1)
+        self.assertGreater(groups[0]["strict_end"], 1.10)
+        self.assertGreater(groups[0]["target_duration"], 1.10)
+        self.assertIn("reference_activity_tail_extended", groups[0])
+
+    def test_reference_activity_window_does_not_extend_across_real_pause(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(0.08, 0.92), (1.18, 1.46)], duration=1.8, sample_rate=1000)
+        groups = [
+            {
+                "strict_start": 0.00,
+                "strict_end": 0.94,
+                "window_start": 0.00,
+                "window_end": 1.22,
+                "latest_start": 0.28,
+                "target_duration": 0.94,
+                "text": "\u738b\u864e\u521a\u8981\u5f00\u53e3",
+                "entries": [entry(1, 0.0, 0.94, "\u738b\u864e\u521a\u8981\u5f00\u53e3")],
+            }
+        ]
+
+        core.apply_reference_audio_activity_tts_windows(
+            groups,
+            total_duration=1.8,
+            primary_samples=samples,
+            primary_sample_rate=sample_rate,
+            overflow_seconds=0.28,
+        )
+
+        self.assertLess(groups[0]["strict_end"], 1.08)
+        self.assertLess(groups[0]["strict_end"], 1.18)
+
+    def test_reference_activity_window_respects_source_handoff_guard(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(0.10, 1.18)], duration=1.8, sample_rate=1000)
+        groups = [
+            {
+                "strict_start": 0.00,
+                "strict_end": 1.00,
+                "window_start": 0.00,
+                "window_end": 1.28,
+                "latest_start": 0.28,
+                "target_duration": 1.00,
+                "text": "\u7136\u800c\u5c31\u5728\u8fd9\u65f6",
+                "entries": [entry(7, 0.0, 1.0, "\u7136\u800c\u5c31\u5728\u8fd9\u65f6")],
+            }
+        ]
+
+        core.apply_reference_audio_activity_tts_windows(
+            groups,
+            total_duration=1.8,
+            primary_samples=samples,
+            primary_sample_rate=sample_rate,
+            overflow_seconds=0.28,
+            source_handoff_starts={7: 1.06},
+        )
+
+        self.assertLessEqual(groups[0]["strict_end"], 1.04)
+        self.assertLessEqual(groups[0].get("hard_window_end", 9.0), 1.04)
+
+    def test_reference_audio_activity_islands_split_long_asr_sentence_at_real_pause(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(0.08, 0.92), (1.28, 2.10)], duration=2.6)
+        entries = [
+            entry(1, 0.0, 2.2, "\u7537\u4eba\u8d70\u5230\u5a5a\u8f66\u65c1\uff0c\u738b\u864e\u62e6\u4f4f\u4e86\u4ed6"),
+        ]
+
+        split_entries = core.split_narration_entries_by_reference_audio_activity_islands(
+            entries,
+            samples,
+            sample_rate,
+        )
+
+        self.assertEqual(len(split_entries), 2)
+        self.assertLess(split_entries[0].end, 1.10)
+        self.assertGreater(split_entries[1].start, 1.10)
+        self.assertIn("\u5a5a\u8f66\u65c1", split_entries[0].text)
+        self.assertIn("\u738b\u864e", split_entries[1].text)
+
     def test_strict_activity_fit_source_trims_non_speech_tail_before_slowdown(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source_path = Path(temp_dir) / "source.wav"
@@ -1581,6 +1803,37 @@ class StrictTtsPausePlanningRegressionTests(unittest.TestCase):
         ]
 
         merged, merge_count = core.merge_tiny_reference_window_tts_groups(groups)
+
+        self.assertEqual(merge_count, 0)
+        self.assertEqual([[item.index for item in group] for group in merged], [[1], [2]])
+
+    def test_source_handoff_tiny_window_merges_short_narration_before_dialogue(self):
+        groups = [
+            [entry(37, 106.32, 108.16, "\u5c0f\u4f19\u5f53\u5373\u544a\u8beb\u8001\u7237\u5b50\u4e0d\u613f\u610f\u5c31\u7b97\u4e86")],
+            [entry(38, 108.40, 109.04, "\u6ca1\u5fc5\u8981\u751f\u6c14\u3002")],
+        ]
+        join_map = {37: False}
+
+        merged, merge_count = core.merge_underfilled_source_handoff_tts_groups(
+            groups,
+            source_handoff_starts={38: 108.78},
+            join_map=join_map,
+        )
+
+        self.assertEqual(merge_count, 1)
+        self.assertEqual([[item.index for item in group] for group in merged], [[37, 38]])
+        self.assertTrue(join_map[37])
+
+    def test_source_handoff_tiny_window_does_not_merge_without_handoff_pressure(self):
+        groups = [
+            [entry(1, 0.00, 0.62, "\u4e0b\u4e00\u79d2")],
+            [entry(2, 0.86, 2.10, "\u4f17\u4eba\u90fd\u6123\u4f4f\u4e86")],
+        ]
+
+        merged, merge_count = core.merge_underfilled_source_handoff_tts_groups(
+            groups,
+            source_handoff_starts={},
+        )
 
         self.assertEqual(merge_count, 0)
         self.assertEqual([[item.index for item in group] for group in merged], [[1], [2]])
@@ -1710,6 +1963,10 @@ class StrictTtsPausePlanningRegressionTests(unittest.TestCase):
         self.assertEqual(protected, [(0.90, 1.82)])
         self.assertEqual(remaining_duck, [(0.0, 0.9), (1.82, 3.0)])
 
+    def test_source_handoff_probe_advance_cap_stays_tight(self):
+        self.assertLessEqual(core.STRICT_SOURCE_HANDOFF_MAX_ADVANCE_SECONDS, 0.20)
+        self.assertLessEqual(core.STRICT_SOURCE_HANDOFF_HEADROOM_SECONDS, 0.025)
+
     def test_zero_second_source_handoff_start_is_respected(self):
         entries = [
             entry(1, 1.00, 1.80, "\u8d77\u98de", "dialogue"),
@@ -1723,6 +1980,194 @@ class StrictTtsPausePlanningRegressionTests(unittest.TestCase):
 
         self.assertEqual(protected, [(0.0, 1.8)])
         self.assertEqual(remaining_duck, [(1.8, 2.0)])
+
+    def test_untranscribed_audio_activity_gap_creates_internal_source_candidate(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(1.08, 1.62)], duration=2.4)
+        entries = [
+            entry(1, 0.00, 0.80, "\u4e0b\u4e00\u79d2", "narration"),
+            entry(2, 1.95, 2.30, "\u8ffd\u4e0a\u4e86\u6c7d\u8f66", "narration"),
+        ]
+
+        windows = core.collect_untranscribed_voice_activity_windows(entries, samples, sample_rate, 2.4)
+
+        self.assertTrue(any(start <= 1.12 and end >= 1.55 for start, end in windows), windows)
+
+    def test_untranscribed_audio_activity_inside_asr_span_creates_candidate(self):
+        if not core.NUMPY_AVAILABLE:
+            self.skipTest("numpy unavailable")
+        samples, sample_rate = sine_samples([(1.18, 1.70)], duration=2.8)
+        entries = [
+            entry(1, 0.00, 2.60, "这是两全其美的好事。不要，不", "narration"),
+        ]
+
+        windows = core.collect_untranscribed_voice_activity_windows(entries, samples, sample_rate, 2.8)
+
+        self.assertTrue(any(start <= 1.22 and end >= 1.63 for start, end in windows), windows)
+
+    def test_untranscribed_source_candidate_is_protected_but_not_exported_to_srt(self):
+        entries = [
+            entry(1, 1.08, 1.62, core.AUDIO_UNTRANSCRIBED_VOICE_SENTINEL_TEXT, "dialogue"),
+        ]
+
+        protected = core.build_source_audio_protect_intervals(entries)
+        delivered = core.build_delivery_subtitle_entries(entries)
+
+        self.assertEqual(protected, [(1.08, 1.62)])
+        self.assertEqual(delivered, [])
+
+    def test_confirmed_embedded_voice_uses_audio_window_asr_text_before_visual(self):
+        entries = [
+            entry(1, 0.00, 2.80, "这是两全其美的好事。不要，不", "narration"),
+            entry(2, 1.08, 1.62, core.make_audio_untranscribed_voice_text("给你机会你不要"), "dialogue"),
+        ]
+        visual = [
+            entry(1, 1.05, 1.65, "错误视觉字幕", "dialogue"),
+        ]
+        overrides = {
+            2: {
+                "type": "dialogue",
+                "confidence": 0.80,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        }
+
+        repaired, materialized_count, visual_text_count = core.materialize_confirmed_audio_voice_windows(
+            entries,
+            overrides,
+            visual,
+        )
+        delivered = core.build_delivery_subtitle_entries(repaired)
+
+        self.assertEqual(materialized_count, 1)
+        self.assertEqual(visual_text_count, 0)
+        self.assertIn("给你机会你不要", [item.text for item in delivered])
+        self.assertNotIn("错误视觉字幕", [item.text for item in delivered])
+        narration_windows = [item for item in repaired if item.entry_type == "narration"]
+        self.assertTrue(all(not (item.start < 1.62 and item.end > 1.08) for item in narration_windows))
+
+    def test_visual_text_is_not_used_for_confirmed_voice_when_audio_asr_is_empty(self):
+        entries = [
+            entry(1, 0.00, 2.80, "这是两全其美的好事。不要，不", "narration"),
+            entry(2, 1.08, 1.62, core.AUDIO_UNTRANSCRIBED_VOICE_SENTINEL_TEXT, "dialogue"),
+        ]
+        visual = [
+            entry(1, 1.05, 1.65, "给你机会你不要", "dialogue"),
+        ]
+        overrides = {
+            2: {
+                "type": "dialogue",
+                "confidence": 0.80,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        }
+
+        repaired, materialized_count, visual_text_count = core.materialize_confirmed_audio_voice_windows(
+            entries,
+            overrides,
+            visual,
+        )
+        delivered = core.build_delivery_subtitle_entries(repaired)
+
+        self.assertEqual(materialized_count, 1)
+        self.assertEqual(visual_text_count, 0)
+        self.assertNotIn("给你机会你不要", [item.text for item in delivered])
+        self.assertFalse(any(item.entry_type == "dialogue" for item in delivered))
+
+    def test_voice_activity_windows_expand_to_overlapping_asr_slides(self):
+        windows = core.expand_voice_activity_windows_for_asr([(10.0, 16.0)])
+
+        self.assertGreaterEqual(len(windows), 3)
+        self.assertLessEqual(max(end - start for start, end in windows), core.AUDIO_UNTRANSCRIBED_WINDOW_ASR_SLIDE_SECONDS + 0.01)
+        self.assertLess(windows[1][0], windows[0][1])
+
+    def test_voice_window_asr_has_no_default_hard_window_cap(self):
+        self.assertLessEqual(core.AUDIO_UNTRANSCRIBED_WINDOW_ASR_MAX_WINDOWS, 0)
+
+    def test_overlapping_audio_window_asr_entries_are_deduped(self):
+        entries = [
+            entry(1, 10.00, 11.20, "给你机会你不要", "dialogue"),
+            entry(2, 10.38, 11.46, "给你机会你不要", "dialogue"),
+            entry(3, 12.00, 12.80, "以后有你后悔的", "dialogue"),
+        ]
+
+        deduped = core.dedupe_overlapping_audio_window_asr_entries(entries)
+
+        self.assertEqual([item.text for item in deduped], ["给你机会你不要", "以后有你后悔的"])
+
+    def test_audio_window_asr_can_replace_wrong_covered_asr_entry(self):
+        primary = [entry(1, 128.32, 130.16, "这是两全其美的好事。不要，不", "narration")]
+        window_entries = [entry(1, 129.82, 130.36, "给你机会你不要", "dialogue")]
+
+        merged = core.merge_audio_window_asr_entries(primary, window_entries)
+
+        self.assertEqual(len(merged), 2)
+        self.assertIn("给你机会你不要", [item.text for item in merged])
+
+    def test_audio_window_asr_keeps_partial_dialogue_sentence_instead_of_dropping_it(self):
+        primary = [
+            entry(1, 128.32, 130.16, "这是两全其美的好事。不要，不", "narration"),
+            entry(2, 132.72, 136.77, "要，不要！老爷子当即命令孙女今天就和小伙领证", "narration"),
+        ]
+        window_entries = [
+            entry(1, 128.34, 128.87, "这可是两句", "narration"),
+            entry(2, 129.85, 131.53, "给你机会你不要以后", "dialogue"),
+            entry(3, 131.74, 132.70, "有着后悔吧", "dialogue"),
+            entry(4, 132.71, 133.26, "老爷子当。", "narration"),
+        ]
+
+        merged = core.merge_audio_window_asr_entries(primary, window_entries)
+        merged_texts = [item.text for item in merged]
+
+        self.assertIn("给你机会你不要以后", merged_texts)
+        self.assertIn("有着后悔吧", merged_texts)
+        self.assertTrue(any(item.entry_type == "dialogue" for item in merged if item.text == "给你机会你不要以后"))
+
+    def test_unconfirmed_embedded_voice_is_not_created_from_visual_text_only(self):
+        entries = [
+            entry(1, 0.00, 2.80, "这是两全其美的好事。不要，不", "narration"),
+            entry(2, 1.08, 1.62, core.AUDIO_UNTRANSCRIBED_VOICE_SENTINEL_TEXT, "dialogue"),
+        ]
+        visual = [
+            entry(1, 1.05, 1.65, "给你机会你不要", "dialogue"),
+        ]
+
+        repaired, materialized_count, visual_text_count = core.materialize_confirmed_audio_voice_windows(
+            entries,
+            {},
+            visual,
+        )
+
+        self.assertEqual(materialized_count, 0)
+        self.assertEqual(visual_text_count, 0)
+        self.assertEqual([item.text for item in repaired], [item.text for item in entries])
+
+    def test_untranscribed_voice_candidate_requires_trusted_dialogue_evidence(self):
+        source = entry(1, 1.08, 1.62, core.AUDIO_UNTRANSCRIBED_VOICE_SENTINEL_TEXT, "dialogue")
+
+        self.assertFalse(core.audio_untranscribed_voice_confirmed_dialogue(source, None))
+        self.assertFalse(
+            core.audio_untranscribed_voice_confirmed_dialogue(
+                source,
+                {
+                    "type": "dialogue",
+                    "confidence": 0.80,
+                    "source": "local_text_rule",
+                },
+            )
+        )
+        self.assertTrue(
+            core.audio_untranscribed_voice_confirmed_dialogue(
+                source,
+                {
+                    "type": "dialogue",
+                    "confidence": 0.72,
+                    "source": "audio_speaker_espnet_wavlm",
+                    "gray_fallback": True,
+                },
+            )
+        )
 
 
 class DualSrtFusionStressTests(unittest.TestCase):
@@ -1890,6 +2335,82 @@ class DualSrtFusionStressTests(unittest.TestCase):
         merged, _fix_count, _audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
 
         self.assertIn("\u9053\u6b49", "".join(item.text for item in merged))
+
+    def test_visual_short_dialogue_missing_from_audio_does_not_create_source_window(self):
+        audio = [
+            entry(1, 10.24, 12.72, "\u968f\u5373\u6574\u7406\u597d\u80cc\u5305\uff0c\u6446\u51fa\u51b2\u523a\u7684\u67b6\u52bf\u3002\u4e0b\u4e00\u79d2"),
+            entry(2, 17.36, 19.46, "\u786c\u751f\u751f\u7528\u4e24\u6761\u817f\u8ffd\u4e0a\u4e86\u56db\u8f6e\u7684\u6c7d\u8f66"),
+        ]
+        visual = [
+            entry(1, 10.20, 12.20, "\u968f\u5373\u6574\u7406\u597d\u80cc\u5305"),
+            entry(2, 12.40, 13.00, "\u4e0b\u4e00\u79d2"),
+            entry(3, 13.00, 13.80, "\u8d77\u98de"),
+        ]
+
+        merged, _fix_count, audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
+        restored = [item for item in merged if item.text == "\u8d77\u98de"]
+
+        self.assertEqual(audio_add_count, 0)
+        self.assertEqual(restored, [])
+
+    def test_visual_dialogue_gap_between_audio_lines_does_not_create_source_windows(self):
+        audio = [
+            entry(1, 128.32, 130.16, "\u8fd9\u662f\u4e24\u5168\u5176\u7f8e\u7684\u597d\u4e8b\u3002\u4e0d\u8981\uff0c\u4e0d"),
+            entry(2, 132.72, 135.00, "\u8001\u7237\u5b50\u5f53\u5373\u547d\u4ee4\u5b59\u5973\u4eca\u5929\u5c31\u548c\u5c0f\u4f19\u9886\u8bc1"),
+        ]
+        visual = [
+            entry(1, 129.80, 131.20, "\u7ed9\u4f60\u673a\u4f1a\u4f60\u4e0d\u8981"),
+            entry(2, 131.20, 132.80, "\u4ee5\u540e\u6709\u4f60\u540e\u6094\u7684"),
+        ]
+
+        merged, _fix_count, audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
+        restored_texts = [item.text for item in merged if item.entry_type == "dialogue"]
+
+        self.assertEqual(audio_add_count, 0)
+        self.assertNotIn("\u7ed9\u4f60\u673a\u4f1a\u4f60\u4e0d\u8981", restored_texts)
+        self.assertNotIn("\u4ee5\u540e\u6709\u4f60\u540e\u6094\u7684", restored_texts)
+
+    def test_audio_dialogue_still_yields_to_speaker_override(self):
+        merged = [entry(1, 13.00, 13.80, "\u8d77\u98de", "dialogue")]
+        overrides = {
+            1: {
+                "type": "narration",
+                "confidence": 0.94,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        }
+
+        updated = core.apply_audio_classification_overrides(merged, overrides)
+        restored = next(item for item in updated if item.text == "\u8d77\u98de")
+
+        self.assertEqual(restored.entry_type, "narration")
+
+    def test_unprotected_dialogue_still_accepts_speaker_override(self):
+        entries = [entry(1, 1.0, 1.8, "\u8d77\u98de", "dialogue")]
+        overrides = {
+            1: {
+                "type": "narration",
+                "confidence": 0.94,
+                "source": "audio_speaker_espnet_wavlm",
+            }
+        }
+
+        updated = core.apply_audio_classification_overrides(entries, overrides)
+
+        self.assertEqual(updated[0].entry_type, "narration")
+
+    def test_visual_short_noise_does_not_enter_audio_primary_timeline(self):
+        audio = [
+            entry(1, 14.0, 16.2, "\u786c\u751f\u751f\u7528\u4e24\u6761\u817f\u8ffd\u4e0a\u4e86\u6c7d\u8f66"),
+        ]
+        visual = [
+            entry(1, 16.80, 17.20, "1!"),
+        ]
+
+        merged, _fix_count, audio_add_count, _split_count = core.build_dual_srt_audio_primary_display_entries(audio, visual)
+
+        self.assertEqual(audio_add_count, 0)
+        self.assertNotIn("1!", [item.text for item in merged])
 
     def test_visual_whole_sentence_noise_does_not_insert_into_audio_primary_timeline(self):
         audio = [
@@ -2271,12 +2792,12 @@ class DualSrtFusionStressTests(unittest.TestCase):
             override_meta={},
         )
 
-        self.assertEqual(pre_audio_count, 1)
-        self.assertEqual([item.entry_type for item in pre_audio_entries], ["narration", "dialogue"])
+        self.assertEqual(pre_audio_count, 0)
+        self.assertEqual(pre_audio_entries, [source])
         self.assertEqual(post_audio_count, 0)
         self.assertEqual(post_audio_entries, [source])
 
-    def test_mixed_dialogue_head_is_split_before_speaker_review(self):
+    def test_mixed_dialogue_head_is_not_split_before_speaker_review(self):
         source = entry(
             1,
             98.08,
@@ -2287,10 +2808,8 @@ class DualSrtFusionStressTests(unittest.TestCase):
 
         split_entries, split_count = core.split_mixed_reported_speech_entries([source])
 
-        self.assertEqual(split_count, 1)
-        self.assertEqual([item.entry_type for item in split_entries], ["dialogue", "narration"])
-        self.assertEqual(split_entries[0].text, "\u5417")
-        self.assertTrue(split_entries[1].text.startswith("\u7136\u800c\u8fd8\u6ca1\u7b49\u4ed6\u8fc7\u53bb"))
+        self.assertEqual(split_count, 0)
+        self.assertEqual(split_entries, [source])
 
     def test_mixed_dialogue_head_requires_narration_transition(self):
         source = entry(1, 10.0, 12.0, "\u662f\u5417\uff1f\u4f60\u8fd8\u6562\u8fd9\u6837\u8ddf\u6211\u8bf4\u8bdd", "dialogue")
@@ -4943,6 +5462,61 @@ class DialogueMatchRegressionTests(unittest.TestCase):
             )
         )
 
+    def test_final_dialogue_audio_rerank_forces_text_mismatch_even_with_good_audio(self):
+        path = [self.candidate(40.0, 0.82), self.candidate(40.5, 0.81)]
+        self.assertTrue(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=0,
+                avg_visual=0.90,
+                avg_audio=0.82,
+                audio_count=2,
+                current_text_score=0.31,
+            )
+        )
+
+    def test_final_dialogue_audio_rerank_keeps_text_confirmed_window(self):
+        path = [self.candidate(40.0, 0.50), self.candidate(40.5, 0.49)]
+        self.assertFalse(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=1,
+                avg_visual=0.42,
+                avg_audio=0.50,
+                audio_count=2,
+                current_text_score=0.81,
+            )
+        )
+
+    def test_final_dialogue_audio_rerank_unknown_text_falls_back_to_audio_logic(self):
+        path = [self.candidate(40.0, 0.80), self.candidate(40.5, 0.79)]
+        self.assertFalse(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=0,
+                avg_visual=0.86,
+                avg_audio=0.79,
+                audio_count=2,
+                current_text_score=None,
+            )
+        )
+
+    def test_dialogue_transcript_similarity_accepts_subject_match_with_bgm_noise(self):
+        score = core.MatchAudioEvidence.transcript_similarity(
+            "给你机会你不要以后有你后悔的",
+            "机会你不要以后有你后悔",
+        )
+        self.assertIsNotNone(score)
+        self.assertGreaterEqual(score, core.MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE)
+
+    def test_dialogue_transcript_similarity_rejects_different_subject(self):
+        score = core.MatchAudioEvidence.transcript_similarity(
+            "给你机会你不要以后有你后悔的",
+            "今天这个路你们别想过了",
+        )
+        self.assertIsNotNone(score)
+        self.assertLess(score, core.MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE)
+
     def test_final_dialogue_audio_rerank_checks_visually_plausible_wrong_audio(self):
         path = [self.candidate(40.0, 0.56), self.candidate(40.5, 0.57)]
         self.assertTrue(
@@ -4981,6 +5555,34 @@ class DialogueMatchRegressionTests(unittest.TestCase):
                 avg_visual=0.52,
                 avg_audio=0.48,
                 audio_count=1,
+            )
+        )
+
+    def test_text_confirmed_replacement_uses_visual_only_as_weak_filter(self):
+        current = [self.candidate(40.0, 0.80), self.candidate(40.5, 0.80)]
+        proposed = [self.candidate(88.0, 0.70), self.candidate(88.5, 0.70)]
+        self.assertTrue(
+            core.dialogue_text_confirmed_replacement_allowed(
+                current_discontinuities=0,
+                proposed_discontinuities=0,
+                proposed_score=1.20,
+                current_score=1.60,
+                proposed_avg_visual=core.MATCH_DIALOGUE_AUDIO_ASSIST_MIN_VISUAL + 0.01,
+                proposed_avg_audio=core.MATCH_DIALOGUE_AUDIO_VERIFY_BAD - 0.04,
+                proposed_audio_count=2,
+                proposed_window=proposed,
+            )
+        )
+        self.assertFalse(
+            core.dialogue_text_confirmed_replacement_allowed(
+                current_discontinuities=0,
+                proposed_discontinuities=0,
+                proposed_score=1.20,
+                current_score=1.60,
+                proposed_avg_visual=core.MATCH_DIALOGUE_AUDIO_ASSIST_MIN_VISUAL - 0.01,
+                proposed_avg_audio=0.92,
+                proposed_audio_count=2,
+                proposed_window=current,
             )
         )
 
