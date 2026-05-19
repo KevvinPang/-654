@@ -5475,6 +5475,32 @@ class DialogueMatchRegressionTests(unittest.TestCase):
             )
         )
 
+    def test_final_dialogue_audio_rerank_does_not_keep_low_text_on_acoustics_alone(self):
+        path = [self.candidate(40.0, 0.94), self.candidate(40.5, 0.93)]
+        self.assertTrue(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=0,
+                avg_visual=0.72,
+                avg_audio=0.935,
+                audio_count=2,
+                current_text_score=0.30,
+            )
+        )
+
+    def test_final_dialogue_audio_rerank_keeps_medium_text_with_strong_acoustics(self):
+        path = [self.candidate(40.0, 0.94), self.candidate(40.5, 0.93)]
+        self.assertFalse(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=0,
+                avg_visual=0.72,
+                avg_audio=0.935,
+                audio_count=2,
+                current_text_score=0.48,
+            )
+        )
+
     def test_final_dialogue_audio_rerank_keeps_text_confirmed_window(self):
         path = [self.candidate(40.0, 0.50), self.candidate(40.5, 0.49)]
         self.assertFalse(
@@ -5585,6 +5611,155 @@ class DialogueMatchRegressionTests(unittest.TestCase):
                 proposed_window=current,
             )
         )
+
+    def test_final_dialogue_intervals_merge_nearby_caption_slices_for_asr(self):
+        entries = [
+            entry(1, 13.50, 13.82, "姐姐不嫁", "dialogue"),
+            entry(2, 13.92, 14.22, "我嫁", "dialogue"),
+        ]
+
+        merged = core.build_frame_match_dialogue_intervals(
+            entries,
+            pad_seconds=0.0,
+            merge_gap_seconds=core.MATCH_DIALOGUE_ASR_VERIFY_MERGE_GAP_SECONDS,
+        )
+
+        self.assertEqual(len(merged), 1)
+        self.assertLessEqual(merged[0][0], 13.50)
+        self.assertGreaterEqual(merged[0][1], 14.22)
+
+    def test_short_dialogue_windows_do_not_trigger_forced_text_rerank(self):
+        path = [self.candidate(40.0, 0.80), self.candidate(40.5, 0.79)]
+        self.assertFalse(
+            core.dialogue_window_warrants_final_audio_rerank(
+                path,
+                discontinuities=0,
+                avg_visual=0.86,
+                avg_audio=0.79,
+                audio_count=2,
+                current_text_score=None,
+            )
+        )
+
+    def test_text_verified_dialogue_rerank_asr_candidate_limit_is_bounded(self):
+        self.assertLessEqual(core.MATCH_DIALOGUE_TEXT_RERANK_ASR_CANDIDATE_LIMIT, 10)
+        self.assertLessEqual(core.MATCH_DIALOGUE_TEXT_RERANK_SHORTLIST_LIMIT, 48)
+
+    def test_dialogue_batch_transcription_uses_cached_batch_results(self):
+        class FakeEvidence:
+            def __init__(self):
+                self.enabled = True
+                self.batch_calls = []
+
+            def similarity(self, _reference_frame, _sample):
+                return 0.90
+
+            def transcribe_dialogue_segment_texts_batch(self, media_path, windows):
+                self.batch_calls.append((str(media_path), list(windows)))
+                return {}
+
+            def dialogue_window_transcript_similarity(self, _reference_frames, _ref_indices, candidate_window, _frame_interval):
+                sample = candidate_window[0]["sample"]
+                return 0.80 if abs(float(sample.timestamp) - 10.0) < 0.01 else 0.50
+
+        class FakeHasher:
+            pass
+
+        frames = [
+            core.ReferenceFrame(0, 1.0, ()),
+            core.ReferenceFrame(1, 1.5, ()),
+        ]
+        source_frames = [
+            self.sample(10.0, video_path="a.mp4", global_index=0),
+            self.sample(10.5, video_path="a.mp4", global_index=1),
+            self.sample(20.0, video_path="a.mp4", global_index=2),
+            self.sample(20.5, video_path="a.mp4", global_index=3),
+        ]
+        evidence = FakeEvidence()
+        original_similarity = core.sample_signature_similarity
+        try:
+            core.sample_signature_similarity = lambda *_args, **_kwargs: (0.90, False, 0.90, 0.90)
+            path = core.find_best_text_verified_dialogue_sequence_path(
+                frames,
+                source_frames,
+                FakeHasher(),
+                [0, 1],
+                0.5,
+                0.67,
+                evidence,
+            )
+        finally:
+            core.sample_signature_similarity = original_similarity
+
+        self.assertIsNotNone(path)
+        self.assertGreaterEqual(len(evidence.batch_calls), 1)
+        self.assertGreaterEqual(sum(len(windows) for _media, windows in evidence.batch_calls), 2)
+
+    def test_dialogue_continuity_candidate_pool_accepts_content_similarity_seeds(self):
+        class FakeHasher:
+            def similarity(self, _left, _right):
+                return 0.20
+
+        class FakeEvidence:
+            enabled = True
+
+            def similarity(self, _reference_frame, _sample):
+                return 0.20
+
+            def content_similarity(self, _reference_frame, _sample):
+                return 0.86
+
+        reference_frames = [
+            core.ReferenceFrame(0, 1.0, ()),
+            core.ReferenceFrame(1, 1.5, ()),
+        ]
+        source_frames = [
+            self.sample(10.0, video_path="a.mp4", global_index=0),
+            self.sample(10.5, video_path="a.mp4", global_index=1),
+            self.sample(11.0, video_path="a.mp4", global_index=2),
+            self.sample(20.0, video_path="a.mp4", global_index=3),
+            self.sample(20.5, video_path="a.mp4", global_index=4),
+        ]
+        selected_path = [
+            {"sample": source_frames[0], "score": 0.2, "visual": 0.2},
+            {"sample": source_frames[1], "score": 0.2, "visual": 0.2},
+        ]
+        candidate_layers = [
+            [{"sample": source_frames[0], "score": 0.2, "visual": 0.2}],
+            [{"sample": source_frames[1], "score": 0.2, "visual": 0.2}],
+        ]
+
+        pools = core.build_dialogue_continuity_candidate_pools(
+            reference_frames,
+            candidate_layers,
+            selected_path,
+            source_frames,
+            FakeHasher(),
+            [0, 1],
+            0.5,
+            0.67,
+            audio_evidence=FakeEvidence(),
+        )
+
+        self.assertTrue(any(any(item.get("audio_content_similarity", 0.0) > 0.0 for item in pool) for pool in pools))
+
+    def test_dialogue_candidate_pool_sorting_keeps_audio_content_similar_items(self):
+        pool = [
+            {"score": 0.40, "visual": 0.80, "audio_content_similarity": 0.10, "audio_similarity": 0.10},
+            {"score": 0.40, "visual": 0.80, "audio_content_similarity": 0.92, "audio_similarity": 0.20},
+        ]
+
+        pool.sort(
+            key=lambda item: (
+                float(item.get("score", 0.0) or 0.0),
+                float(item.get("visual", 0.0) or 0.0),
+                float(item.get("audio_content_similarity", 0.0) or 0.0),
+                float(item.get("audio_similarity", 0.0) or 0.0),
+            ),
+            reverse=True,
+        )
+
+        self.assertEqual(pool[0]["audio_content_similarity"], 0.92)
 
     def test_noncut_continuity_repair_skips_dialogue_window(self):
         matches = [

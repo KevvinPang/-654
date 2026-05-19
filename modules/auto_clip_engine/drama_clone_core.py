@@ -689,6 +689,7 @@ MATCH_DIALOGUE_AUDIO_SEQUENCE_MIN_PATH_WEIGHT = 0.85
 MATCH_DIALOGUE_AUDIO_PATH_EMISSION_WEIGHT = 1.80
 MATCH_DIALOGUE_ASR_VERIFY_PAD_SECONDS = 0.08
 MATCH_DIALOGUE_ASR_VERIFY_MIN_DURATION = 0.42
+MATCH_DIALOGUE_ASR_VERIFY_MIN_STABLE_WINDOW_SECONDS = 0.86
 MATCH_DIALOGUE_ASR_VERIFY_MIN_VISIBLE = 2
 MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE = 0.62
 MATCH_DIALOGUE_ASR_VERIFY_MARGIN = 0.06
@@ -696,8 +697,13 @@ MATCH_DIALOGUE_ASR_VERIFY_LOW_IMPROVED_MIN_SCORE = 0.38
 MATCH_DIALOGUE_ASR_VERIFY_LOW_IMPROVEMENT = 0.12
 MATCH_DIALOGUE_ASR_VERIFY_MIN_AUDIO_GAIN = 0.09
 MATCH_DIALOGUE_ASR_VERIFY_STRONG_AUDIO_SCORE = 0.82
+MATCH_DIALOGUE_ASR_VERIFY_STRONG_ACOUSTIC_MATCH = 0.90
+MATCH_DIALOGUE_ASR_VERIFY_MEDIUM_TEXT_SCORE = 0.45
 MATCH_DIALOGUE_ASR_VERIFY_RERANK_MIN_AUDIO_GAIN = 0.12
 MATCH_DIALOGUE_ASR_VERIFY_RERANK_MAX_VISUAL_LOSS = 0.14
+MATCH_DIALOGUE_ASR_VERIFY_MERGE_GAP_SECONDS = 0.22
+MATCH_DIALOGUE_TEXT_RERANK_SHORTLIST_LIMIT = 48
+MATCH_DIALOGUE_TEXT_RERANK_ASR_CANDIDATE_LIMIT = 10
 MATCH_DIALOGUE_FINAL_RERANK_STABLE_VISUAL = 0.80
 MATCH_DIALOGUE_FINAL_RERANK_LOW_VISUAL = 0.58
 MATCH_DIALOGUE_BOUNDARY_ISLAND_MAX_SECONDS = 0.80
@@ -24104,6 +24110,15 @@ def audio_feature_similarity(
     return clamp(cosine * 0.60 + (1.0 - min(1.0, distance)) * 0.40, 0.0, 1.0)
 
 
+def audio_content_similarity(
+    left: Optional[Tuple[Tuple[float, ...], Tuple[float, ...]]],
+    right: Optional[Tuple[Tuple[float, ...], Tuple[float, ...]]],
+) -> Optional[float]:
+    if left is None or right is None:
+        return None
+    return MatchAudioEvidence._content_signature_similarity(left, right)
+
+
 class MatchAudioEvidence:
     def __init__(
         self,
@@ -24300,6 +24315,150 @@ class MatchAudioEvidence:
         text = normalize_subtitle_text("".join(entry.text for entry in entries))
         self.segment_transcript_cache[cache_key] = text
         return text
+
+    def _samples_for_transcription_media(self, media_path: Path) -> Tuple[Optional["np.ndarray"], int]:
+        media = Path(media_path)
+        try:
+            if media.resolve() == self.reference_video.resolve():
+                return self.reference_samples, self.reference_sample_rate
+        except OSError:
+            pass
+        return self._load_source_audio(str(media))
+
+    def transcribe_dialogue_segment_texts_batch(
+        self,
+        media_path: Path,
+        windows: Sequence[Tuple[float, float]],
+    ) -> Dict[Tuple[float, float], str]:
+        results: Dict[Tuple[float, float], str] = {}
+        pending: List[Tuple[Tuple[float, float], Tuple[str, float, float], float, float]] = []
+        media = Path(media_path)
+        media_identity = str(media.resolve())
+
+        for raw_start, raw_end in windows:
+            segment_start = max(0.0, float(raw_start))
+            segment_end = max(segment_start, float(raw_end))
+            result_key = (round(segment_start, 3), round(segment_end, 3))
+            cache_key = (media_identity, result_key[0], result_key[1])
+            if cache_key in self.segment_transcript_cache:
+                results[result_key] = self.segment_transcript_cache[cache_key]
+                continue
+            if segment_end - segment_start < MATCH_DIALOGUE_ASR_VERIFY_MIN_DURATION:
+                self.segment_transcript_cache[cache_key] = ""
+                results[result_key] = ""
+                continue
+            pending.append((result_key, cache_key, segment_start, segment_end))
+
+        if not pending:
+            return results
+        if len(pending) == 1:
+            result_key, _cache_key, segment_start, segment_end = pending[0]
+            results[result_key] = self.transcribe_dialogue_segment_text(media, segment_start, segment_end)
+            return results
+        if not NUMPY_AVAILABLE:
+            for result_key, _cache_key, segment_start, segment_end in pending:
+                results[result_key] = self.transcribe_dialogue_segment_text(media, segment_start, segment_end)
+            return results
+
+        samples, sample_rate = self._samples_for_transcription_media(media)
+        if samples is None or sample_rate <= 0:
+            for result_key, _cache_key, segment_start, segment_end in pending:
+                results[result_key] = self.transcribe_dialogue_segment_text(media, segment_start, segment_end)
+            return results
+
+        source_duration = max(0.0, float(samples.size) / float(sample_rate))
+        separator_seconds = max(0.22, AUDIO_UNTRANSCRIBED_WINDOW_ASR_SEPARATOR_SECONDS)
+        separator_samples = max(1, int(round(sample_rate * separator_seconds)))
+        separator = np.zeros(separator_samples, dtype=np.float32)
+        batch_segments: List["np.ndarray"] = []
+        batch_map: List[Tuple[float, float, Tuple[float, float], Tuple[str, float, float]]] = []
+        cursor_seconds = 0.0
+        normalized_windows: List[Tuple[float, float]] = []
+
+        for result_key, cache_key, segment_start, segment_end in pending:
+            start = max(0.0, min(source_duration, float(segment_start)))
+            end = min(source_duration, max(start + 0.05, float(segment_end)))
+            left = max(0, int(math.floor(start * sample_rate)))
+            right = min(int(samples.size), int(math.ceil(end * sample_rate)))
+            if right <= left + max(16, int(sample_rate * 0.05)):
+                self.segment_transcript_cache[cache_key] = ""
+                results[result_key] = ""
+                continue
+            segment = samples[left:right].astype(np.float32, copy=True)
+            segment_duration = float(segment.size) / float(sample_rate)
+            batch_start = cursor_seconds
+            batch_end = cursor_seconds + segment_duration
+            batch_segments.append(segment)
+            batch_map.append((batch_start, batch_end, result_key, cache_key))
+            normalized_windows.append((round(start, 3), round(end, 3)))
+            batch_segments.append(separator)
+            cursor_seconds = batch_end + separator_seconds
+
+        if not batch_segments or not batch_map:
+            return results
+
+        payload = {
+            "media": self._media_cache_identity(media),
+            "windows": normalized_windows,
+            "version": "dialogue_asr_verify_batch_v1",
+        }
+        fingerprint = hashlib.sha1(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8", errors="ignore")
+        ).hexdigest()[:24]
+        cache_dir = Path(__file__).parent / "audio_cache" / "dialogue_match_asr_batches"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        batch_path = cache_dir / f"batch_{fingerprint}.wav"
+        if not batch_path.exists() or batch_path.stat().st_size <= 44:
+            batch_samples = np.concatenate(batch_segments).astype(np.float32, copy=False)
+            pcm = np.clip(batch_samples, -1.0, 1.0)
+            pcm16 = (pcm * 32767.0).astype(np.int16)
+            temp_path = batch_path.with_name(f"{batch_path.stem}_tmp{batch_path.suffix}")
+            safe_unlink_file(temp_path)
+            try:
+                with wave.open(str(temp_path), "wb") as handle:
+                    handle.setnchannels(1)
+                    handle.setsampwidth(2)
+                    handle.setframerate(int(sample_rate))
+                    handle.writeframes(pcm16.tobytes())
+                safe_unlink_file(batch_path)
+                temp_path.replace(batch_path)
+            except (OSError, wave.Error):
+                safe_unlink_file(temp_path)
+                for result_key, _cache_key, segment_start, segment_end in pending:
+                    if result_key not in results:
+                        results[result_key] = self.transcribe_dialogue_segment_text(media, segment_start, segment_end)
+                return results
+
+        parsed = run_audio_first_transcription(
+            batch_path,
+            log_func=None,
+            log_name="对白匹配文本批量校验",
+            use_qwen=False,
+        )
+        if parsed is None:
+            for result_key, _cache_key, segment_start, segment_end in pending:
+                if result_key not in results:
+                    results[result_key] = self.transcribe_dialogue_segment_text(media, segment_start, segment_end)
+            return results
+
+        batch_audio_samples, batch_sample_rate = load_wav_mono_samples(batch_path)
+        entries, _repair_count = build_audio_first_entries_from_parsed_transcription(
+            parsed,
+            audio_samples=batch_audio_samples,
+            sample_rate=batch_sample_rate,
+        )
+        for batch_start, batch_end, result_key, cache_key in batch_map:
+            parts: List[str] = []
+            for entry in entries:
+                overlap = min(float(entry.end), batch_end) - max(float(entry.start), batch_start)
+                if overlap <= 0.03:
+                    continue
+                parts.append(entry.text)
+            text = normalize_subtitle_text("".join(parts))
+            self.segment_transcript_cache[cache_key] = text
+            results[result_key] = text
+
+        return results
 
     @staticmethod
     def transcript_similarity(left_text: str, right_text: str) -> Optional[float]:
@@ -24740,6 +24899,7 @@ def build_frame_match_dialogue_intervals(
     entries: Sequence[SubtitleEntry],
     pad_seconds: float = MATCH_DIALOGUE_AUDIO_ASSIST_PAD_SECONDS,
     merge_adjacent: bool = True,
+    merge_gap_seconds: float = 0.08,
 ) -> List[Tuple[float, float]]:
     intervals: List[Tuple[float, float]] = []
     pad = max(0.0, float(pad_seconds))
@@ -24764,7 +24924,7 @@ def build_frame_match_dialogue_intervals(
         return trimmed
     merged: List[Tuple[float, float]] = []
     for start, end in intervals:
-        if merged and start <= merged[-1][1] + 0.08:
+        if merged and start <= merged[-1][1] + max(0.0, float(merge_gap_seconds)):
             previous_start, previous_end = merged[-1]
             merged[-1] = (previous_start, max(previous_end, end))
         else:
@@ -31367,8 +31527,17 @@ def dialogue_window_warrants_final_audio_rerank(
         return False
     if current_text_score is not None:
         # In dialogue windows, the spoken line is the source of truth.  Visual
-        # similarity can recall candidates, but it must not preserve a window
-        # whose ASR text clearly does not match the reference dialogue.
+        # similarity can recall candidates, but text/acoustic agreement decides
+        # whether the current window is already close enough.
+        if current_text_score >= MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE:
+            return False
+        audio_confident = audio_count >= dialogue_audio_required_count(len(path)) if audio_count > 0 else False
+        if (
+            current_text_score >= MATCH_DIALOGUE_ASR_VERIFY_MEDIUM_TEXT_SCORE
+            and audio_confident
+            and avg_audio >= MATCH_DIALOGUE_ASR_VERIFY_STRONG_ACOUSTIC_MATCH
+        ):
+            return False
         return current_text_score < MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE
     if audio_count <= 0:
         return False
@@ -31558,6 +31727,63 @@ def append_dialogue_candidate_at_position(
     append_unique_match_candidate(candidate_pool, candidate)
 
 
+def append_dialogue_candidate_with_content_similarity(
+    candidate_pool: List[Dict[str, object]],
+    reference_frames: Sequence[ReferenceFrame],
+    source_frames: Sequence[FrameSample],
+    hasher: VisualHasher,
+    ref_index: int,
+    pos: int,
+    similarity_threshold: float,
+    audio_evidence: Optional[MatchAudioEvidence] = None,
+) -> None:
+    if pos < 0 or pos >= len(source_frames):
+        return
+    candidate = evaluate_global_match_candidate_at_position(
+        reference_frames,
+        source_frames,
+        hasher,
+        ref_index,
+        pos,
+        similarity_threshold,
+    )
+    sample = candidate.get("sample")
+    if isinstance(sample, FrameSample):
+        content_score = audio_evidence.content_similarity(reference_frames[ref_index], sample) if audio_evidence is not None else None
+        if content_score is not None:
+            candidate["audio_content_similarity"] = round(float(content_score), 4)
+            candidate["score"] = float(candidate.get("score", 0.0) or 0.0) + min(
+                MATCH_DIALOGUE_AUDIO_ASSIST_MAX_SCORE_DELTA,
+                max(0.0, (float(content_score) - 0.56) * 0.42),
+    )
+    append_unique_match_candidate(candidate_pool, candidate)
+
+
+def annotate_dialogue_candidate_pool_content_similarity(
+    candidate_pools: Sequence[List[Dict[str, object]]],
+    reference_frames: Sequence[ReferenceFrame],
+    ref_indices: Sequence[int],
+    audio_evidence: Optional[MatchAudioEvidence],
+) -> None:
+    if audio_evidence is None or not audio_evidence.enabled:
+        return
+    for local_index, ref_index in enumerate(ref_indices):
+        if local_index >= len(candidate_pools):
+            break
+        for candidate in candidate_pools[local_index]:
+            sample = candidate.get("sample")
+            if not isinstance(sample, FrameSample):
+                continue
+            content_score = audio_evidence.content_similarity(reference_frames[ref_index], sample)
+            if content_score is None:
+                continue
+            candidate["audio_content_similarity"] = round(float(content_score), 4)
+            candidate["score"] = float(candidate.get("score", 0.0) or 0.0) + min(
+                MATCH_DIALOGUE_AUDIO_ASSIST_MAX_SCORE_DELTA,
+                max(0.0, (float(content_score) - 0.56) * 0.42),
+            )
+
+
 def build_dialogue_continuity_candidate_pools(
     reference_frames: Sequence[ReferenceFrame],
     candidate_layers: Sequence[Sequence[Dict[str, object]]],
@@ -31615,6 +31841,53 @@ def build_dialogue_continuity_candidate_pools(
                     audio_evidence=audio_evidence,
                 )
 
+    if audio_evidence is not None and audio_evidence.enabled:
+        annotate_dialogue_candidate_pool_content_similarity(
+            candidate_pools,
+            reference_frames,
+            ref_indices,
+            audio_evidence,
+        )
+        content_seeds: List[Tuple[int, Dict[str, object]]] = []
+        for local_index, ref_index in enumerate(ref_indices):
+            layer_candidates = list(candidate_pools[local_index])
+            layer_candidates.sort(
+                key=lambda item: (
+                    float(item.get("audio_content_similarity", 0.0) or 0.0),
+                    float(item.get("audio_similarity", 0.0) or 0.0),
+                    float(item.get("visual", 0.0) or 0.0),
+                ),
+                reverse=True,
+            )
+            for candidate in layer_candidates[:8]:
+                if float(candidate.get("audio_content_similarity", 0.0) or 0.0) < 0.54:
+                    continue
+                content_seeds.append((ref_index, candidate))
+
+        for seed_ref_index, seed_candidate in content_seeds:
+            seed_sample = cast(FrameSample, seed_candidate["sample"])
+            seed_ref_time = float(reference_frames[seed_ref_index].timestamp)
+            for local_index, target_ref_index in enumerate(ref_indices):
+                target_ref_time = float(reference_frames[target_ref_index].timestamp)
+                expected_offset = int(round((target_ref_time - seed_ref_time) / max(0.1, frame_interval)))
+                expected_pos = seed_sample.global_index + expected_offset
+                for delta in (-1, 0, 1):
+                    pos = expected_pos + delta
+                    if pos < 0 or pos >= len(source_frames):
+                        continue
+                    if source_frames[pos].video_path != seed_sample.video_path:
+                        continue
+                    append_dialogue_candidate_with_content_similarity(
+                        candidate_pools[local_index],
+                        reference_frames,
+                        source_frames,
+                        hasher,
+                        target_ref_index,
+                        pos,
+                        similarity_threshold,
+                        audio_evidence=audio_evidence,
+                    )
+
     append_dialogue_sequence_scan_candidates(
         candidate_pools,
         reference_frames,
@@ -31632,6 +31905,7 @@ def build_dialogue_continuity_candidate_pools(
             key=lambda item: (
                 float(item.get("score", 0.0) or 0.0),
                 float(item.get("visual", 0.0) or 0.0),
+                float(item.get("audio_content_similarity", 0.0) or 0.0),
                 float(item.get("audio_similarity", 0.0) or 0.0),
             ),
             reverse=True,
@@ -31943,11 +32217,12 @@ def find_best_text_verified_dialogue_sequence_path(
             recall_score += avg_audio * 1.35
         shortlist.append((recall_score, start_pos))
         shortlist.sort(key=lambda item: item[0], reverse=True)
-        del shortlist[72:]
+        del shortlist[MATCH_DIALOGUE_TEXT_RERANK_SHORTLIST_LIMIT:]
 
     best_path: Optional[List[Dict[str, object]]] = None
     best_rank: Tuple[float, float, float, float] = (-1.0, -1.0, -1.0, -999999.0)
-    for _recall_score, start_pos in shortlist[:36]:
+    candidate_paths: List[List[Dict[str, object]]] = []
+    for _recall_score, start_pos in shortlist[:MATCH_DIALOGUE_TEXT_RERANK_ASR_CANDIDATE_LIMIT]:
         first_sample = source_frames[start_pos]
         path: List[Dict[str, object]] = []
         valid = True
@@ -31977,6 +32252,26 @@ def find_best_text_verified_dialogue_sequence_path(
         avg_visual = sum(float(item.get("visual", 0.0) or 0.0) for item in path) / len(path)
         if avg_visual < weak_visual_floor:
             continue
+        candidate_paths.append(path)
+
+    if candidate_paths:
+        source_batches: Dict[str, List[Tuple[float, float]]] = {}
+        for path in candidate_paths:
+            first_sample = path[0].get("sample")
+            last_sample = path[-1].get("sample")
+            if not isinstance(first_sample, FrameSample) or not isinstance(last_sample, FrameSample):
+                continue
+            source_start = max(0.0, float(first_sample.timestamp) - MATCH_DIALOGUE_ASR_VERIFY_PAD_SECONDS)
+            source_end = (
+                float(last_sample.timestamp)
+                + max(0.1, float(frame_interval))
+                + MATCH_DIALOGUE_ASR_VERIFY_PAD_SECONDS
+            )
+            source_batches.setdefault(first_sample.video_path, []).append((source_start, source_end))
+        for source_video, windows in source_batches.items():
+            audio_evidence.transcribe_dialogue_segment_texts_batch(Path(source_video), windows)
+
+    for path in candidate_paths:
         text_score = audio_evidence.dialogue_window_transcript_similarity(
             reference_frames,
             ref_indices,
@@ -32356,6 +32651,7 @@ def repair_final_dialogue_match_continuity(
     logged = 0
     asr_logged = 0
     for interval_start, interval_end in dialogue_intervals:
+        interval_duration = max(0.0, float(interval_end) - float(interval_start))
         ref_indices = dialogue_interval_reference_indices(
             reference_frames,
             len(repaired_matches),
@@ -32393,16 +32689,23 @@ def repair_final_dialogue_match_continuity(
         )
         current_avg_visual = sum(float(item.get("visual", 0.0) or 0.0) for item in current_window) / len(current_window)
         current_avg_audio, current_audio_count = dialogue_path_audio_average(current_window)
-        current_text_score = dialogue_current_window_text_score(
-            reference_frames=reference_frames,
-            ref_indices=ref_indices,
-            current_window=current_window,
-            frame_interval=frame_interval,
-            audio_evidence=audio_evidence,
-        )
+        current_text_score: Optional[float] = None
+        if interval_duration >= MATCH_DIALOGUE_ASR_VERIFY_MIN_STABLE_WINDOW_SECONDS:
+            current_text_score = dialogue_current_window_text_score(
+                reference_frames=reference_frames,
+                ref_indices=ref_indices,
+                current_window=current_window,
+                frame_interval=frame_interval,
+                audio_evidence=audio_evidence,
+            )
         text_forced_rerank = (
             current_text_score is not None
             and current_text_score < MATCH_DIALOGUE_ASR_VERIFY_MIN_SCORE
+            and not (
+                dialogue_audio_is_confident(current_window, current_audio_count)
+                and current_text_score >= MATCH_DIALOGUE_ASR_VERIFY_MEDIUM_TEXT_SCORE
+                and current_avg_audio >= MATCH_DIALOGUE_ASR_VERIFY_STRONG_ACOUSTIC_MATCH
+            )
         )
         if not dialogue_window_warrants_final_audio_rerank(
             current_window,
@@ -41617,7 +41920,7 @@ def run_clone_pipeline(
         frame_match_dialogue_intervals = build_frame_match_dialogue_intervals(subtitle_bundle.all_entries)
         final_dialogue_match_intervals = build_frame_match_dialogue_intervals(
             subtitle_bundle.all_entries,
-            merge_adjacent=False,
+            merge_gap_seconds=MATCH_DIALOGUE_ASR_VERIFY_MERGE_GAP_SECONDS,
         )
         if abs(matching_reference_speed_factor - 1.0) > 0.0005:
             frame_match_dialogue_intervals = [
