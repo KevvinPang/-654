@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -13,6 +14,19 @@ def _load_json(path: Path) -> dict:
 
 def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _write_error(path: Path, exc: BaseException) -> None:
+    error_path = path.with_suffix(path.suffix + ".error.json")
+    _write_json(
+        error_path,
+        {
+            "engine": "funasr",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(limit=8),
+        },
+    )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -103,4 +117,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except BaseException as exc:
+        output_arg = None
+        argv = sys.argv[1:]
+        for index, item in enumerate(argv):
+            if item == "--output" and index + 1 < len(argv):
+                output_arg = argv[index + 1]
+                break
+        if output_arg:
+            try:
+                _write_error(Path(output_arg), exc)
+            except Exception:
+                pass
+        raise

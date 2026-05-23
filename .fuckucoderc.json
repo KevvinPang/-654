@@ -1,0 +1,60 @@
+{
+  "include": [
+    "*.py",
+    "*.js",
+    "*.html",
+    "*.ps1",
+    "*.bat",
+    "modules/**/*.py",
+    "tests/**/*.py"
+  ],
+  "exclude": [
+    ".git/**",
+    "__pycache__/**",
+    "**/__pycache__/**",
+    ".venv/**",
+    "venv/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "logs/**",
+    "runtime/**",
+    "hub/**",
+    "assets/**",
+    "modules/**/audio_cache/**",
+    "modules/**/tts_cache/**",
+    "modules/**/_internal/**",
+    "modules/**/site-packages/**",
+    "modules/subtitle_extractor/**",
+    "modules/subtitle_extractor_source/**",
+    "modules/baidu_linkswift/**",
+    "*.server_backup.*",
+    "*.corrupted_backup_*.html",
+    ".tmp_*",
+    ".extract_ui_check.js",
+    "*.debug.jsonl",
+    "*.error.json",
+    "fuck-u-code-report.*"
+  ],
+  "concurrency": 4,
+  "verbose": false,
+  "output": {
+    "format": "console",
+    "top": 12,
+    "maxIssues": 8,
+    "showDetails": true
+  },
+  "metrics": {
+    "weights": {
+      "complexity": 0.32,
+      "duplication": 0.2,
+      "size": 0.18,
+      "structure": 0.12,
+      "error": 0.08,
+      "documentation": 0.05,
+      "naming": 0.05
+    }
+  },
+  "i18n": {
+    "locale": "zh"
+  }
+}

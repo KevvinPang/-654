@@ -18,6 +18,15 @@ runtime/
 hub/
 @AutomationLog.txt
 
+# Local probes, generated reports, and stale backups
+.tmp_*
+.extract_ui_check.js
+*.server_backup.*
+*.corrupted_backup_*.html
+*.debug.jsonl
+*.error.json
+fuck-u-code-report.*
+
 modules/**/audio_cache/
 modules/**/tts_cache/
 modules/**/_internal/

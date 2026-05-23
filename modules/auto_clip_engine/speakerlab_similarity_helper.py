@@ -220,7 +220,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     centroids: Dict[str, object] = {}
     seed_vectors_by_label: Dict[str, List[Tuple[int, object]]] = {}
     seed_stats: Dict[str, int] = {}
-    for label in ("narration", "dialogue"):
+    for label in ("narration",):
         items = seed_groups.get(label) or []
         vectors: List[Tuple[int, object]] = []
         for item in items:
@@ -276,12 +276,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     6,
                 ),
                 "dialogue_similarity": round(
-                    _group_similarity_for_entry(
-                        index,
-                        vector,
-                        centroids.get("dialogue"),
-                        seed_vectors_by_label.get("dialogue", []),
-                    ),
+                    0.0,
                     6,
                 ),
             }
