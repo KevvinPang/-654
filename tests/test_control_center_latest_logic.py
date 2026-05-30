@@ -114,6 +114,36 @@ class ControlCenterLatestLogicTests(unittest.TestCase):
             control_center.JOBS.clear()
             control_center.JOBS.update(original_jobs)
 
+    def test_official_client_workspaces_do_not_require_web_login_gate(self):
+        task = {
+            "baidu_share": [
+                {
+                    "share_url": "https://pan.baidu.com/s/abc?pwd=1234",
+                    "download_mode": "official_client",
+                }
+            ]
+        }
+        with mock.patch.object(control_center, "get_workspace_task", return_value=task):
+            with mock.patch.object(control_center, "ensure_baidu_login_ready") as login_ready:
+                control_center.ensure_baidu_login_for_workspaces(["demo"])
+
+        login_ready.assert_not_called()
+
+    def test_api_baidu_download_still_requires_web_login_gate(self):
+        task = {
+            "baidu_share": [
+                {
+                    "share_url": "https://pan.baidu.com/s/abc?pwd=1234",
+                    "download_mode": "api",
+                }
+            ]
+        }
+        with mock.patch.object(control_center, "get_workspace_task", return_value=task):
+            with mock.patch.object(control_center, "ensure_baidu_login_ready") as login_ready:
+                control_center.ensure_baidu_login_for_workspaces(["demo"])
+
+        login_ready.assert_called_once_with(auto_open_login=True)
+
 
 if __name__ == "__main__":
     unittest.main()

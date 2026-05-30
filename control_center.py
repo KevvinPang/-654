@@ -2490,7 +2490,6 @@ def list_baidu_share_files(share_url: str) -> dict[str, Any]:
     share_url = str(share_url or "").strip()
     if not share_url:
         raise ValueError("share_url is required")
-    ensure_baidu_login_ready(auto_open_login=True)
 
     script_path = PROJECT_ROOT / "modules" / "baidu_share_downloader" / "baidu_share_downloader.py"
     python_path = ensure_baidu_share_python()
@@ -2730,13 +2729,19 @@ def ensure_baidu_login_ready(*, auto_open_login: bool) -> dict[str, Any]:
 
 
 def ensure_baidu_login_for_workspaces(workspace_names: list[str]) -> None:
-    needs_baidu = False
+    needs_web_login = False
     for workspace_name in workspace_names:
         task = get_workspace_task(workspace_name)
-        if task.get("baidu_share"):
-            needs_baidu = True
+        for item in task.get("baidu_share") or []:
+            if not isinstance(item, dict):
+                continue
+            mode = str(item.get("download_mode") or "official_client").strip().lower()
+            if mode in {"api", "direct", "tool", "tool_direct"}:
+                needs_web_login = True
+                break
+        if needs_web_login:
             break
-    if not needs_baidu:
+    if not needs_web_login:
         return
 
     ensure_baidu_login_ready(auto_open_login=True)

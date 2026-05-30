@@ -511,11 +511,61 @@ def resolve_glob_matches(workspace_root: Path, pattern: str | None, *, directori
     return matches
 
 
+def directory_has_supported_videos(directory: Path) -> bool:
+    if not directory.is_dir():
+        return False
+    try:
+        return any(
+            item.is_file() and item.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
+            for item in directory.iterdir()
+        )
+    except OSError:
+        return False
+
+
 def infer_first_baidu_output_dir(workspace: WorkspaceContext) -> Path | None:
     tasks = workspace.config.get("baidu_share") or []
     if not tasks:
         return None
-    return resolve_download_output_dir(workspace, tasks[0].get("output_subdir"), "downloads/baidu")
+    output_dir = resolve_download_output_dir(workspace, tasks[0].get("output_subdir"), "downloads/baidu")
+    if directory_has_supported_videos(output_dir):
+        return output_dir
+
+    expected_parent_dirs: list[Path] = []
+    for raw_task in tasks:
+        task = dict(raw_task or {})
+        task_output_dir = resolve_download_output_dir(workspace, task.get("output_subdir"), "downloads/baidu")
+        try:
+            if task_output_dir.resolve() != output_dir.resolve():
+                continue
+        except OSError:
+            continue
+        expected_output = expected_baidu_output_path(task_output_dir, task)
+        if expected_output is None:
+            continue
+        parent = expected_output.parent
+        if parent != output_dir and parent.is_dir():
+            expected_parent_dirs.append(parent.resolve())
+
+    unique_parent_dirs = sorted(set(expected_parent_dirs), key=lambda item: str(item).casefold())
+    if len(unique_parent_dirs) == 1 and directory_has_supported_videos(unique_parent_dirs[0]):
+        return unique_parent_dirs[0]
+
+    try:
+        child_video_dirs = sorted(
+            {
+                item.parent.resolve()
+                for item in output_dir.rglob("*")
+                if item.is_file() and item.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
+            },
+            key=lambda item: str(item).casefold(),
+        )
+    except OSError:
+        child_video_dirs = []
+    if len(child_video_dirs) == 1:
+        return child_video_dirs[0]
+
+    return output_dir
 
 
 def infer_first_douyin_output_dir(workspace: WorkspaceContext) -> Path | None:
@@ -2233,7 +2283,7 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
     shared_settings = workspace.config.get("settings") or {}
     handoff_mode = str(shared_settings.get("baidu_share_handoff_mode") or "").strip().lower()
     if handoff_mode not in {"queue", "invoker"}:
-        handoff_mode = ""
+        handoff_mode = "invoker"
 
     specs: list[TaskSpec] = []
     official_groups: dict[tuple[str, str], dict[str, Any]] = {}
@@ -2328,6 +2378,7 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
         if len(preview_labels) > 3:
             preview = f"{preview} ... 共 {len(preview_labels)} 个文件"
         spec_path = workspace.root / "temp" / f"official_client_group_{group_index}.json"
+        spec_path.parent.mkdir(parents=True, exist_ok=True)
         spec_path.write_text(
             json.dumps(
                 {
@@ -2352,8 +2403,7 @@ def build_baidu_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             "--target-spec-file",
             str(spec_path),
         ]
-        if handoff_mode:
-            command.extend(["--handoff-mode", handoff_mode])
+        command.extend(["--handoff-mode", handoff_mode])
         specs.append(
             TaskSpec(
                 "baidu_share",
@@ -2578,6 +2628,8 @@ def find_matching_subtitle(
     used_subtitles: set[Path],
     video_path: Path,
     workspace_root: Path,
+    *,
+    allow_single_fallback: bool = True,
 ) -> Path | None:
     expected_stem = Path(safe_output_name_from_path(video_path, workspace_root)).stem.lower()
     direct_stem = sanitize_stem(video_path.stem).lower()
@@ -2591,7 +2643,7 @@ def find_matching_subtitle(
             if candidate not in used_subtitles:
                 return candidate
 
-    if len(subtitle_paths) == 1 and subtitle_paths[0] not in used_subtitles:
+    if allow_single_fallback and len(subtitle_paths) == 1 and subtitle_paths[0] not in used_subtitles:
         return subtitle_paths[0]
     return None
 
@@ -2600,8 +2652,16 @@ def find_matching_visual_subtitle(
     subtitle_paths: list[Path],
     video_path: Path,
     workspace_root: Path,
+    *,
+    allow_single_fallback: bool = True,
 ) -> Path | None:
-    return find_matching_subtitle(subtitle_paths, set(), video_path, workspace_root)
+    return find_matching_subtitle(
+        subtitle_paths,
+        set(),
+        video_path,
+        workspace_root,
+        allow_single_fallback=allow_single_fallback,
+    )
 
 
 def render_auto_clip_title(task: dict[str, Any], workspace: WorkspaceContext, reference_video: Path, index: int, total: int) -> str:
@@ -2752,13 +2812,28 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             for video_path in reference_videos:
                 subtitle_path = None
                 if reference_subtitles and not force_no_narration_mode:
-                    subtitle_path = find_matching_subtitle(reference_subtitles, used_subtitles, video_path, workspace.root)
+                    subtitle_path = find_matching_subtitle(
+                        reference_subtitles,
+                        used_subtitles,
+                        video_path,
+                        workspace.root,
+                        allow_single_fallback=len(reference_videos) <= 1,
+                    )
                     if subtitle_path is not None:
                         used_subtitles.add(subtitle_path)
                 pairs.append((video_path, subtitle_path))
         else:
-            first_subtitle = None if force_no_narration_mode or not reference_subtitles else reference_subtitles[0]
-            pairs = [(reference_videos[0], first_subtitle)]
+            reference_video = reference_videos[0]
+            subtitle_path = None
+            if reference_subtitles and not force_no_narration_mode:
+                subtitle_path = find_matching_subtitle(
+                    reference_subtitles,
+                    set(),
+                    reference_video,
+                    workspace.root,
+                    allow_single_fallback=len(reference_subtitles) <= 1,
+                )
+            pairs = [(reference_video, subtitle_path)]
 
         total_pairs = len(pairs)
         skip_existing = False
@@ -2784,7 +2859,12 @@ def build_auto_clip_specs(workspace: WorkspaceContext) -> list[TaskSpec]:
             if reference_subtitle is not None:
                 job_payload["reference_subtitle"] = str(reference_subtitle)
             reference_visual_subtitle = (
-                find_matching_visual_subtitle(reference_visual_subtitles, reference_video, workspace.root)
+                find_matching_visual_subtitle(
+                    reference_visual_subtitles,
+                    reference_video,
+                    workspace.root,
+                    allow_single_fallback=total_pairs <= 1,
+                )
                 if reference_visual_subtitles
                 else None
             )

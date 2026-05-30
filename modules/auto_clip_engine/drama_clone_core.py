@@ -444,6 +444,8 @@ REFERENCE_VISUAL_TTS_INTERNAL_SPLIT_MIN_SAMPLE_SCORE = 0.56
 REFERENCE_VISUAL_TTS_INTERNAL_SPLIT_MIN_PAIR_SCORE = 0.58
 REFERENCE_VISUAL_TTS_INTERNAL_SPLIT_MIN_AUDIO_SUPPORT = 0.58
 REFERENCE_VISUAL_TTS_INTERNAL_SPLIT_MAX_PER_ENTRY = 3
+REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_GAP_SECONDS = 0.32
+REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_UNITS = MAX_SUBTITLE_CHARS + 2
 REFERENCE_VISUAL_CROSS_ENTRY_REPAIR_MIN_SCORE = 0.90
 REFERENCE_VISUAL_CROSS_ENTRY_REPAIR_MAX_GAP_SECONDS = 0.16
 REFERENCE_VISUAL_CROSS_ENTRY_REPAIR_CONTEXT_UNITS = 10
@@ -7059,10 +7061,9 @@ def plan_tts_sentence_links_locally(
             prefer_sentence_pauses
             and visual_assist_audio_ambiguous_min <= boundary_audio_pause < STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
         )
-        visual_join_protects_boundary = (
-            visual_join_evidence
-            and not strong_boundary_audio_pause
-            and (not has_boundary_audio_evidence or audio_pause_is_clear_zero)
+        visual_join_protects_boundary = visual_join_evidence and not (
+            has_boundary_audio_evidence
+            and boundary_audio_pause >= STRICT_TTS_VISUAL_JOIN_AUDIO_BLOCK_MIN_SECONDS
         )
         visual_join_gap_limit = max(0.32, min(0.72, reference_gap * 4.0 + 0.24))
         seamless_boundary_audio = (
@@ -7079,7 +7080,7 @@ def plan_tts_sentence_links_locally(
         )
         if pre_structural_required_join:
             local_join_limit = max(local_join_limit, max(0.12, min(0.24, reference_gap * 2.00 + 0.06)))
-        if visual_join_protects_boundary and not audio_pause_is_ambiguous:
+        if visual_join_protects_boundary:
             local_join_limit = max(local_join_limit, visual_join_gap_limit)
         if gap < 0 or gap > local_join_limit:
             sentence_buffer = upcoming_text
@@ -7313,7 +7314,6 @@ def plan_tts_sentence_links_locally(
         if (
             prefer_sentence_pauses
             and visual_join_protects_boundary
-            and not audio_pause_is_ambiguous
             and gap <= visual_join_gap_limit
         ):
             join_map[current.index] = True
@@ -7349,7 +7349,6 @@ def plan_tts_sentence_links_locally(
                 continue
             if (
                 visual_join_protects_boundary
-                and not audio_pause_is_ambiguous
                 and gap <= visual_join_gap_limit
             ):
                 join_map[current.index] = True
@@ -7406,7 +7405,7 @@ def plan_tts_sentence_links_locally(
                 sentence_buffer = upcoming_text
             continue
 
-        if visual_join_protects_boundary and not audio_pause_is_ambiguous and gap <= visual_join_gap_limit:
+        if visual_join_protects_boundary and gap <= visual_join_gap_limit:
             join_map[current.index] = True
             sentence_buffer = join_narration_text(current_sentence, upcoming_text, gap)
             continue
@@ -12888,6 +12887,9 @@ def split_funasr_sentence_item_by_large_audio_gap(
 
         left_text = funasr_slice_visible_range(text, 0, left_visible)
         right_text = funasr_slice_visible_range(text, visible_pos, total_visible)
+        compact_midword_split = looks_like_compact_funasr_midword_split(text, visible_pos, total_visible)
+        if compact_midword_split:
+            continue
         left_is_bridge = looks_like_short_funasr_audio_bridge(left_text)
         right_is_bridge = looks_like_short_funasr_audio_bridge(right_text)
         is_bridge_split = left_is_bridge or right_is_bridge
@@ -13099,10 +13101,7 @@ def split_funasr_sentence_item_by_audio_timing(
                     visible_pos,
                     total_visible,
                 )
-                if compact_midword_split and not allow_short_side and float(candidate.get("score", 0.0) or 0.0) < max(
-                    0.82,
-                    FUNASR_AUDIO_SPLIT_STRONG_CANDIDATE_SCORE + 0.18,
-                ):
+                if compact_midword_split and not allow_short_side:
                     continue
                 left_visible = visible_pos - seg_start_visible
                 right_visible = seg_end_visible - visible_pos
@@ -15909,6 +15908,7 @@ def collect_visual_support_text_for_funasr_entry(
     visual_entries: Sequence[SubtitleEntry],
     *,
     margin_seconds: float = FUNASR_SENTENCE_MARGIN_SECONDS,
+    audio_entries: Optional[Sequence[SubtitleEntry]] = None,
 ) -> str:
     collected_parts: List[str] = []
     seen_signatures: set[str] = set()
@@ -15923,6 +15923,12 @@ def collect_visual_support_text_for_funasr_entry(
                 continue
         text = normalize_subtitle_text(visual_entry.text)
         if not text or watermark_like_text(text):
+            continue
+        if audio_entries is not None and visual_entry_crosses_audio_type_boundary(
+            visual_entry,
+            audio_entries,
+            [sentence_entry],
+        ):
             continue
         signature = cleanup_rewrite_text(text)
         if not signature or signature in seen_signatures:
@@ -16212,6 +16218,473 @@ def visual_supports_funasr_merge_text(funasr_text: str, visual_text: str) -> boo
     )
 
 
+def visual_sentence_text_reliably_matches_audio(audio_text: str, visual_text: str) -> bool:
+    normalized_audio = normalize_subtitle_text(audio_text)
+    normalized_visual = clean_visual_ocr_noise_text(visual_text)
+    if not normalized_audio or not normalized_visual or watermark_like_text(normalized_visual):
+        return False
+
+    audio_norm = subtitle_variant_signature(normalized_audio)
+    visual_norm = subtitle_variant_signature(normalized_visual)
+    if not audio_norm or not visual_norm:
+        return False
+    if audio_norm == visual_norm:
+        return True
+
+    matcher = difflib.SequenceMatcher(a=audio_norm, b=visual_norm)
+    ratio = matcher.ratio()
+    matching_blocks = [block for block in matcher.get_matching_blocks() if block.size > 0]
+    shared_units = sum(block.size for block in matching_blocks)
+    audio_coverage = shared_units / max(1, len(audio_norm))
+    visual_coverage = shared_units / max(1, len(visual_norm))
+
+    if visual_norm in audio_norm:
+        visual_start = audio_norm.find(visual_norm)
+        prefix_extra = max(0, visual_start)
+        suffix_extra = max(0, len(audio_norm) - visual_start - len(visual_norm))
+        return (
+            prefix_extra == 0
+            and suffix_extra <= max(3, int(math.ceil(len(visual_norm) * 0.35)))
+            and ratio >= 0.72
+        )
+    if audio_norm in visual_norm:
+        extra_units = len(visual_norm) - len(audio_norm)
+        return extra_units <= max(2, int(math.ceil(len(audio_norm) * 0.28))) and ratio >= 0.72
+
+    max_len_delta = max(3, int(math.ceil(min(len(audio_norm), len(visual_norm)) * 0.35)))
+    return (
+        abs(len(audio_norm) - len(visual_norm)) <= max_len_delta
+        and ratio >= 0.78
+        and audio_coverage >= 0.72
+        and visual_coverage >= 0.72
+    )
+
+
+def choose_visual_sentence_alignment_text(audio_text: str, visual_text: str) -> str:
+    normalized_audio = normalize_subtitle_text(audio_text)
+    normalized_visual = clean_visual_ocr_noise_text(visual_text)
+    if visual_sentence_text_reliably_matches_audio(normalized_audio, normalized_visual):
+        return normalized_visual
+    return normalized_audio
+
+
+def visual_audio_entries_can_join_as_narration(entries: Sequence[SubtitleEntry]) -> bool:
+    if not entries:
+        return False
+    return all(entry.entry_type == "narration" for entry in entries)
+
+
+def visual_entry_overlaps_audio_entry(
+    visual_entry: SubtitleEntry,
+    audio_entry: SubtitleEntry,
+    *,
+    margin_seconds: float = 0.08,
+) -> bool:
+    if subtitle_entry_overlap_seconds(audio_entry, visual_entry) > 0.04:
+        return True
+    audio_center = (float(audio_entry.start) + float(audio_entry.end)) * 0.5
+    return float(visual_entry.start) - margin_seconds <= audio_center <= float(visual_entry.end) + margin_seconds
+
+
+def visual_entry_crosses_audio_type_boundary(
+    visual_entry: SubtitleEntry,
+    audio_entries: Sequence[SubtitleEntry],
+    owner_entries: Sequence[SubtitleEntry],
+) -> bool:
+    if not audio_entries or not owner_entries:
+        return False
+    owner_types = {entry.entry_type for entry in owner_entries}
+    if len(owner_types) != 1:
+        return True
+    owner_type = next(iter(owner_types))
+    owner_indexes = {int(entry.index) for entry in owner_entries}
+    for audio_entry in audio_entries:
+        if int(audio_entry.index) in owner_indexes or audio_entry.entry_type == owner_type:
+            continue
+        if visual_entry_overlaps_audio_entry(visual_entry, audio_entry):
+            return True
+    return False
+
+
+def visual_sentence_candidate_positions(
+    visual_entry: SubtitleEntry,
+    audio_entries: Sequence[SubtitleEntry],
+    start_position: int,
+    used_positions: set[int],
+) -> List[int]:
+    positions: List[int] = []
+    visual_start = float(visual_entry.start)
+    visual_end = float(visual_entry.end)
+    for position in range(start_position, len(audio_entries)):
+        if position in used_positions:
+            continue
+        audio_entry = audio_entries[position]
+        if float(audio_entry.start) > visual_end + 0.18:
+            break
+        if float(audio_entry.end) < visual_start - 0.18:
+            continue
+        if not visual_audio_entries_can_join_as_narration([audio_entry]):
+            continue
+        audio_text = normalize_subtitle_text(audio_entry.text)
+        if not audio_text or watermark_like_text(audio_text):
+            continue
+        overlap = max(
+            0.0,
+            min(visual_end, float(audio_entry.end)) - max(visual_start, float(audio_entry.start)),
+        )
+        audio_duration = max(0.05, float(audio_entry.end) - float(audio_entry.start))
+        visual_duration = max(0.05, visual_end - visual_start)
+        overlap_required = max(0.06, min(0.20, audio_duration * 0.24, visual_duration * 0.18))
+        center = (float(audio_entry.start) + float(audio_entry.end)) * 0.5
+        if overlap >= overlap_required or visual_start - 0.08 <= center <= visual_end + 0.08:
+            positions.append(position)
+    return positions
+
+
+def align_funasr_entries_to_visual_sentences(
+    entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    audio_entries = reindex_subtitle_entries(entries)
+    cleaned_visual_entries = [
+        clone_subtitle_entry(entry, text=clean_visual_ocr_noise_text(entry.text))
+        for entry in reindex_subtitle_entries(visual_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    if not audio_entries or not cleaned_visual_entries:
+        return audio_entries, 0
+
+    replacements: Dict[int, Tuple[int, SubtitleEntry]] = {}
+    used_positions: set[int] = set()
+    search_position = 0
+    fix_count = 0
+    for visual_position, visual_entry in enumerate(cleaned_visual_entries):
+        visual_text = normalize_subtitle_text(visual_entry.text)
+        if not visual_text:
+            continue
+        while (
+            search_position < len(audio_entries)
+            and float(audio_entries[search_position].end) < float(visual_entry.start) - 0.35
+        ):
+            search_position += 1
+
+        positions = visual_sentence_candidate_positions(
+            visual_entry,
+            audio_entries,
+            search_position,
+            used_positions,
+        )
+        if not positions:
+            continue
+        if positions != list(range(positions[0], positions[-1] + 1)):
+            continue
+        if len(positions) > 6:
+            continue
+
+        group_entries = [audio_entries[position] for position in positions]
+        if not visual_audio_entries_can_join_as_narration(group_entries):
+            continue
+        if visual_entry_crosses_audio_type_boundary(visual_entry, audio_entries, group_entries):
+            continue
+        combined_text = normalize_subtitle_text("")
+        previous_entry: Optional[SubtitleEntry] = None
+        for group_entry in group_entries:
+            if previous_entry is None:
+                combined_text = normalize_subtitle_text(group_entry.text)
+            else:
+                combined_text = join_funasr_sentence_entries_text(
+                    combined_text,
+                    group_entry.text,
+                    float(group_entry.start) - float(previous_entry.end),
+                )
+            previous_entry = group_entry
+        if not visual_sentence_text_reliably_matches_audio(combined_text, visual_text):
+            continue
+
+        aligned_text = choose_visual_sentence_alignment_text(combined_text, visual_text)
+        if not aligned_text:
+            continue
+
+        first_position = positions[0]
+        last_position = positions[-1]
+        replacement = SubtitleEntry(
+            index=0,
+            start=float(group_entries[0].start),
+            end=max(float(group_entries[-1].end), float(group_entries[0].start) + 0.02),
+            text=aligned_text,
+            entry_type=group_entries[0].entry_type,
+        )
+        replacements[first_position] = (last_position, replacement)
+        for position in positions:
+            used_positions.add(position)
+        if (
+            len(positions) > 1
+            or cleanup_rewrite_text(aligned_text) != cleanup_rewrite_text(combined_text)
+        ):
+            fix_count += 1
+
+    if not replacements:
+        return audio_entries, 0
+
+    aligned_entries: List[SubtitleEntry] = []
+    position = 0
+    while position < len(audio_entries):
+        replacement = replacements.get(position)
+        if replacement is not None:
+            last_position, entry = replacement
+            aligned_entries.append(entry)
+            position = last_position + 1
+            continue
+        aligned_entries.append(audio_entries[position])
+        position += 1
+    return reindex_subtitle_entries(aligned_entries), fix_count
+
+
+def repair_visual_sentence_prefix_spillover(
+    entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[List[SubtitleEntry], int]:
+    reindexed_entries = reindex_subtitle_entries(entries)
+    cleaned_visual_entries = [
+        clone_subtitle_entry(entry, text=clean_visual_ocr_noise_text(entry.text))
+        for entry in reindex_subtitle_entries(visual_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    if len(reindexed_entries) < 2 or len(cleaned_visual_entries) < 2:
+        return reindexed_entries, 0
+
+    fixed_entries = list(reindexed_entries)
+    fix_count = 0
+    for position in range(len(fixed_entries) - 1):
+        current = fixed_entries[position]
+        upcoming = fixed_entries[position + 1]
+        if not visual_audio_entries_can_join_as_narration([current, upcoming]):
+            continue
+        current_text = normalize_subtitle_text(current.text)
+        upcoming_text = normalize_subtitle_text(upcoming.text)
+        if not current_text or not upcoming_text:
+            continue
+        current_norm = subtitle_variant_signature(current_text)
+        upcoming_norm = subtitle_variant_signature(upcoming_text)
+        if not current_norm or not upcoming_norm:
+            continue
+
+        best_visual_index = -1
+        best_overlap = 0.0
+        for visual_index, visual_entry in enumerate(cleaned_visual_entries[:-1]):
+            visual_text = normalize_subtitle_text(visual_entry.text)
+            visual_norm = subtitle_variant_signature(visual_text)
+            if not visual_norm or not visual_norm.startswith(current_norm):
+                continue
+            missing_units = len(visual_norm) - len(current_norm)
+            if missing_units <= 0 or missing_units > 5:
+                continue
+            overlap = subtitle_entry_overlap_seconds(current, visual_entry)
+            center = (float(current.start) + float(current.end)) * 0.5
+            if overlap <= 0.0 and not (float(visual_entry.start) - 0.12 <= center <= float(visual_entry.end) + 0.12):
+                continue
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_visual_index = visual_index
+        if best_visual_index < 0:
+            continue
+
+        left_visual = cleaned_visual_entries[best_visual_index]
+        right_visual = cleaned_visual_entries[best_visual_index + 1]
+        left_visual_text = normalize_subtitle_text(left_visual.text)
+        right_visual_text = normalize_subtitle_text(right_visual.text)
+        left_visual_norm = subtitle_variant_signature(left_visual_text)
+        missing_units = len(left_visual_norm) - len(current_norm)
+        if missing_units <= 0:
+            continue
+        missing_prefix = funasr_slice_visible_range(upcoming_text, 0, missing_units)
+        missing_prefix_norm = subtitle_variant_signature(missing_prefix)
+        expected_missing_norm = left_visual_norm[len(current_norm) :]
+        if not missing_prefix_norm or missing_prefix_norm != expected_missing_norm:
+            continue
+
+        trimmed_upcoming = funasr_slice_visible_range(
+            upcoming_text,
+            missing_units,
+            funasr_visible_char_count(upcoming_text),
+        )
+        if not visual_sentence_text_reliably_matches_audio(trimmed_upcoming, right_visual_text):
+            continue
+
+        split_time = clamp(
+            float(left_visual.end),
+            float(current.start) + 0.08,
+            float(upcoming.end) - 0.08,
+        )
+        fixed_entries[position] = clone_subtitle_entry(
+            current,
+            end=max(float(current.start) + 0.02, split_time),
+            text=left_visual_text,
+        )
+        fixed_entries[position + 1] = clone_subtitle_entry(
+            upcoming,
+            start=max(split_time, float(upcoming.start)),
+            text=choose_visual_sentence_alignment_text(trimmed_upcoming, right_visual_text),
+        )
+        fix_count += 1
+    return reindex_subtitle_entries(fixed_entries), fix_count
+
+
+def best_visual_sentence_index_for_audio_span(
+    text: str,
+    start: float,
+    end: float,
+    visual_entries: Sequence[SubtitleEntry],
+) -> int:
+    normalized_text = normalize_subtitle_text(text)
+    if not normalized_text:
+        return -1
+    best_index = -1
+    best_score = 0.0
+    span_start = float(start)
+    span_end = max(span_start + 0.02, float(end))
+    span_duration = max(0.05, span_end - span_start)
+    span_center = (span_start + span_end) * 0.5
+    for index, visual_entry in enumerate(visual_entries):
+        visual_text = clean_visual_ocr_noise_text(visual_entry.text)
+        if not visual_text or watermark_like_text(visual_text):
+            continue
+        visual_start = float(visual_entry.start)
+        visual_end = max(visual_start + 0.02, float(visual_entry.end))
+        if visual_end < span_start - 0.35:
+            continue
+        if visual_start > span_end + 0.35:
+            break
+        if not visual_sentence_text_reliably_matches_audio(normalized_text, visual_text):
+            continue
+        visual_duration = max(0.05, visual_end - visual_start)
+        overlap = max(0.0, min(span_end, visual_end) - max(span_start, visual_start))
+        visual_center = (visual_start + visual_end) * 0.5
+        if overlap <= 0.0 and abs(visual_center - span_center) > 0.28:
+            continue
+        time_score = max(overlap / span_duration, overlap / visual_duration)
+        audio_norm = subtitle_variant_signature(normalized_text)
+        visual_norm = subtitle_variant_signature(visual_text)
+        text_score = (
+            difflib.SequenceMatcher(a=audio_norm, b=visual_norm).ratio()
+            if audio_norm and visual_norm
+            else 0.0
+        )
+        score = text_score * 0.72 + min(1.0, time_score) * 0.28
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index if best_score >= 0.54 else -1
+
+
+def build_visual_subtitle_tts_boundary_evidence(
+    entries: Sequence[SubtitleEntry],
+    visual_entries: Sequence[SubtitleEntry],
+) -> Tuple[Dict[int, float], Dict[int, bool], Dict[str, float]]:
+    stats = {
+        "break_candidates": 0.0,
+        "join_candidates": 0.0,
+    }
+    reindexed_entries = reindex_subtitle_entries(entries)
+    cleaned_visual_entries = [
+        clone_subtitle_entry(entry, text=clean_visual_ocr_noise_text(entry.text))
+        for entry in reindex_subtitle_entries(visual_entries)
+        if normalize_subtitle_text(entry.text) and not watermark_like_text(entry.text)
+    ]
+    if len(reindexed_entries) < 2 or not cleaned_visual_entries:
+        return {}, {}, stats
+
+    pause_map: Dict[int, float] = {}
+    join_map: Dict[int, bool] = {}
+    for position in range(len(reindexed_entries) - 1):
+        current = reindexed_entries[position]
+        upcoming = reindexed_entries[position + 1]
+        if not visual_audio_entries_can_join_as_narration([current, upcoming]):
+            continue
+        current_text = normalize_subtitle_text(current.text)
+        upcoming_text = normalize_subtitle_text(upcoming.text)
+        if not current_text or not upcoming_text:
+            continue
+        gap = max(0.0, float(upcoming.start) - float(current.end))
+        combined_text = join_funasr_sentence_entries_text(current_text, upcoming_text, gap)
+        combined_visual_index = best_visual_sentence_index_for_audio_span(
+            combined_text,
+            float(current.start),
+            float(upcoming.end),
+            cleaned_visual_entries,
+        )
+        if combined_visual_index >= 0:
+            join_map[int(current.index)] = True
+            stats["join_candidates"] += 1.0
+            continue
+
+        left_visual_index = best_visual_sentence_index_for_audio_span(
+            current_text,
+            float(current.start),
+            float(current.end),
+            cleaned_visual_entries,
+        )
+        right_visual_index = best_visual_sentence_index_for_audio_span(
+            upcoming_text,
+            float(upcoming.start),
+            float(upcoming.end),
+            cleaned_visual_entries,
+        )
+        if left_visual_index < 0 or right_visual_index < 0:
+            continue
+        if left_visual_index == right_visual_index:
+            join_map[int(current.index)] = True
+            stats["join_candidates"] += 1.0
+        else:
+            pause_map[int(current.index)] = STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS
+            stats["break_candidates"] += 1.0
+    return pause_map, join_map, stats
+
+
+def visual_supports_cross_entry_no_break(
+    current: SubtitleEntry,
+    upcoming: SubtitleEntry,
+    visual_entry: SubtitleEntry,
+) -> bool:
+    current_text = normalize_subtitle_text(current.text)
+    upcoming_text = normalize_subtitle_text(upcoming.text)
+    visual_text = normalize_subtitle_text(visual_entry.text)
+    if (
+        not current_text
+        or not upcoming_text
+        or not visual_text
+        or watermark_like_text(visual_text)
+    ):
+        return False
+
+    current_norm = cleanup_rewrite_text(current_text)
+    upcoming_norm = cleanup_rewrite_text(upcoming_text)
+    visual_norm = cleanup_rewrite_text(visual_text)
+    if not current_norm or not upcoming_norm or not visual_norm:
+        return False
+    if current_norm not in visual_norm or upcoming_norm not in visual_norm:
+        return False
+    current_pos = visual_norm.find(current_norm)
+    upcoming_pos = visual_norm.find(upcoming_norm, current_pos + 1)
+    if current_pos < 0 or upcoming_pos < 0:
+        upcoming_pos = visual_norm.find(upcoming_norm)
+    if current_pos < 0 or upcoming_pos < 0 or upcoming_pos < current_pos:
+        return False
+
+    bridge_text = visual_norm[current_pos : upcoming_pos + len(upcoming_norm)]
+    joined_text = cleanup_rewrite_text(join_funasr_sentence_entries_text(current_text, upcoming_text, 0.0))
+    if not bridge_text or not joined_text:
+        return False
+    if joined_text not in bridge_text and bridge_text not in joined_text:
+        return False
+
+    visual_duration = max(0.05, float(visual_entry.end) - float(visual_entry.start))
+    covered = max(0.0, min(float(upcoming.end), float(visual_entry.end)) - max(float(current.start), float(visual_entry.start)))
+    if covered / visual_duration < 0.18:
+        return False
+    return True
+
+
 def visual_boundary_discourages_funasr_merge(
     left_visual_index: int,
     right_visual_index: int,
@@ -16225,9 +16698,49 @@ def visual_boundary_discourages_funasr_merge(
     right_index = max(left_visual_index, right_visual_index)
     left_visual = visual_entries[left_index]
     right_visual = visual_entries[right_index]
+    left_units = subtitle_display_units(left_visual.text)
+    right_units = subtitle_display_units(right_visual.text)
+    if left_units >= 5 and right_units >= 5:
+        return True
     visual_gap = max(0.0, float(right_visual.start) - float(left_visual.end))
     left_text = normalize_subtitle_text(left_visual.text)
     return visual_gap >= 0.055 or ends_with_minor_sentence_pause(left_text) or ends_with_terminal_sentence_pause(left_text)
+
+
+def same_visual_short_fragment_group_join_allowed(
+    current: SubtitleEntry,
+    upcoming: SubtitleEntry,
+    visual_entry: SubtitleEntry,
+) -> bool:
+    current_text = normalize_subtitle_text(current.text)
+    upcoming_text = strip_leading_subtitle_punctuation(upcoming.text)
+    visual_text = normalize_subtitle_text(visual_entry.text)
+    if not current_text or not upcoming_text or not visual_text or watermark_like_text(visual_text):
+        return False
+    if not visual_audio_entries_can_join_as_narration([current, upcoming]):
+        return False
+    if dialogue_like_text(current_text) or dialogue_like_text(upcoming_text):
+        return False
+    if ends_with_terminal_sentence_pause(current_text):
+        return False
+    if starts_with_strong_transition(upcoming_text):
+        return False
+    gap = max(0.0, float(upcoming.start) - float(current.end))
+    if gap > REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_GAP_SECONDS:
+        return False
+
+    combined_text = join_funasr_sentence_entries_text(current_text, upcoming_text, gap)
+    combined_units = subtitle_display_units(combined_text)
+    if combined_units > REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_UNITS:
+        return False
+    if not visual_supports_cross_entry_no_break(current, upcoming, visual_entry):
+        return False
+    visual_units = subtitle_display_units(visual_text)
+    if visual_units > REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_UNITS + 4:
+        return False
+    combined_norm = cleanup_rewrite_text(combined_text)
+    visual_norm = cleanup_rewrite_text(visual_text)
+    return bool(combined_norm and (combined_norm in visual_norm or visual_norm in combined_norm))
 
 
 def should_merge_funasr_entries_with_visual_grouping(
@@ -16235,10 +16748,10 @@ def should_merge_funasr_entries_with_visual_grouping(
     upcoming: SubtitleEntry,
     visual_entries: Sequence[SubtitleEntry],
 ) -> bool:
-    if not visual_entries or current.entry_type != "narration" or upcoming.entry_type != "narration":
+    if not visual_entries or not visual_audio_entries_can_join_as_narration([current, upcoming]):
         return False
     gap = max(0.0, float(upcoming.start) - float(current.end))
-    if gap > 0.18:
+    if gap > REFERENCE_VISUAL_SHORT_FRAGMENT_JOIN_MAX_GAP_SECONDS:
         return False
 
     current_text = normalize_subtitle_text(current.text)
@@ -16273,15 +16786,33 @@ def should_merge_funasr_entries_with_visual_grouping(
     if left_visual_index >= 0 and right_visual_index >= 0 and abs(left_visual_index - right_visual_index) > 1:
         return False
 
+    direct_visual_join = (
+        left_visual_index >= 0
+        and left_visual_index == right_visual_index
+        and visual_supports_cross_entry_no_break(
+            current,
+            upcoming,
+            visual_entries[left_visual_index],
+        )
+    )
+    short_fragment_group_join = (
+        left_visual_index >= 0
+        and left_visual_index == right_visual_index
+        and same_visual_short_fragment_group_join_allowed(
+            current,
+            upcoming,
+            visual_entries[left_visual_index],
+        )
+    )
     word_bridge = (
         looks_like_compact_cross_entry_word_bridge(current_text, upcoming_text)
         or looks_like_funasr_subject_word_break(current_text, upcoming_text)
     )
     overlap_join = cleanup_rewrite_text(merged_text) != cleanup_rewrite_text(current_text + upcoming_text)
     if visual_boundary_discourages_funasr_merge(left_visual_index, right_visual_index, visual_entries):
-        return word_bridge or overlap_join
+        return direct_visual_join or short_fragment_group_join or word_bridge or overlap_join
 
-    if left_visual_index == right_visual_index and left_visual_index >= 0:
+    if direct_visual_join or short_fragment_group_join or (left_visual_index == right_visual_index and left_visual_index >= 0):
         return True
     return gap <= 0.08 or word_bridge or overlap_join
 
@@ -16338,6 +16869,20 @@ def build_primary_entries_from_funasr_and_visual(
         return [], 0
 
     visual_fix_count = 0
+    primary_entries, visual_sentence_align_count = align_funasr_entries_to_visual_sentences(
+        primary_entries,
+        visual_entries,
+    )
+    if visual_sentence_align_count:
+        visual_fix_count += visual_sentence_align_count
+
+    primary_entries, visual_prefix_spill_count = repair_visual_sentence_prefix_spillover(
+        primary_entries,
+        visual_entries,
+    )
+    if visual_prefix_spill_count:
+        visual_fix_count += visual_prefix_spill_count
+
     primary_entries, visual_group_merge_count = merge_funasr_entries_with_visual_grouping(
         primary_entries,
         visual_entries,
@@ -16352,7 +16897,11 @@ def build_primary_entries_from_funasr_and_visual(
             visual_fix_count += len(split_entries)
             merged_entries.extend(split_entries)
             continue
-        visual_text = collect_visual_support_text_for_funasr_entry(entry, visual_entries)
+        visual_text = collect_visual_support_text_for_funasr_entry(
+            entry,
+            visual_entries,
+            audio_entries=primary_entries,
+        )
         merged_text = merge_funasr_text_with_visual_support(entry.text, visual_text) if visual_text else normalize_subtitle_text(entry.text)
         if cleanup_rewrite_text(merged_text) != cleanup_rewrite_text(normalize_subtitle_text(entry.text)):
             visual_fix_count += 1
@@ -23398,7 +23947,12 @@ def build_processed_subtitles(
     prefer_funasr_audio_subtitles = bool(settings.prefer_funasr_audio_subtitles) if settings else False
     audio_first_text_preserve_mode = prefer_funasr_audio_subtitles
     precomputed_funasr_input = bool(prefer_funasr_audio_subtitles and original_entries)
-    visual_entries = preserve_reference_timeline_entries([] if precomputed_funasr_input else original_entries)
+    external_visual_entries = preserve_reference_timeline_entries(
+        settings.visual_subtitle_entries if settings else []
+    )
+    visual_entries = preserve_reference_timeline_entries(
+        external_visual_entries if precomputed_funasr_input else original_entries
+    )
     working_entries: List[SubtitleEntry] = list(visual_entries)
     funasr_entries: List[SubtitleEntry] = []
     funasr_primary_mode = False
@@ -23459,7 +24013,15 @@ def build_processed_subtitles(
             log_func=log_func,
         )
     if prefer_funasr_audio_subtitles and funasr_entries:
-        working_entries = reindex_subtitle_entries(funasr_entries)
+        working_entries, visual_group_fix_count = build_primary_entries_from_funasr_and_visual(
+            funasr_entries,
+            external_visual_entries,
+        )
+        if log_func and visual_group_fix_count:
+            log_func(
+                "  Audio-first visual subtitle grouping assist: "
+                f"{visual_group_fix_count} text/boundary correction(s)"
+            )
         funasr_primary_mode = True
         if log_func and not precomputed_funasr_input:
             log_func(f"  FunASR audio-first subtitle mode: using {len(working_entries)} audio entries directly")
@@ -32646,6 +33208,27 @@ def build_tts_track(
             for entry_index, pause_duration in subtitle_boundary_pause_map.items():
                 if entry_index not in audio_boundary_pause_map:
                     audio_boundary_pause_map[entry_index] = float(pause_duration or 0.0)
+        visual_srt_pause_map, visual_srt_join_map, _visual_srt_stats = build_visual_subtitle_tts_boundary_evidence(
+            speech_entries,
+            settings.visual_subtitle_entries,
+        )
+        if visual_srt_pause_map or visual_srt_join_map:
+            strict_boundary_visual_pause_map = dict(strict_boundary_visual_pause_map or {})
+            strict_boundary_visual_join_map = dict(strict_boundary_visual_join_map or {})
+            for entry_index, should_join in visual_srt_join_map.items():
+                strict_boundary_visual_join_map[entry_index] = should_join
+                if should_join:
+                    strict_boundary_visual_pause_map.pop(entry_index, None)
+            for entry_index, pause_duration in visual_srt_pause_map.items():
+                if not strict_boundary_visual_join_map.get(entry_index, False):
+                    strict_boundary_visual_pause_map[entry_index] = pause_duration
+            if log_func:
+                log_func(
+                    "  TTS visual SRT sentence alignment: "
+                    f"{len(visual_srt_join_map)} no-break boundary(s), "
+                    f"{len(visual_srt_pause_map)} break boundary(s)"
+                )
+
         visual_pause_map, visual_join_map, _visual_stats = build_reference_visual_tts_boundary_evidence(
             speech_entries,
             settings.reference_video,
@@ -32653,15 +33236,29 @@ def build_tts_track(
             log_func=log_func,
         )
         if visual_pause_map:
-            strict_boundary_visual_pause_map = visual_pause_map
+            merged_pause_map = dict(strict_boundary_visual_pause_map or {})
+            active_join_map = dict(strict_boundary_visual_join_map or {})
+            for entry_index, pause_duration in visual_pause_map.items():
+                if not active_join_map.get(entry_index, False):
+                    merged_pause_map[entry_index] = pause_duration
+            strict_boundary_visual_pause_map = merged_pause_map
         if visual_join_map:
-            strict_boundary_visual_join_map = visual_join_map
+            merged_join_map = dict(strict_boundary_visual_join_map or {})
+            merged_pause_map = dict(strict_boundary_visual_pause_map or {})
+            for entry_index, should_join in visual_join_map.items():
+                merged_join_map[entry_index] = should_join
+                if should_join:
+                    merged_pause_map.pop(entry_index, None)
+            strict_boundary_visual_join_map = merged_join_map
+            strict_boundary_visual_pause_map = merged_pause_map
         if log_func:
-            if visual_pause_map or visual_join_map:
+            visual_break_count = len(strict_boundary_visual_pause_map or {})
+            visual_join_count = len(strict_boundary_visual_join_map or {})
+            if visual_break_count or visual_join_count:
                 log_func(
                     "  TTS audio-primary pause planning: "
-                    f"{len(visual_pause_map)} visual break boundary(s), "
-                    f"{len(visual_join_map)} visual no-break boundary(s); "
+                    f"{visual_break_count} visual break boundary(s), "
+                    f"{visual_join_count} visual no-break boundary(s); "
                     "visual evidence is weak assist for missing or ambiguous audio pauses"
                 )
             else:
@@ -34456,48 +35053,47 @@ def build_output_packaging_box_filters(video_width: int, video_height: int, styl
     bottom_edge_alpha = clamp(style_float(style, "bottom_edge_alpha", default_edge_alpha), 0.0, 1.0)
     top_gradient_alpha = clamp(style_float(style, "top_gradient_alpha", default_gradient_alpha), 0.0, 1.0)
     bottom_gradient_alpha = clamp(style_float(style, "bottom_gradient_alpha", default_gradient_alpha), 0.0, 1.0)
-    gradient_steps = max(72, min(160, style_int(style, "gradient_steps", 96)))
+    gradient_steps = max(96, min(160, style_int(style, "gradient_steps", 128)))
     top_curve = max(0.2, style_float(style, "top_gradient_curve", default_curve))
     bottom_curve = max(0.2, style_float(style, "bottom_gradient_curve", default_curve))
     filters: List[str] = []
+    smooth_step = lambda value: 0.5 - 0.5 * math.cos(math.pi * clamp(value, 0.0, 1.0))
 
     if top_height > 0:
-        top_edge = min(top_edge_height, top_height)
-        filters.append(f"drawbox=x=0:y=0:w=iw:h={top_edge}:color=black@{top_edge_alpha:.3f}:t=fill")
-        fade_start = top_edge
-        fade_height = max(0, top_height - fade_start)
-        if fade_height > 0:
-            band_height = max(1, int(math.ceil(fade_height / gradient_steps)))
-            for index in range(gradient_steps):
-                y = fade_start + index * band_height
-                if y >= top_height:
-                    break
-                height = min(band_height, top_height - y)
-                t = (index + 0.5) / gradient_steps
+        edge_ratio = min(0.92, max(0.02, top_edge_height / max(1.0, float(top_height))))
+        band_height = max(1, int(math.ceil(top_height / gradient_steps)))
+        for index in range(gradient_steps):
+            y = index * band_height
+            if y >= top_height:
+                break
+            height = min(band_height, top_height - y)
+            position = (y + height * 0.5) / max(1.0, float(top_height))
+            if position <= edge_ratio:
+                t = position / max(1e-6, edge_ratio)
+                alpha = top_edge_alpha - (top_edge_alpha - top_gradient_alpha) * smooth_step(t)
+            else:
+                t = (position - edge_ratio) / max(1e-6, 1.0 - edge_ratio)
                 alpha = top_gradient_alpha * ((1.0 - t) ** top_curve)
-                if alpha > 0.005:
-                    filters.append(f"drawbox=x=0:y={y}:w=iw:h={height}:color=black@{alpha:.3f}:t=fill")
+            if alpha > 0.005:
+                filters.append(f"drawbox=x=0:y={y}:w=iw:h={height}:color=black@{alpha:.3f}:t=fill")
 
     if bottom_height > 0:
-        bottom_edge = min(bottom_edge_height, bottom_height)
-        fade_end = max(0, video_height - bottom_edge)
-        fade_start = max(0, video_height - bottom_height)
-        fade_height = max(0, fade_end - fade_start)
-        if fade_height > 0:
-            band_height = max(1, int(math.ceil(fade_height / gradient_steps)))
-            for index in range(gradient_steps):
-                y = fade_start + index * band_height
-                if y >= fade_end:
-                    break
-                height = min(band_height, fade_end - y)
-                t = (index + 0.5) / gradient_steps
+        edge_ratio = min(0.92, max(0.02, bottom_edge_height / max(1.0, float(bottom_height))))
+        band_height = max(1, int(math.ceil(bottom_height / gradient_steps)))
+        for index in range(gradient_steps):
+            y = max(0, video_height - bottom_height + index * band_height)
+            if y >= video_height:
+                break
+            height = min(band_height, video_height - y)
+            position = (y + height * 0.5 - (video_height - bottom_height)) / max(1.0, float(bottom_height))
+            if position < 1.0 - edge_ratio:
+                t = position / max(1e-6, 1.0 - edge_ratio)
                 alpha = bottom_gradient_alpha * (t ** bottom_curve)
-                if alpha > 0.005:
-                    filters.append(f"drawbox=x=0:y={y}:w=iw:h={height}:color=black@{alpha:.3f}:t=fill")
-        filters.append(
-            f"drawbox=x=0:y={max(0, video_height - bottom_edge)}:"
-            f"w=iw:h={bottom_edge}:color=black@{bottom_edge_alpha:.3f}:t=fill"
-        )
+            else:
+                t = (position - (1.0 - edge_ratio)) / max(1e-6, edge_ratio)
+                alpha = bottom_gradient_alpha + (bottom_edge_alpha - bottom_gradient_alpha) * smooth_step(t)
+            if alpha > 0.005:
+                filters.append(f"drawbox=x=0:y={y}:w=iw:h={height}:color=black@{alpha:.3f}:t=fill")
     return filters
 
 
@@ -35890,25 +36486,37 @@ def run_clone_pipeline(
             and log
         ):
             log("  Delivery subtitle timeline preserved: reference grouping kept; rendered-audio ASR lock skipped")
-        timeline_output_entries = build_boundary_locked_delivery_subtitle_entries(
-            reference_timeline_entries,
-            rendered_entries,
-            fps=delivery_fps,
-        )
-        if not timeline_output_entries:
-            timeline_output_entries = list(reference_output_entries or rendered_timeline_output_entries)
-        if log and rendered_timeline_output_entries and len(timeline_output_entries) != len(rendered_timeline_output_entries):
-            log(
-                "  Delivery SRT boundary lock: "
-                f"using {len(timeline_output_entries)} fixed reference subtitle entries; "
-                f"rendered TTS timeline had {len(rendered_timeline_output_entries)} display entry(s)"
+        if strict_audio_timing_mode and rendered_timeline_output_entries:
+            timeline_output_entries = list(rendered_timeline_output_entries)
+            if log and len(reference_output_entries) != len(timeline_output_entries):
+                log(
+                    "  Delivery SRT TTS timeline: "
+                    f"using {len(timeline_output_entries)} pause-aligned rendered entry(s); "
+                    f"processed reference had {len(reference_output_entries)} display entry(s)"
+                )
+        else:
+            timeline_output_entries = build_boundary_locked_delivery_subtitle_entries(
+                reference_timeline_entries,
+                rendered_entries,
+                fps=delivery_fps,
             )
+            if not timeline_output_entries:
+                timeline_output_entries = list(reference_output_entries or rendered_timeline_output_entries)
+            if log and rendered_timeline_output_entries and len(timeline_output_entries) != len(rendered_timeline_output_entries):
+                log(
+                    "  Delivery SRT boundary lock: "
+                    f"using {len(timeline_output_entries)} fixed reference subtitle entries; "
+                    f"rendered TTS timeline had {len(rendered_timeline_output_entries)} display entry(s)"
+                )
         output_entries = list(timeline_output_entries)
         if log and output_entries:
-            log(
-                "  Delivery SRT boundary lock: final SRT keeps processed reference grouping; "
-                "display-only splitting is deferred to subtitle burn"
-            )
+            if strict_audio_timing_mode and rendered_timeline_output_entries:
+                log("  Delivery SRT TTS timeline: final SRT follows rendered TTS pause groups")
+            else:
+                log(
+                    "  Delivery SRT boundary lock: final SRT keeps processed reference grouping; "
+                    "display-only splitting is deferred to subtitle burn"
+                )
         write_srt(final_srt_path, output_entries)
         has_source_audio_entries = any(
             entry.entry_type in {"dialogue", "original_subtitle"}

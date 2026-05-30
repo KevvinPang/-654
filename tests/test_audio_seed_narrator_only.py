@@ -268,7 +268,7 @@ class AudioSeedNarratorOnlyTests(unittest.TestCase):
             entries,
             0.06,
             prefer_sentence_pauses=True,
-            boundary_audio_pause_map={1: core.STRICT_TTS_BOUNDARY_AUDIO_PAUSE_MIN_SECONDS + 0.01},
+            boundary_audio_pause_map={1: core.STRICT_TTS_VISUAL_JOIN_AUDIO_BLOCK_MIN_SECONDS + 0.01},
             boundary_visual_join_map={1: True},
         )
 

@@ -96,8 +96,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--handoff-mode",
         choices=("queue", "invoker"),
-        default="queue",
-        help="queue: transfer to own netdisk and write the official client queue directly; invoker: hand off via browser-triggered client download.",
+        default="invoker",
+        help="invoker: hand off to the logged-in official client; queue: transfer to own netdisk and write the client queue directly.",
     )
     return parser.parse_args(argv)
 
@@ -305,6 +305,42 @@ def get_logged_in_user_uk(driver: Any) -> str:
     return str(value or "").strip()
 
 
+def normalize_account_uk(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or text == "0":
+        return ""
+    return text if re.fullmatch(r"\d+", text) else ""
+
+
+def extract_uk_from_command_line(command_line: str) -> str:
+    text = str(command_line or "")
+    for pattern in (r"(?:^|\s)--uk=(\d+)(?:\s|$)", r"(?:^|\s)/uk=(\d+)(?:\s|$)", r"(?:^|\s)uk=(\d+)(?:\s|$)"):
+        match = re.search(pattern, text)
+        if match:
+            uk = normalize_account_uk(match.group(1))
+            if uk:
+                return uk
+    return ""
+
+
+def get_running_baidu_client_uk() -> str:
+    for process in list_running_baidu_processes():
+        uk = extract_uk_from_command_line(str(process.get("CommandLine") or ""))
+        if uk:
+            return uk
+    return ""
+
+
+def wait_for_running_baidu_client_uk(timeout_seconds: float = 20.0) -> str:
+    deadline = time.time() + max(0.1, timeout_seconds)
+    while time.time() < deadline:
+        uk = get_running_baidu_client_uk()
+        if uk:
+            return uk
+        time.sleep(1)
+    return get_running_baidu_client_uk()
+
+
 def try_get_local_client_version(user_agent: str, referer: str) -> dict[str, Any]:
     try:
         response = requests.get(
@@ -328,14 +364,26 @@ def ensure_local_client_service(
     detect_exe: Path | None,
     user_agent: str,
     referer: str,
+    *,
+    launch_if_missing: bool = True,
 ) -> dict[str, Any]:
     version_payload = try_get_local_client_version(user_agent, referer)
     launched_main_pid = 0
     launched_detect_pid = 0
     if version_payload:
+        if launch_if_missing and main_exe is not None and not list_running_baidu_main_processes(main_exe):
+            launched_main_pid = launch_command([str(main_exe)], main_exe.parent)
         return {
             "ready": True,
             "version": str(version_payload.get("version") or ""),
+            "launched_main_pid": launched_main_pid,
+            "launched_detect_pid": launched_detect_pid,
+        }
+
+    if not launch_if_missing:
+        return {
+            "ready": False,
+            "version": "",
             "launched_main_pid": launched_main_pid,
             "launched_detect_pid": launched_detect_pid,
         }
@@ -1418,7 +1466,13 @@ def execute_invoker_handoff(
     main_exe: Path | None,
     detect_exe: Path | None,
 ) -> int:
-    service_info = ensure_local_client_service(main_exe, detect_exe, user_agent, args.share_url)
+    service_info = ensure_local_client_service(
+        main_exe,
+        detect_exe,
+        user_agent,
+        args.share_url,
+        launch_if_missing=not args.dry_run,
+    )
     print_json(
         "OFFICIAL_CLIENT_SERVICE",
         {
@@ -1448,7 +1502,9 @@ def execute_invoker_handoff(
         print("OFFICIAL_CLIENT_NOTE 已完成官方客户端接管下载的预演，尚未真正发起下载。")
         return 0
 
-    login_uk = get_logged_in_user_uk(driver)
+    browser_login_uk = normalize_account_uk(get_logged_in_user_uk(driver))
+    client_login_uk = wait_for_running_baidu_client_uk()
+    login_uk = client_login_uk or browser_login_uk
     if not login_uk:
         raise RuntimeError("未能识别当前登录百度账号的 uk，请重新打开登录窗口确认已经登录成功。")
     print_json(
@@ -1456,6 +1512,8 @@ def execute_invoker_handoff(
         {
             "workspace_name": args.workspace_name,
             "login_uk": login_uk,
+            "client_login_uk": client_login_uk,
+            "browser_login_uk": browser_login_uk,
             "share_uk": str(runtime.get("share_uk") or ""),
         },
     )
@@ -1496,6 +1554,13 @@ def execute_invoker_handoff(
         str(invoker_result["sequence"]),
         user_agent,
         args.share_url,
+    )
+    print_json(
+        "OFFICIAL_CLIENT_LOCAL_NOTIFY",
+        {
+            "workspace_name": args.workspace_name,
+            "result": local_client_result,
+        },
     )
     ui_confirm_result = maybe_confirm_client_download_ui(args.workspace_name)
     move_result = wait_and_move_client_downloads(
@@ -1850,7 +1915,7 @@ def load_target_specs(path_text: str, fallback_names: list[str]) -> list[dict[st
     raw_path = str(path_text or "").strip()
     if raw_path:
         spec_path = Path(raw_path)
-        payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        payload = json.loads(spec_path.read_text(encoding="utf-8-sig"))
         for item in payload.get("targets") or []:
             if isinstance(item, dict):
                 specs.append(dict(item))
@@ -2211,7 +2276,7 @@ def main(argv: list[str] | None = None) -> int:
             "share_uk": str(runtime.get("share_uk") or ""),
         }
         print_json("OFFICIAL_CLIENT_LOGIN", login_state)
-        if not login_state["logged_in"]:
+        if not login_state["logged_in"] and args.handoff_mode == "queue":
             raise RuntimeError("百度专用登录窗口还没有登录，请先在控制台里点击“登录百度”完成登录。")
 
         file_list = BAIDU_DOWNLOADER.get_share_list(session, runtime)
